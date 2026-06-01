@@ -69,17 +69,17 @@ int main(int argc, char* argv[])
 
     {
         init_field (&context, 0, 0, WIDTH, HEIGHT, 8);
-        init_sector(&context, 1, SLIDER_V, 20, 60, 20, 80);
+        init_sector(&context, 1, SLIDER, 20, 60, 20, 80, MOVEABLE | VERTICAL);
         context.at[1].range = 8;
 
-        init_sector(&context, 2, SLIDER_H, 50, 60, 180, 10);
+        init_sector(&context, 2, SLIDER, 50, 60, 180, 10, MOVEABLE);
         context.at[2].range = 8;
 
-        init_sector(&context, 3, BUTTON, 20, 160, 20, 20);
+        init_sector(&context, 3, BUTTON, 20, 160, 20, 20, 0);
         context.at[3].callback = &button_call;
 
-        init_sector(&context, 4, CHECKBOX, 50, 160, 10, 10);
-        init_sector(&context, 5, CHECKBOX, 70, 160, 10, 10);
+        init_sector(&context, 4, CHECKBOX, 50, 160, 10, 10, 0);
+        init_sector(&context, 5, CHECKBOX, 70, 160, 10, 10, 0);
     }
 
     pthread_mutex_init(&_screen_lock, NULL);

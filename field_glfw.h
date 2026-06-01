@@ -57,36 +57,54 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 {
     field* context = (field*)glfwGetWindowUserPointer(window);
 
-    if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS)
-        printf("RMB Down\n");
-
-    else if (button == GLFW_MOUSE_BUTTON_LEFT  && action == GLFW_PRESS)
+    switch(button)
     {
-        double xpos, ypos;
-        glfwGetCursorPos(window, &xpos, &ypos);
+        case GLFW_MOUSE_BUTTON_LEFT:
+        {
+            if(action == GLFW_PRESS)
+            {
+                double xpos, ypos;
+                glfwGetCursorPos(window, &xpos, &ypos);
 
-        hit_test_down(context, (int)xpos, (int)ypos, LMB);
-        context->at[context->current].lp.x = xpos;
-        context->at[context->current].lp.y = ypos;
+                hit_test_down(context, (int)xpos, (int)ypos, LMB);
+                context->at[context->current].lp.x = xpos;
+                context->at[context->current].lp.y = ypos;
 
-        if(context->at[context->current].dragable)
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-    }
+                if(context->at[context->current].flag && MOVEABLE)
+                    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
-    else if (button == GLFW_MOUSE_BUTTON_MIDDLE  && action == GLFW_PRESS)
-    {
+            }
+            else if(action == GLFW_RELEASE)
+            {
+                double xpos, ypos;
 
-    }
+                glfwGetCursorPos(window, &xpos, &ypos);
+                hit_test_up(context, (int)xpos, (int)ypos, LMB);
+                context->move = false;
 
-    else if (button == GLFW_MOUSE_BUTTON_LEFT  && action == GLFW_RELEASE)
-    {
-        double xpos, ypos;
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            }
+        }
+        break;
 
-        glfwGetCursorPos(window, &xpos, &ypos);
-        hit_test_up(context, (int)xpos, (int)ypos, LMB);
-        context->move = false;
+        case GLFW_MOUSE_BUTTON_RIGHT:
+        {
+            if(action == GLFW_PRESS)
+                printf("RMB Pressed\n");
+            else if(action == GLFW_RELEASE)
+                printf("RMB Released\n");
+        }
+        break;
 
-        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        case GLFW_MOUSE_BUTTON_MIDDLE:
+        {
+            if(action == GLFW_PRESS)
+                printf("MMB Pressed\n");
+            else if(action == GLFW_RELEASE)
+                printf("MMB Released\n");
+        }
+        break;
+
     }
 }
 

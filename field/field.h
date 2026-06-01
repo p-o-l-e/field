@@ -7,12 +7,9 @@
 #include "colours.h"
 
 typedef enum {
-    SLIDER_H,       
-    SLIDER_V, 
-    STEP_SLIDER_H, 
-    STEP_SLIDER_V, 
-    PROGRESS_BAR_H, 
-    PROGRESS_BAR_V, 
+    SLIDER, 
+    STEP_SLIDER, 
+    PROGRESS_BAR, 
     SPRITE_SLIDER,
     SPRITE_INF_SLIDER,
     SOCKET,
@@ -34,7 +31,7 @@ typedef enum {
 
 typedef enum {
     VERTICAL = 1 << 0,
-    DRAGABLE = 1 << 1,
+    MOVEABLE = 1 << 1,
 
 } sector_flags;
 
@@ -42,6 +39,7 @@ typedef enum {
 
 typedef struct
 {
+    uint32_t        id;         // Unique identifier
     ltrb32          bounds;     // Rectangle area
     sector_type     type;       // Defined in sector_type 
     void*           data;       // Type dependent data
@@ -52,15 +50,12 @@ typedef struct
     bool            visible;
     bool            hovered;
     bool            repaint;
-    bool            dragable;
     bool            on;       
-    uint32_t        id;         // Unique identifier
-    sector_flags    flags;
+    uint32_t        flag;
     void (*callback)();         // Callback
     struct sector*  to;         // Linked node
 
 } sector;
-
 
 /*****************************************************************************************************************************/
 
@@ -88,7 +83,7 @@ void draw_scene   (field* o);
 
 /*****************************************************************************************************************************/
 
-void init_sector  (field* o, int position, sector_type type, int x, int y, int w, int h);
+void init_sector  (field* o, int position, sector_type type, int x, int y, int w, int h, uint32_t flags);
 void init_field   (field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, unsigned size);
 void destroy_field(field* o);
 
@@ -101,20 +96,12 @@ void hit_test     (field* o, int x, int y);
 
 /*****************************************************************************************************************************/
 
-void draw_h_progress_bar(field* o, sector* c);
-void draw_v_progress_bar(field* o, sector* c);
+void draw_progress_bar(field* o, sector* c);
 
 /*****************************************************************************************************************************/
 
-void draw_h_slider (field* o, sector* c);
-void set_h_slider  (field* o, int x, int y);
-void drag_h_slider (field* o, int x, int y);
-
-/*****************************************************************************************************************************/
-
-void draw_v_slider (field* o, sector* c);
-void set_v_slider  (field* o, int x, int y);
-void drag_v_slider (field* o, int x, int y);
+void draw_slider (field* o, sector* c);
+void set_slider  (field* o, int x, int y);
 void scroll_slider (field* o, int x, int y);
 
 /*****************************************************************************************************************************/
@@ -124,13 +111,8 @@ void set_checkbox  (field* o, int x, int y);
 
 /*****************************************************************************************************************************/
 
-void set_h_step_slider (field* o, int x, int y);
-void drag_h_step_lider (field* o, int x, int y);
-
-/*****************************************************************************************************************************/
-
-void set_v_step_slider (field* o, int x, int y);
-void drag_v_step_slider(field* o, int x, int y);
+void set_step_slider (field* o, int x, int y);
+void drag_step_lider (field* o, int x, int y);
 void scroll_step_slider(field* o, int x, int y);
 
 /*****************************************************************************************************************************/
