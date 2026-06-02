@@ -59,7 +59,6 @@ typedef struct
 
 /*****************************************************************************************************************************/
 
-#define _ftype uint32_t
 typedef struct 
 {
     ltrb32      bounds;
@@ -135,9 +134,6 @@ void set_sprite_inf_slider(field* o, int x, int y);
 
 void draw_socket(field* o, sector* c);
 void drag_socket(field* o, int x, int y);
-
-
-
 
 void set_none   (field* o, int x, int y);
 void draw_canvas(field* o, sector* c);

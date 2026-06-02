@@ -1,6 +1,7 @@
 #include "field.h"
 #include "colours.h"
 #include "constraints.h"
+#include "containers.h"
 #include <stdint.h>
 #include <stdio.h>
 
@@ -51,7 +52,7 @@ void init_field(field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, unsign
     frame_clr (&o->stencil, 0x00);
 
     o->at = malloc(o->count * sizeof(sector));
-    for(int i = 0; i < o->count; i++) o->at[i].id = i;
+    for(uint32_t i = 0; i < o->count; i++) o->at[i].id = i;
 
     o->at[0].type = CANVAS;
     o->at[0].callback = &empty;
@@ -64,7 +65,7 @@ void destroy_field(field* o)
     free(o->at);
 }
 
-void empty(){};
+void empty(){}
 
 /*****************************************************************************************************************************/
 
@@ -121,6 +122,17 @@ void hit_test_up(field* o, int x, int y, mouse_button button)
     o->move    = false;
     o->repaint = true;
     o->refresh = true;
+
+    switch (button) {
+        case LMB:
+            break;
+        case MMB:
+            break;
+        case RMB:
+            break;
+        default:
+            break; 
+    } 
 }
 
 /*****************************************************************************************************************************/
@@ -163,7 +175,7 @@ void draw_checkbox(field* o, sector* c)
 void draw_scene(field* o)
 {
     printf("Draw scene:\n");
-    for(int i = 0; i < o->count; i++)
+    for(uint32_t i = 0; i < o->count; i++)
     {
         if(o->at[i].repaint)
         {
@@ -180,6 +192,8 @@ void set_checkbox(field* o, int x, int y)
     if (o->at[o->current].value < 0.5f) o->at[o->current].value = 1.0f;
     else o->at[o->current].value = 0.0f;
     o->at[o->current].repaint = true;
+
+    if(false) printf("[%d : %d]", x, y);
 }
 
 void set_slider(field* o, int x, int y)
@@ -249,6 +263,8 @@ void scroll_slider(field* o, int x, int y)
     if (o->at[o->current].value < 0.0f) o->at[o->current].value = 0.0f;
     if (o->at[o->current].value > o->at[o->current].range) o->at[o->current].value = o->at[o->current].range;
     o->at[o->current].repaint = true;
+    
+    if(false) printf("[%d : %d]", x, y);
 }
 
 void scroll_step_slider(field* o, int x, int y)
@@ -257,12 +273,13 @@ void scroll_step_slider(field* o, int x, int y)
     if (o->at[o->current].value < 0.0f) o->at[o->current].value = 0.0f;
     if (o->at[o->current].value > o->at[o->current].range) o->at[o->current].value = o->at[o->current].range;
     o->at[o->current].repaint = true;
+
+    if(false) printf("[%d : %d]", x, y);
 }
 
 void draw_progress_bar(field* o, sector* c)
 {
     int gap = constraints[1];
-    int half = constraints[0];
 
     draw_rectangle_filled(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
     draw_rectangle(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
@@ -340,7 +357,7 @@ void set_sprite_inf_slider(field* o, int x, int y)
     o->at[o->current].lp.y = (float)y;
 }
 
-void set_button(field* o, int x, int y)
+void set_button(field* o, int, int)
 {
     if  (o->at[o->current].value < 0.5f) o->at[o->current].value = 1.0f;
     else o->at[o->current].value = 0.0f;
@@ -348,7 +365,7 @@ void set_button(field* o, int x, int y)
     o->prior = o->current;
 }
 
-void release_button(field* o, int x, int y)
+void release_button(field* o, int, int)
 {
     if  (o->at[o->prior].value < 0.5f) o->at[o->prior].value = 1.0f;
     else o->at[o->prior].value = 0.0f;
@@ -384,6 +401,7 @@ void drag_title_bar(field* o, int x, int y)
 {
     o->move = true;
     o->drag = false;
+    if(false) printf("[%d : %d]", x, y);
 }
 
 void draw_title_bar(field* o, sector* c)
@@ -391,9 +409,33 @@ void draw_title_bar(field* o, sector* c)
     draw_rectangle_filled(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
 }
 
-void draw_canvas(field* o, sector* c) {}
+void draw_canvas(field* o, sector*) 
+{
+    if(true)
+    {
+        uint32_t step = 25;
 
-void set_none(field* o, int x, int y) {}
+        for(uint32_t x = step; x < o->canvas.width; x += step)
+        {
+            for(uint32_t y = 0; y < o->canvas.height; ++y)
+            {
+                if(!frame_get(&o->stencil, x, y))
+                    frame_pset(&o->canvas, x, y, DIMMED);
+            }
+        }
+
+        for(uint32_t y = step; y < o->canvas.height; y += step)
+        {
+            for(uint32_t x = 0; x < o->canvas.width; ++x)
+            {
+                if(!frame_get(&o->stencil, x, y))
+                    frame_pset(&o->canvas, x, y, DIMMED);
+            }
+        }
+    }
+}
+
+void set_none(field*, int, int) {}
 
 /*****************************************************************************************************************************/
 

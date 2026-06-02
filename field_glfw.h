@@ -53,7 +53,7 @@ static void cursor_position_callback(GLFWwindow* window, double x, double y)
         hit_test(context, (int)x, (int)y);
 }
 
-void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
+void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mods*/)
 {
     field* context = (field*)glfwGetWindowUserPointer(window);
 
@@ -108,12 +108,12 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
     }
 }
 
-static void error_callback(int error, const char* description)
+static void error_callback(int/* error*/, const char* description)
 {
     fputs(description, stderr);
 }
 
-static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+static void key_callback(GLFWwindow* /*window*/, int key, int/* scancode*/, int action, int/* mods*/)
 {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) 
     {
@@ -121,7 +121,7 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
     }
 }
 
-void window_pos_callback(GLFWwindow* window, int xpos, int ypos)
+void window_pos_callback(GLFWwindow* window, int, int)
 {
     field* context = (field*)glfwGetWindowUserPointer(window);
 
@@ -166,7 +166,7 @@ static void update_buffer(frame* o, GLuint texture)
 
 /*****************************************************************************************************************************/
 
-void* events_process(void* arg)
+void* events_process(void*)
 {
     pthread_barrier_wait(&_init_barrier);
 
@@ -178,6 +178,8 @@ void* events_process(void* arg)
 
     printf("Event handler terminated...\n");
     pthread_barrier_wait(&_exit_barrier);
+
+    return nullptr;
 }
 
 void* draw_field(void* arg)
@@ -270,4 +272,6 @@ void* draw_field(void* arg)
     printf("GLFW Teminated...\n");
 
     pthread_barrier_wait(&_exit_barrier);
+
+    return nullptr;
 }

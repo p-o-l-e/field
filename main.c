@@ -1,7 +1,6 @@
 #include "field/colours.h"
 #include "field/field.h"
 #include "field_glfw.h"
-#include "cell/sequencer.h"
 #include "field/image_load.h"
 #include <time.h>
 #include <signal.h>
@@ -9,11 +8,6 @@
 #include <unistd.h>
 
 static field context;
-static frame  knob;
-static sprite pot;
-static sprite button;
-static size_t _midi_queue_size;
-static sequencer esq;
 
 #define TARGET_FPS 60.0
 #define WIDTH  640
@@ -28,13 +22,13 @@ void button_call()
     printf("BUTTON PRESSED: %d times\n", t);
 }
 
-void timer_callback(union sigval sv) 
+void timer_callback(union sigval) 
 {
     pthread_cond_signal(&_repaint_condition);
     //printf("\n[TIMER EXPIRED] 3 seconds passed in the background!\n");
 }
 
-int main(int argc, char* argv[])
+int main(int, char**)
 {
     timer_t timer_id;
     struct sigevent sev;
@@ -95,9 +89,9 @@ int main(int argc, char* argv[])
 
     frame_clr(&context.bg, BACKGROUND);
 
-    draw_text_label(&context.bg, &gtFont, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 20, 20, 0, 0, TEXT);
-    draw_text_label(&context.bg, &gtFont, "abcdefghijklmnopqrstuvwxyz", 20, 30, 0, 0, TEXT);
-    draw_text_label(&context.bg, &gtFont, "0123456789!#$^&*()[]{}/:;,", 20, 40, 0, 0, TEXT);
+    draw_text_label(&context.bg, gtFont, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 20, 20, 0, 0, TEXT);
+    draw_text_label(&context.bg, gtFont, "abcdefghijklmnopqrstuvwxyz", 20, 30, 0, 0, TEXT);
+    draw_text_label(&context.bg, gtFont, "0123456789!#$^&*()[]{}/:;,", 20, 40, 0, 0, TEXT);
 
     while (_switch_on)
     {   

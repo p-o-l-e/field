@@ -1,13 +1,12 @@
 #pragma once
 
 #include <math.h>
+#include <stdint.h>
 #include <string.h>
 #include "fonts.h"
 #include "containers.h"
 
-
-void draw_glyph(frame* canvas, uint8_t* font, int id, int xo, int yo, const uint colour);
-void draw_text_label(frame* canvas, char* font, char* text, int xo, int yo, int xe, int ye, const uint colour);
-void draw_rectangle(frame* canvas, int xo, int yo, int xe, int ye, const uint colour);
-void draw_rectangle_filled(frame* canvas, int xo, int yo, int xe, int ye, const uint colour);
-void draw_scope(frame* canvas, wavering* data, int xo, int yo, int xe, int ye, uint bg_colour, uint fg_colour, float scale);
+void draw_glyph(frame* canvas, const uint8_t* font, uint32_t id, uint32_t xo, uint32_t yo, const uint32_t colour);
+void draw_text_label(frame* canvas, const uint8_t* font, const char* text, uint32_t xo, uint32_t yo, uint32_t xe, uint32_t ye, const uint32_t colour);
+void draw_rectangle(frame* canvas, uint32_t xo, uint32_t yo, uint32_t xe, uint32_t ye, const uint32_t colour);
+void draw_rectangle_filled(frame* canvas, uint32_t xo, uint32_t yo, uint32_t xe, uint32_t ye, const uint32_t colour);

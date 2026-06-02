@@ -1,4 +1,5 @@
 #pragma once
+#include <math.h>
 #include "containers.h"
 
-point interpolate_bezier(point pa, point pb, point pc, point pd, float t);
+point interpolate_bezier(point a, point b, point c, point d, float t);

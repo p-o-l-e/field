@@ -31,15 +31,8 @@ add_executable(loom
 target_link_libraries(loom ${OPENGL_LIBRARIES} glfw field cell)
 
 target_compile_options(loom PRIVATE
-    #-Wno-implicit-function-declaration
-    -Wno-error=implicit-function-declaration
-    # -O3
-    #-Wno-implicit-int
-    -Wno-error=implicit-int
-
-    # 3. Incompatible pointer types (e.g., passing int* to char*)
-    #-Wno-incompatible-pointer-types
-    -Wno-error=incompatible-pointer-types
-
-    -Wno-error=return-mismatch
+    -Wall
+    -Wextra
+    -Wpedantic
+    #-O3
 )

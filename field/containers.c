@@ -1,11 +1,8 @@
-////////////////////////////////////////////////////////////////////////////////////////
-// Containers
-// V.0.1.2 2022-06-20 (C) Unmanned
-////////////////////////////////////////////////////////////////////////////////////////
 #include "containers.h"
+#include <stdint.h>
 
-////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////
+/******************************************************************************************************************************/
+
 void wavering_init(wavering* o)
 {
     o->i = 0;
@@ -25,31 +22,31 @@ float wavering_get(wavering* o)
     if (o->o >= WAVERING_LENGTH) o->o = 0;
     return o->data[o->o];
 }
-////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////
 
-void frame_pset(frame* o, unsigned x, unsigned y, _ftype value)
+/******************************************************************************************************************************/
+
+void frame_pset(frame* o, uint32_t x, uint32_t y, uint32_t value)
 {
-    if(((x >= 0) && (x < o->width)) && ((y >= 0) && (y < o->height)))
+    if(x < o->width && y < o->height)
     o->data[x + y * o->width] = value;
 }
 
-_ftype frame_get(frame* o, unsigned x, unsigned y)
+uint32_t frame_get(frame* o, uint32_t x, uint32_t y)
 {
-    if(((x >= 0) && (x < o->width)) && ((y >= 0) && (y < o->height))) return o->data[x + y * o->width];
+    if(x < o->width && y < o->height) return o->data[x + y * o->width];
     return o->data[0];
 }
 
-void frame_clr(frame* o, _ftype value)
+void frame_clr(frame* o, uint32_t value)
 {
-    for(unsigned i = 0; i < (o->height * o->width); ++i) o->data[i] = value;
+    for(uint32_t i = 0; i < (o->height * o->width); ++i) o->data[i] = value;
 }
 
-void frame_init(frame* o, unsigned x, unsigned y)
+void frame_init(frame* o, uint32_t x, uint32_t y)
 {
     o->width  = x;
     o->height = y;
-    o->data   = (_ftype*)calloc(o->width * o->height , sizeof(_ftype));
+    o->data   = (uint32_t*)calloc(o->width * o->height , sizeof(uint32_t));
 }
 
 void frame_flush(frame* o)
@@ -57,34 +54,37 @@ void frame_flush(frame* o)
     free(o->data);
 }
 
-void frame_copy (frame* dest, frame* src)
+void frame_copy (frame* target, frame* source)
 {
-    for(int i = 0; i < dest->height * dest->width; i++) dest->data[i] = src->data[i];
+    for(uint32_t i = 0; i < target->height * target->width; i++) target->data[i] = source->data[i];
 }
 
-void frame_copy_at(frame* dest, frame* src, unsigned xo, unsigned yo)
+void frame_copy_at(frame* target, frame* source, uint32_t xo, uint32_t yo)
 {
-    for(int y = 0; y < src->height; y++)
+    for(uint32_t y = 0; y < source->height; y++)
     {
-        for(int x = 0; x < src->width; x++)
+        for(uint32_t x = 0; x < source->width; x++)
         {
-            frame_pset(dest, x + xo, y + yo, frame_get(src, x, y));
+            frame_pset(target, x + xo, y + yo, frame_get(source, x, y));
         }
     }
 }
 
 /******************************************************************************************************************************/
 
-void sprite_init(sprite* o, unsigned w, unsigned h, unsigned nframes)
+void sprite_init(sprite* o, uint32_t w, uint32_t h, uint32_t nframes)
 {
     frame temp;
     frame_init(&temp, w, h);
-    o->data = (sprite*)malloc(nframes * sizeof(temp));
+
+    o->data = (frame*)malloc(nframes * sizeof(temp));
     o->width = w;
     o->height = h;
     o->nframes = nframes;
+
     frame_flush(&temp);
-    for(int i = 0; i < o->nframes; i++)
+    
+    for(uint32_t i = 0; i < o->nframes; i++)
     {
         frame_init(&o->data[i], w, h);
     }
@@ -92,20 +92,21 @@ void sprite_init(sprite* o, unsigned w, unsigned h, unsigned nframes)
 
 void sprite_flush(sprite* o)
 {
-    for(int i = 0; i < o->nframes; i++)
+    for(uint32_t i = 0; i < o->nframes; i++)
     {
         frame_flush(&o->data[i]);
     }
+
     free(o->data);
 }
 
 void sprite_load_stripe(sprite* o, frame* f)
 {
-    for(int i = 0; i < o->nframes; i++)
+    for(uint32_t i = 0; i < o->nframes; i++)
     {
-        for(int y = 0; y < o->height; y++)
+        for(uint32_t y = 0; y < o->height; y++)
         {
-            for(int x = 0; x < o->width; x++)
+            for(uint32_t x = 0; x < o->width; x++)
             {
                 frame_pset(&o->data[i], x, y, frame_get(f, x, y + (i * o->height)));
             }

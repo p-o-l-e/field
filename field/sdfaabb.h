@@ -6,7 +6,6 @@
 #pragma once
 #include <math.h>  
 #include "containers.h"
-#define _ftype float
 
 float capsule_sdf(float px, float py, float ax, float ay, float bx, float by, float r);
 void alphablend(frame* canvas, int x, int y, float alpha);

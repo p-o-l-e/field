@@ -3,6 +3,7 @@
 typedef enum
 {
     BACKGROUND          = 0x263238FF,
+    DIMMED              = 0x232935FF,
     FOREGROUND          = 0xB0BEC5FF,
     TEXT                = 0x607D8BFF,
     SELECTIONBACKGROUND = 0x546E7AFF,
