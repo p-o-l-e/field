@@ -1,5 +1,5 @@
-#include <math.h>
 #include <stdint.h>
+#include <string.h>
 #include "primitives.h"
 
 void draw_rectangle(frame* canvas, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour)

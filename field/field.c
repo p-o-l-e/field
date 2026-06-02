@@ -2,9 +2,10 @@
 #include "colours.h"
 #include "constraints.h"
 #include "containers.h"
+#include "curves.h"
 #include <stdint.h>
 #include <stdio.h>
-
+#include <math.h>
 
 /*****************************************************************************************************************************/
 
@@ -139,23 +140,20 @@ void hit_test_up(field* o, int x, int y, mouse_button button)
 
 void draw_slider(field* o, sector* c)
 {
-    auto gap = constraints[1];
-    auto half = constraints[0];
-
     draw_rectangle_filled(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
     draw_rectangle(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
 
     if(c->flag & VERTICAL)
     {
-        int w   = c->bounds.b - c->bounds.t - half * 2 - gap * 2;
-        int pos = (int)((c->range - c->value)/c->range * (float)w) + c->bounds.t + half + gap;
-        draw_rectangle_filled(&o->canvas, c->bounds.l + gap, pos - half, c->bounds.r - gap, pos + half, SELECTIONBACKGROUND);
+        int w   = c->bounds.b - c->bounds.t - GRIP * 2 - GAP * 2;
+        int pos = (int)((c->range - c->value)/c->range * (float)w) + c->bounds.t + GRIP + GAP;
+        draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, SELECTIONBACKGROUND);
     }
     else 
     {
-        int w   = c->bounds.r - c->bounds.l - half * 2 - gap * 2;
-        int pos = (int)(c->value/c->range * (float)w) + c->bounds.l + half + gap;
-        draw_rectangle_filled(&o->canvas, pos - half, c->bounds.t + gap, pos + half, c->bounds.b - gap, SELECTIONBACKGROUND);
+        int w   = c->bounds.r - c->bounds.l - GRIP * 2 - GAP * 2;
+        int pos = (int)(c->value/c->range * (float)w) + c->bounds.l + GRIP + GAP;
+        draw_rectangle_filled(&o->canvas, pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     }
 
     c->repaint = false;
@@ -163,12 +161,10 @@ void draw_slider(field* o, sector* c)
 
 void draw_checkbox(field* o, sector* c)
 {
-    int gap = constraints[1];
-
     draw_rectangle_filled(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
     draw_rectangle(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
     if(c->value > 0.5f)
-        draw_rectangle_filled(&o->canvas, c->bounds.l + gap, c->bounds.t + gap, c->bounds.r - gap, c->bounds.b - gap, SELECTIONBACKGROUND);
+        draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     c->repaint = false;
 }
 
@@ -235,23 +231,20 @@ void set_step_slider(field* o, int x, int y)
 
 void draw_step_slider(field* o, sector* c)
 {
-    int gap     = constraints[1];
-    int half    = (int)((float)(c->bounds.b - c->bounds.t - gap*2)/(float)(c->range+1)/2.0f);
-
     draw_rectangle_filled(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
     draw_rectangle(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
 
-    if(o->at[o->current].flag & VERTICAL)
+    if(c->flag & VERTICAL)
     {
-        int w   = c->bounds.b - c->bounds.t - half*2 - gap*2;
-        int pos = (int)((c->range - c->value)/c->range * (float)w) + c->bounds.t + half + gap;
-        draw_rectangle_filled(&o->canvas, c->bounds.l + gap, pos - half, c->bounds.r - gap, pos + half, SELECTIONBACKGROUND);
+        int w   = c->bounds.b - c->bounds.t - GRIP * 2 - GAP * 2;
+        int pos = (int)((c->range - c->value)/c->range * (float)w) + c->bounds.t + GRIP + GAP;
+        draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, SELECTIONBACKGROUND);
     }
     else 
     {
-        int w   = c->bounds.r - c->bounds.l - half*2 - gap*2;
-        int pos = (int)(c->value/c->range * (float)w) + c->bounds.l + half + gap;
-        draw_rectangle_filled(&o->canvas, pos - half, c->bounds.t + gap, pos + half, c->bounds.b - gap, SELECTIONBACKGROUND);
+        int w   = c->bounds.r - c->bounds.l - GRIP * 2 - GAP  *2;
+        int pos = (int)(c->value/c->range * (float)w) + c->bounds.l + GRIP + GAP;
+        draw_rectangle_filled(&o->canvas, pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     }
 
     c->repaint = false;
@@ -279,22 +272,20 @@ void scroll_step_slider(field* o, int x, int y)
 
 void draw_progress_bar(field* o, sector* c)
 {
-    int gap = constraints[1];
-
     draw_rectangle_filled(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
     draw_rectangle(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
 
     if(o->at[o->current].flag & VERTICAL)
     {
-        int w   = c->bounds.b - c->bounds.t - gap;
-        int pos = (int)((c->range - c->value)/c->range * (float)w) + c->bounds.t + gap;
-        draw_rectangle_filled(&o->canvas, c->bounds.l + gap, pos, c->bounds.r - gap, c->bounds.b - gap, SELECTIONBACKGROUND);
+        int w   = c->bounds.b - c->bounds.t - GAP;
+        int pos = (int)((c->range - c->value)/c->range * (float)w) + c->bounds.t + GAP;
+        draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, pos, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     }
     else 
     {
-        int w   = c->bounds.r - c->bounds.l - gap;
+        int w   = c->bounds.r - c->bounds.l - GAP;
         int pos = (int)(c->value/c->range * (float)w) + c->bounds.l;
-        draw_rectangle_filled(&o->canvas, c->bounds.l + gap, c->bounds.t + gap, pos, c->bounds.b - gap, SELECTIONBACKGROUND);
+        draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, c->bounds.t + GAP, pos, c->bounds.b - GAP, SELECTIONBACKGROUND);
     }
 
     c->repaint = false;
@@ -302,16 +293,14 @@ void draw_progress_bar(field* o, sector* c)
 
 void draw_button(field* o, sector* c)
 {
-    int gap = constraints[1];
-
     draw_rectangle(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
 
     auto colour = c->hovered ? ACTIVE : BUTTONS;
     printf("Draw Button\n");
 
-    draw_rectangle_filled(&o->canvas, c->bounds.l + gap, c->bounds.t + gap, c->bounds.r - gap, c->bounds.b - gap, colour);
+    draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, colour);
     if(c->value > 0.5f)
-        draw_rectangle_filled(&o->canvas, c->bounds.l + gap, c->bounds.t + gap, c->bounds.r - gap, c->bounds.b - gap, ACCENT);
+        draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, ACCENT);
     c->repaint = false;
 }
 
@@ -384,29 +373,64 @@ void draw_sprite_button(field* o, sector* c)
     c->repaint = false;
 }
 
+void set_socket(field* o, int, int)
+{
+    if  (o->at[o->current].value < 0.5f) o->at[o->current].value = 1.0f;
+    else o->at[o->current].value = 0.0f;
+    o->at[o->current].repaint = true;
+    o->prior = o->current;
+}
+
 void draw_socket(field* o, sector* c)
 {
-    sprite* temp = (sprite*)c->data;
-    frame_copy_at(&o->canvas, &temp->data[0], c->bounds.l, c->bounds.t);
+    draw_rectangle_filled(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
+    draw_rectangle(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
+    if(c->value > 0.5f)
+        draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     c->repaint = false;
 }
 
 void drag_socket(field* o, int x, int y)
 {
     frame_pset(&o->canvas, x, y, 0xFFFFFFFF);
-}
 
+    float xe = (float)x;
+    float ye = (float)y;
 
-void drag_title_bar(field* o, int x, int y)
-{
-    o->move = true;
-    o->drag = false;
-    if(false) printf("[%d : %d]", x, y);
-}
+    point a, b, c, d;
 
-void draw_title_bar(field* o, sector* c)
-{
-    draw_rectangle_filled(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
+    float xo = a.x;
+    float yo = a.y;
+
+    b.y = (ye - yo) * (2.0f/3.0f) + yo;
+    c.y = (ye - yo) * (1.0f/3.0f) + yo;
+
+    if(xe < xo)
+    {
+        b.x = fabs(xo - xe) * 0.999f + xe;
+        c.x = fabs(xo - xe) * 0.001f + xe;
+    }
+
+    if(xe > xo)
+    {
+        b.x = fabs(xo - xe) * 0.001f + xo;
+        c.x = fabs(xo - xe) * 0.999f + xo;
+    }
+
+    d.x = xe;
+    d.y = ye;
+
+    int iterations = 16;
+    const float inc = 1.04f / (float)iterations ;
+    float t = 0.0;
+
+    for(int i = 0; i < iterations; i++)
+    {
+        point carry = interpolate_bezier(a, b, c, d, t);
+        //data[i].x = carry.x;
+        //data[i].y = carry.y;
+        t += inc;
+    }
 }
 
 void draw_canvas(field* o, sector*) 
@@ -446,8 +470,7 @@ void (*set_sector[])(field*, int, int) =
     set_slider,             //PROGRESS_BAR, 
     set_sprite_slider,      //SPRITE_SLIDER,
     set_sprite_inf_slider,  //SPRITE_INF_SLIDER,
-    set_none,               //SOCKET,
-    set_none,               //TITLE_BAR, 
+    set_socket,             //SOCKET,
     set_checkbox,           //CHECKBOX, 
     set_button,             //BUTTON, 
     set_checkbox,           //SPRITE_CHECKBOX, 
@@ -463,7 +486,6 @@ void (*draw_sector[])(field*, sector*) =
     draw_sprite_slider,     //SPRITE_SLIDER,
     draw_sprite_slider,     //SPRITE_INF_SLIDER,
     draw_socket,            //SOCKET,
-    draw_title_bar,         //TITLE_BAR, 
     draw_checkbox,          //CHECKBOX, 
     draw_button,            //BUTTON, 
     draw_sprite_button,     //SPRITE_CHECKBOX, 
@@ -479,7 +501,6 @@ void (*drag_sector[])(field*, int, int) =
     set_sprite_slider,      //SPRITE_SLIDER,
     set_sprite_inf_slider,  //SPRITE_INF_SLIDER,     
     drag_socket,            //SOCKET,
-    drag_title_bar,         //TITLE_BAR, 
     set_none,               //CHECKBOX, 
     set_none,               //BUTTON, 
     set_none,               //SPRITE_CHECKBOX, 
@@ -495,7 +516,6 @@ void (*scroll_sector[])(field*, int, int) =
     scroll_slider,          //SPRITE_SLIDER,
     scroll_slider,          //SPRITE_INF_SLIDER,
     set_none,               //SOCKET,
-    set_none,               //TITLE_BAR, 
     set_none,               //CHECKBOX, 
     set_none,               //BUTTON, 
     set_none,               //SPRITE_CHECKBOX, 
@@ -511,7 +531,6 @@ void (*leave_sector[])(field*, int, int) =
     set_none,               //SPRITE_SLIDER,
     set_none,               //SPRITE_INF_SLIDER,
     set_none,               //SOCKET,
-    set_none,               //TITLE_BAR, 
     set_none,               //CHECKBOX, 
     release_button,         //BUTTON, 
     set_none,               //SPRITE_CHECKBOX, 

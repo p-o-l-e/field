@@ -1,4 +1,5 @@
 #include "curves.h"
+#include <math.h>
 
 point interpolate_bezier(point a, point b, point c, point d, float t)
 {

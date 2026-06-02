@@ -13,7 +13,6 @@ typedef enum {
     SPRITE_SLIDER,
     SPRITE_INF_SLIDER,
     SOCKET,
-    TITLE_BAR, 
     CHECKBOX, 
     BUTTON, 
     SPRITE_CHECKBOX, 
@@ -116,11 +115,6 @@ void scroll_step_slider(field* o, int x, int y);
 
 /*****************************************************************************************************************************/
 
-void drag_title_bar  (field* o, int x, int y);
-void draw_title_bar  (field* o, sector* c);
-
-/*****************************************************************************************************************************/
-
 void draw_button   (field* o, sector* c);
 void release_button(field* o, int x, int y);
 void set_button    (field* o, int x, int y);
@@ -134,6 +128,7 @@ void set_sprite_inf_slider(field* o, int x, int y);
 
 void draw_socket(field* o, sector* c);
 void drag_socket(field* o, int x, int y);
+void set_socket(field* o, int x, int y);
 
 void set_none   (field* o, int x, int y);
 void draw_canvas(field* o, sector* c);

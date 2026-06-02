@@ -33,9 +33,9 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
     field* context = (field*)glfwGetWindowUserPointer(window);
 
-    double xpos, ypos;
-    glfwGetCursorPos(window, &xpos, &ypos);
-    hit_test(context, (int)xpos, (int)ypos);
+    double x, y;
+    glfwGetCursorPos(window, &x, &y);
+    hit_test(context, (int)x, (int)y);
     if(context->current != 0)
     {
         scroll_sector[context->at[context->current].type](context, (int)xoffset, (int)yoffset);
@@ -63,12 +63,12 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mod
         {
             if(action == GLFW_PRESS)
             {
-                double xpos, ypos;
-                glfwGetCursorPos(window, &xpos, &ypos);
+                double x, y;
+                glfwGetCursorPos(window, &x, &y);
 
-                hit_test_down(context, (int)xpos, (int)ypos, LMB);
-                context->at[context->current].lp.x = xpos;
-                context->at[context->current].lp.y = ypos;
+                hit_test_down(context, (int)x, (int)y, LMB);
+                context->at[context->current].lp.x = x;
+                context->at[context->current].lp.y = y;
 
                 if(context->at[context->current].flag && MOVEABLE)
                     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -76,10 +76,10 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mod
             }
             else if(action == GLFW_RELEASE)
             {
-                double xpos, ypos;
+                double x, y;
 
-                glfwGetCursorPos(window, &xpos, &ypos);
-                hit_test_up(context, (int)xpos, (int)ypos, LMB);
+                glfwGetCursorPos(window, &x, &y);
+                hit_test_up(context, (int)x, (int)y, LMB);
                 context->move = false;
 
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);

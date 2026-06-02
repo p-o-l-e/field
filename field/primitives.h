@@ -1,8 +1,6 @@
 #pragma once
 
-#include <math.h>
 #include <stdint.h>
-#include <string.h>
 #include "fonts.h"
 #include "containers.h"
 
