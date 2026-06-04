@@ -4,6 +4,7 @@
 /////////////////////////////////////////////////////////////////////////////////////
 
 #include "sdfaabb.h"
+#include <math.h>  
 
 float capsule_sdf(float px, float py, float ax, float ay, float bx, float by, float r) 
 {
@@ -15,10 +16,10 @@ float capsule_sdf(float px, float py, float ax, float ay, float bx, float by, fl
 
 void alphablend(frame* canvas, int x, int y, float alpha) 
 {   
-    frame_pset(canvas, x, y, frame_get(canvas, x, y) * (1.0f - alpha) + alpha);
+    frame_pset(canvas, x, y, 0x000000ff * (1.0f - alpha) + alpha);
 }
 
-inline void lineSDFAABB(frame* canvas, float ax, float ay, float bx, float by, float radius, float alpha) 
+void lineSDFAABB(frame* canvas, float ax, float ay, float bx, float by, float radius, float alpha) 
 {
     int xo = (int)floorf(fminf(ax, bx) - radius);
     int xe = (int) ceilf(fmaxf(ax, bx) + radius);

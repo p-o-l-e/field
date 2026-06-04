@@ -63,24 +63,24 @@ int main(int, char**)
 
     {
         init_field (&context, 0, 0, WIDTH, HEIGHT, 16);
-        init_sector(&context, 1, SLIDER, 20, 60, 20, 80, MOVEABLE | VERTICAL);
+        createSector(&context, 1, SLIDER, 20, 60, 20, 80, MOVEABLE | VERTICAL);
         context.at[1].range = 8;
 
-        init_sector(&context, 2, STEP_SLIDER, 50, 60, 20, 80, MOVEABLE | VERTICAL);
+        createSector(&context, 2, STEP_SLIDER, 50, 60, 20, 80, MOVEABLE | VERTICAL);
         context.at[2].range = 4;
 
-        init_sector(&context, 3, SLIDER, 80, 60, 180, 10, MOVEABLE);
+        createSector(&context, 3, SLIDER, 80, 60, 180, 10, MOVEABLE);
         context.at[3].range = 8;
 
-        init_sector(&context, 4, STEP_SLIDER, 80, 80, 180, 10, MOVEABLE);
+        createSector(&context, 4, STEP_SLIDER, 80, 80, 180, 10, MOVEABLE);
         context.at[4].range = 4;
         
-        init_sector(&context, 5, BUTTON, 20, 160, 20, 20, 0);
+        createSector(&context, 5, BUTTON, 20, 160, 20, 20, 0);
         context.at[5].callback = &button_call;
 
-        init_sector(&context, 7, CHECKBOX, 50, 160, 10, 10, 0);
-        init_sector(&context, 8, CHECKBOX, 70, 160, 10, 10, 0);
-        init_sector(&context, 9, SOCKET  , 90, 160, 10, 10, MOVEABLE);
+        createSector(&context, 7, CHECKBOX, 50, 160, 10, 10, 0);
+        createSector(&context, 8, CHECKBOX, 70, 160, 10, 10, 0);
+        createSector(&context, 9, SOCKET  , 90, 160, 10, 10, MOVEABLE);
     }
 
     pthread_mutex_init(&_screen_lock, NULL);

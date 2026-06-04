@@ -61,17 +61,20 @@ typedef struct
 typedef struct 
 {
     ltrb32      bounds;
-    frame       canvas;  // Foreground
-    frame       stencil; // HitTest data
-    frame       bg;      // Backgroung
-    sector*     at;      // Controls array
-    uint32_t    current; // HitTest return
-    uint32_t    prior;   // Last HitTest
-    uint32_t    count;   // Controls quantity
-    bool        repaint; // Repaint flag
-    bool        refresh; // Swap buffer flag
-    bool        drag;    // Sector drag flag
-    bool        move;    // Window drag flag
+    uint32_t    width;
+    uint32_t    height;
+    frame       canvas;         // Foreground
+    frame       stencil;        // HitTest data
+    frame       staging;        // Pending data
+    frame       bg;             // Backgroung
+    sector*     at;             // Controls array
+    uint32_t    current;        // HitTest return
+    uint32_t    prior;          // Last HitTest
+    uint32_t    count;          // Controls quantity
+    bool        repaint;        // Repaint flag
+    bool        refresh;        // Swap buffer flag
+    bool        drag;           // Sector drag flag
+    bool        move;           // Window drag flag
 
 } field;
 
@@ -81,60 +84,66 @@ void draw_scene   (field* o);
 
 /*****************************************************************************************************************************/
 
-void init_sector  (field* o, int position, sector_type type, int x, int y, int w, int h, uint32_t flags);
+void createSector (field* o, int position, sector_type type, int x, int y, int w, int h, uint32_t flags);
 void init_field   (field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, unsigned size);
 void destroy_field(field* o);
 
 /*****************************************************************************************************************************/
 
-void hit_test_down(field* o, int x, int y, mouse_button button);
-void hit_test_drag(field* o, int x, int y);
-void hit_test_up  (field* o, int x, int y, mouse_button button);
-void hit_test     (field* o, int x, int y);
+void hit_test_down(field*, int, int, mouse_button);
+void hit_test_drag(field*, int, int);
+void hit_test_up  (field*, int, int, mouse_button);
+void hit_test     (field*, int, int);
 
 /*****************************************************************************************************************************/
 
-void draw_progress_bar(field* o, sector* c);
+void draw_progress_bar(field*, sector*);
 
 /*****************************************************************************************************************************/
 
-void draw_slider (field* o, sector* c);
-void set_slider  (field* o, int x, int y);
-void scroll_slider (field* o, int x, int y);
+void draw_slider(field*, sector*);
+void set_slider(field*, int, int);
+void scroll_slider (field*, int, int);
 
 /*****************************************************************************************************************************/
 
-void draw_checkbox (field* o, sector* c);
-void set_checkbox  (field* o, int x, int y);
+void draw_checkbox(field*, sector*);
+void set_checkbox(field*, int, int);
 
 /*****************************************************************************************************************************/
 
-void set_step_slider (field* o, int x, int y);
-void drag_step_lider (field* o, int x, int y);
-void scroll_step_slider(field* o, int x, int y);
+void set_step_slider(field*, int, int);
+void drag_step_lider(field*, int, int);
+void scroll_step_slider(field*, int, int);
 
 /*****************************************************************************************************************************/
 
-void draw_button   (field* o, sector* c);
-void release_button(field* o, int x, int y);
-void set_button    (field* o, int x, int y);
+void draw_button(field*, sector*);
+void release_button(field*, int, int);
+void set_button(field*, int, int);
 
 /*****************************************************************************************************************************/
 
-void draw_sprite_button(field* o, sector* c);
-void draw_sprite_slider(field* o, sector* c);
-void set_sprite_slider(field* o, int x, int y);
-void set_sprite_inf_slider(field* o, int x, int y);
+void draw_sprite_button(field*, sector*);
+void draw_sprite_slider(field*, sector*);
+void set_sprite_slider(field*, int, int);
+void set_sprite_inf_slider(field*, int, int);
 
-void draw_socket(field* o, sector* c);
-void drag_socket(field* o, int x, int y);
-void set_socket(field* o, int x, int y);
+/*****************************************************************************************************************************/
 
-void set_none   (field* o, int x, int y);
-void draw_canvas(field* o, sector* c);
+void init_socket(sector*);
+void draw_socket(field*, sector*);
+void drag_socket(field*, int, int);
+void set_socket(field*, int, int);
 
-extern void (*set_sector[])   (field*, int, int);
-extern void (*draw_sector[])  (field*, sector*);
-extern void (*drag_sector[])  (field*, int, int);
+/*****************************************************************************************************************************/
+
+void set_none(field*, int, int);
+void draw_canvas(field*, sector*);
+
+extern void (*init_sector[])(sector*);
+extern void (*set_sector[])(field*, int, int);
+extern void (*draw_sector[])(field*, sector*);
+extern void (*drag_sector[])(field*, int, int);
 extern void (*scroll_sector[])(field*, int, int);
-extern void (*leave_sector[]) (field*, int, int);
+extern void (*leave_sector[])(field*, int, int);

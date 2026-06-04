@@ -6,7 +6,7 @@ set(CMAKE_C_EXTENSIONS ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(FIELD)
-find_package( OpenGL REQUIRED )
+find_package(OpenGL REQUIRED)
 
 include_directories( ${OPENGL_INCLUDE_DIRS} )
 
@@ -19,14 +19,9 @@ add_subdirectory( glfw build/glfw)
 add_subdirectory( field build/field )
 add_subdirectory( cell build/cell )
 
+set(FIELD main.c)
 
-set( FIELD
-     main.c
-     )
-
-add_executable(loom
-	main.c
-)
+add_executable(loom	main.c)
 
 target_link_libraries(loom ${OPENGL_LIBRARIES} glfw field cell)
 

@@ -2,6 +2,22 @@
 #include <string.h>
 #include "primitives.h"
 
+point32u uv_to_screen(float x, float y, uint32_t w, uint32_t h) {
+    point32u s = {
+        .x = (uint32_t)(x * (float)w),
+        .y = (uint32_t)(y * (float)h)
+    };
+    return s;
+}
+
+point screen_to_uv(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+    point n = {
+        .x =  (float)x / (float)w,
+        .y =  1.0f - (float)y / (float)h
+    };
+    return n;
+}
+
 void draw_rectangle(frame* canvas, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour)
 {
     for(uint32_t i = l; i <= r; i++)

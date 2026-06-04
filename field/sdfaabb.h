@@ -4,9 +4,8 @@
 /////////////////////////////////////////////////////////////////////////////////////
 
 #pragma once
-#include <math.h>  
 #include "containers.h"
 
 float capsule_sdf(float px, float py, float ax, float ay, float bx, float by, float r);
 void alphablend(frame* canvas, int x, int y, float alpha);
-inline void lineSDFAABB(frame* canvas, float ax, float ay, float bx, float by, float radius, float alpha);
+void lineSDFAABB(frame* canvas, float ax, float ay, float bx, float by, float radius, float alpha);

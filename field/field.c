@@ -3,13 +3,17 @@
 #include "constraints.h"
 #include "containers.h"
 #include "curves.h"
+#include "primitives.h"
+#include "sdfaabb.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <math.h>
+#include <stdlib.h>
+#include <sys/stat.h>
 
 /*****************************************************************************************************************************/
 
-void init_sector(field* o, int pos, sector_type type, int x, int y, int w, int h, uint32_t flags)
+void createSector(field* o, int pos, sector_type type, int x, int y, int w, int h, uint32_t flags)
 {
     o->at[pos].type         = type;
     o->at[pos].bounds.l     = x;
@@ -32,6 +36,8 @@ void init_sector(field* o, int pos, sector_type type, int x, int y, int w, int h
         o->at[pos].bounds.b, 
         o->at[pos].id
     );
+
+    init_sector[type](&o->at[pos]);
 }
 
 void init_field(field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, unsigned size)
@@ -40,6 +46,9 @@ void init_field(field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, unsign
     o->bounds.t     = y;
     o->bounds.r     = x + w;
     o->bounds.b     = y + h;
+
+    o->width        = w;
+    o->height       = h;
 
     o->drag         = false;
     o->move         = false;
@@ -102,10 +111,10 @@ void hit_test(field* o, int x, int y)
         
         o->at[o->current].hovered = true;
         o->at[o->current].repaint = true;
+        
+        o->repaint = true;
+        o->refresh = true;
     }
-
-    o->repaint = true;
-    o->refresh = true;
 }
 
 void hit_test_drag(field* o, int x, int y)
@@ -373,8 +382,13 @@ void draw_sprite_button(field* o, sector* c)
     c->repaint = false;
 }
 
+void init_socket(sector* s) {
+    s->data = (float*)calloc(64, sizeof(float));
+}
+
 void set_socket(field* o, int, int)
 {
+
     if  (o->at[o->current].value < 0.5f) o->at[o->current].value = 1.0f;
     else o->at[o->current].value = 0.0f;
     o->at[o->current].repaint = true;
@@ -392,43 +406,53 @@ void draw_socket(field* o, sector* c)
 
 void drag_socket(field* o, int x, int y)
 {
-    frame_pset(&o->canvas, x, y, 0xFFFFFFFF);
-
     float xe = (float)x;
     float ye = (float)y;
 
+    if(xe > o->width) xe = (float)o->width;
+    else if(xe < 0.0f) xe = 0.0f;
+
+    if(ye > o->height) ye = (float)o->height;
+    else if(ye < 0.0f) ye = 0.0f;
+
+
     point a, b, c, d;
 
-    float xo = a.x;
-    float yo = a.y;
+    float xo = (float)o->at[o->current].bounds.l;
+    float yo = (float)o->at[o->current].bounds.t;
 
-    b.y = (ye - yo) * (2.0f/3.0f) + yo;
-    c.y = (ye - yo) * (1.0f/3.0f) + yo;
+    a.x = xo;
+    a.y = yo;
+
+    b.y = (ye - yo) * (1.0f/3.0f) + yo;
+    c.y = (ye - yo) * (2.0f/3.0f) + yo;
 
     if(xe < xo)
     {
-        b.x = fabs(xo - xe) * 0.999f + xe;
-        c.x = fabs(xo - xe) * 0.001f + xe;
+        b.x = fabs(xo - xe) * (1.0E-6f) + xe;
+        c.x = fabs(xo - xe) * (1.0f - 1.0E-6f) + xe;
     }
-
-    if(xe > xo)
+    else
     {
-        b.x = fabs(xo - xe) * 0.001f + xo;
-        c.x = fabs(xo - xe) * 0.999f + xo;
+        b.x = fabs(xo - xe) * (1.0f - 1.0E-6f) + xo;
+        c.x = fabs(xo - xe) * (1.0E-6f) + xo;
     }
 
     d.x = xe;
     d.y = ye;
 
-    int iterations = 16;
-    const float inc = 1.04f / (float)iterations ;
+    int iterations = 32;
+    const float inc = 1.0f / (float)(iterations - 1) ;
     float t = 0.0;
 
-    for(int i = 0; i < iterations; i++)
+    for(int i = 0, j = 0; i < iterations; i++)
     {
-        point carry = interpolate_bezier(a, b, c, d, t);
-        //data[i].x = carry.x;
-        //data[i].y = carry.y;
+        point s = interpolate_bezier(a, b, c, d, t);
+        point uv = screen_to_uv(s.x, s.y, o->width, o->height);
+
+        ((float*)o->at[o->current].data)[j++] = uv.x;
+        ((float*)o->at[o->current].data)[j++] = uv.y;
+
         t += inc;
     }
 }
@@ -460,8 +484,23 @@ void draw_canvas(field* o, sector*)
 }
 
 void set_none(field*, int, int) {}
+void init_none(sector*) {}
 
 /*****************************************************************************************************************************/
+void (*init_sector[])(sector*) = 
+{
+    init_none,              //SLIDER, 
+    init_none,              //STEP_SLIDER, 
+    init_none,              //PROGRESS_BAR, 
+    init_none,              //SPRITE_SLIDER,
+    init_none,              //SPRITE_INF_SLIDER,
+    init_socket,            //SOCKET,
+    init_none,              //CHECKBOX, 
+    init_none,              //BUTTON, 
+    init_none,              //SPRITE_CHECKBOX, 
+    init_none,              //SPRITE_BUTTON, 
+    init_none,              //CANVAS            
+};
 
 void (*set_sector[])(field*, int, int) = 
 {

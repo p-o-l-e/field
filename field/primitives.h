@@ -4,7 +4,11 @@
 #include "fonts.h"
 #include "containers.h"
 
-void draw_glyph(frame* canvas, const uint8_t* font, uint32_t id, uint32_t xo, uint32_t yo, const uint32_t colour);
-void draw_text_label(frame* canvas, const uint8_t* font, const char* text, uint32_t xo, uint32_t yo, uint32_t xe, uint32_t ye, const uint32_t colour);
-void draw_rectangle(frame* canvas, uint32_t xo, uint32_t yo, uint32_t xe, uint32_t ye, const uint32_t colour);
-void draw_rectangle_filled(frame* canvas, uint32_t xo, uint32_t yo, uint32_t xe, uint32_t ye, const uint32_t colour);
+point32u uv_to_screen(float, float, uint32_t, uint32_t);
+point screen_to_uv(uint32_t, uint32_t, uint32_t, uint32_t);
+
+void draw_glyph(frame*, const uint8_t*, uint32_t, uint32_t, uint32_t, const uint32_t);
+void draw_text_label(frame*, const uint8_t* , const char*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+void draw_rectangle(frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+void draw_rectangle_filled(frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+

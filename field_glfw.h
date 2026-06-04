@@ -1,4 +1,5 @@
 #pragma once
+
 #include <GLFW/glfw3.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -8,6 +9,7 @@
 
 #include "field/field.h"
 #define FIELD_TRANSPARENCY 1
+
 
 GLFWwindow* window;
 
@@ -194,6 +196,7 @@ void* draw_field(void* arg)
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
     glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
+    glfwWindowHint(GLFW_SAMPLES, 8); 
 
     field* context = (field*)arg;
 
@@ -234,6 +237,12 @@ void* draw_field(void* arg)
     GLuint bg = get_buffer(&context->bg);
     GLuint fg = get_buffer(&context->canvas);
 
+
+    GLfloat line_vertices[] = {
+        0.1f, 0.1f,
+        0.9f, 0.9f
+    };
+
     while (_window_on)
     {
         pthread_mutex_lock(&_screen_lock);
@@ -242,12 +251,26 @@ void* draw_field(void* arg)
 
         if(context->repaint)
         {
+            glClear(GL_COLOR_BUFFER_BIT);
+            glColor3f(1.0f, 1.0f, 1.0f);
             draw_scene(context);
-            // glClear(GL_COLOR_BUFFER_BIT);
+           
             update_buffer(&context->bg, bg);
             update_buffer(&context->canvas, fg);
+
             context->repaint = false;
         }
+
+        if(true)
+        {
+            glLineWidth(3.0f); 
+            glEnableClientState(GL_VERTEX_ARRAY);
+            glVertexPointer(2, GL_FLOAT, 0, context->at[9].data);
+            glColor3f(0.8f, 0.5f, 0.2f);  // red line
+            glDrawArrays(GL_LINE_STRIP, 0, 32);
+            glDisableClientState(GL_VERTEX_ARRAY);
+        }
+
         if(context->refresh)
         {
             context->refresh = false;
