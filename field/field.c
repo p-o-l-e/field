@@ -1,4 +1,5 @@
 #include "field.h"
+#include "GLFW/glfw3.h"
 #include "colours.h"
 #include "constraints.h"
 #include "containers.h"
@@ -13,23 +14,24 @@
 
 /*****************************************************************************************************************************/
 
-void createSector(field* o, int pos, sector_type type, int x, int y, int w, int h, uint32_t flags)
-{
+void createSector(field* o, int pos, sector_type type, int x, int y, int w, int h, uint32_t flags) {
     o->at[pos].type         = type;
     o->at[pos].bounds.l     = x;
     o->at[pos].bounds.t     = y;
     o->at[pos].bounds.r     = x + w;
     o->at[pos].bounds.b     = y + h;
+    o->at[pos].width        = w;
+    o->at[pos].height       = h;
     o->at[pos].value        = 0.0f;
     o->at[pos].range        = 4096.0f;
     o->at[pos].step         = 1.0f;
     o->at[pos].repaint      = true;
     o->at[pos].callback     = &empty;
-    o->at[pos].flag         = flags;
+    o->at[pos].flags        = flags;
+    o->at[pos].container    = o;
 
-    draw_rectangle_filled
-    (
-        &o->stencil,
+    draw_rectangle_filled (
+        o->layer[SC],
         o->at[pos].bounds.l,
         o->at[pos].bounds.t, 
         o->at[pos].bounds.r, 
@@ -40,8 +42,7 @@ void createSector(field* o, int pos, sector_type type, int x, int y, int w, int 
     init_sector[type](&o->at[pos]);
 }
 
-void init_field(field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, unsigned size)
-{
+void init_field(field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags) {
     o->bounds.l     = x;
     o->bounds.t     = y;
     o->bounds.r     = x + w;
@@ -55,11 +56,22 @@ void init_field(field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, unsign
     o->count        = size + 1u;
     o->repaint      = true;
     o->refresh      = true;
+    o->nodes        = 0;
+    o->flags        = flags;
+    o->step         = 25;
+    o->staging      = false;
 
-    frame_init(&o->canvas,  w, h);
-    frame_init(&o->stencil, w, h);
-    frame_init(&o->bg, w, h);
-    frame_clr (&o->stencil, 0x00);
+    if(true)
+    {
+        for(uint32_t i = 0; i < CC; ++i) {
+            o->layer[i] = malloc(sizeof(frame));
+            frame_init(o->layer[i],  w, h);
+        }
+
+        frame_clr(o->layer[SC], 0x00);
+        frame_clr(o->layer[SN], 0x00);
+        frame_clr(o->layer[BG], BACKGROUND);
+    }
 
     o->at = malloc(o->count * sizeof(sector));
     for(uint32_t i = 0; i < o->count; i++) o->at[i].id = i;
@@ -68,27 +80,52 @@ void init_field(field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, unsign
     o->at[0].callback = &empty;
 }
 
-void destroy_field(field* o)
-{
-    frame_flush(&o->canvas);
-    frame_flush(&o->stencil);
+void destroy_field(field* o) {
+    for(uint32_t i = 0; i < CC; ++i) {
+        frame_flush(o->layer[i]);
+        free(o->layer[i]);
+    }
     free(o->at);
 }
 
 void empty(){}
 
+void link_sector(sector* parent, sector* child) {
+    if (parent->nodes >= parent->capacity) {
+        parent->capacity = parent->capacity * 2 + 4;
+        parent->node = realloc(parent->node, parent->capacity * sizeof(sector*));
+    }
+    parent->node[parent->nodes] = child;
+    child->root = parent;
+    ++parent->nodes;
+}
+
 /*****************************************************************************************************************************/
 
-void hit_test_down(field* o, int x, int y, mouse_button button)
-{
-    o->current = frame_get(&o->stencil, x, y);
+void hit_test_down(field* o, int x, int y, mouse_button button) {
+    o->current = frame_get(o->layer[SC], x, y);
 
-    if (o->at[o->current].flag & MOVEABLE)
-    {
+    o->mp[PRESS].x = x;
+    o->mp[PRESS].y = y;
+
+    o->mp[PRIOR].x = x;
+    o->mp[PRIOR].y = y;
+
+    if (o->at[o->current].flags & MOVEABLE) {
         if (button == LMB) o->drag = true;
+        o->staging = true;
+
+        draw_rectangle_filled(
+            o->at[o->current].container->layer[SN],
+            o->at[o->current].bounds.l, 
+            o->at[o->current].bounds.t, 
+            o->at[o->current].bounds.r, 
+            o->at[o->current].bounds.b, 
+            0x0
+        );
+
     }
-    else 
-    {
+    else {
         set_sector[o->at[o->current].type](o, x, y);
         o->at[o->current].callback();
     }
@@ -97,12 +134,10 @@ void hit_test_down(field* o, int x, int y, mouse_button button)
     o->prior = o->current;
 }
 
-void hit_test(field* o, int x, int y)
-{
-    auto uid = frame_get(&o->stencil, x, y);
+void hit_test(field* o, int x, int y) {
+    auto uid = frame_get(o->layer[SC], x, y);
 
-    if(o->current != uid) 
-    {
+    if(o->current != uid) {
         o->prior = o->current;
         o->current = uid;
         
@@ -117,17 +152,17 @@ void hit_test(field* o, int x, int y)
     }
 }
 
-void hit_test_drag(field* o, int x, int y)
-{
+void hit_test_drag(field* o, int x, int y) {
     drag_sector[o->at[o->current].type](o, x, y);
     o->repaint = true;
     o->refresh = true;
 }
 
-void hit_test_up(field* o, int x, int y, mouse_button button)
-{
-    o->current = frame_get(&o->stencil, x, y);
+void hit_test_up(field* o, int x, int y, mouse_button button) {
+    o->current = frame_get(o->layer[SC], x, y);
     leave_sector[o->at[o->prior].type](o, x, y);
+    release_sector[o->at[o->current].type](&o->at[o->current], x, y);
+
     o->drag    = false;
     o->move    = false;
     o->repaint = true;
@@ -147,53 +182,47 @@ void hit_test_up(field* o, int x, int y, mouse_button button)
 
 /*****************************************************************************************************************************/
 
-void draw_slider(field* o, sector* c)
-{
-    draw_rectangle_filled(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
-    draw_rectangle(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
+void draw_slider(field* o, sector* c) {
+    draw_rectangle_filled(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
+    draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
 
-    if(c->flag & VERTICAL)
-    {
+    if(c->flags & VERTICAL) {
         int w   = c->bounds.b - c->bounds.t - GRIP * 2 - GAP * 2;
         int pos = (int)((c->range - c->value)/c->range * (float)w) + c->bounds.t + GRIP + GAP;
-        draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, SELECTIONBACKGROUND);
     }
-    else 
-    {
+    else {
         int w   = c->bounds.r - c->bounds.l - GRIP * 2 - GAP * 2;
         int pos = (int)(c->value/c->range * (float)w) + c->bounds.l + GRIP + GAP;
-        draw_rectangle_filled(&o->canvas, pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     }
 
     c->repaint = false;
 }
 
-void draw_checkbox(field* o, sector* c)
-{
-    draw_rectangle_filled(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
-    draw_rectangle(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
+void draw_checkbox(field* o, sector* c) {
+    draw_rectangle_filled(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
+    draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
     if(c->value > 0.5f)
-        draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     c->repaint = false;
 }
 
-void draw_scene(field* o)
-{
+void draw_scene(field* o) {
     printf("Draw scene:\n");
-    for(uint32_t i = 0; i < o->count; i++)
-    {
-        if(o->at[i].repaint)
-        {
+    for(uint32_t i = 0; i < o->count; ++i) {
+        if(o->at[i].repaint) {
             draw_sector[o->at[i].type](o, &o->at[i]);
             printf("-- Repaint: %d\n", i);
         }
     }
+    
+    o->repaint = false;
 }
 
 /*****************************************************************************************************************************/
 
-void set_checkbox(field* o, int x, int y)
-{
+void set_checkbox(field* o, int x, int y) {
     if (o->at[o->current].value < 0.5f) o->at[o->current].value = 1.0f;
     else o->at[o->current].value = 0.0f;
     o->at[o->current].repaint = true;
@@ -201,15 +230,12 @@ void set_checkbox(field* o, int x, int y)
     if(false) printf("[%d : %d]", x, y);
 }
 
-void set_slider(field* o, int x, int y)
-{
-    if(o->at[o->current].flag & VERTICAL)
-    {
+void set_slider(field* o, int x, int y) {
+    if(o->at[o->current].flags & VERTICAL) {
         int ys = y - o->at[o->current].bounds.t;
         o->at[o->current].value = o->at[o->current].range - (float)ys/(float)(o->at[o->current].bounds.b - o->at[o->current].bounds.t)*o->at[o->current].range;
     }
-    else 
-    {
+    else {
         int xs = x - o->at[o->current].bounds.l;
         o->at[o->current].value = (float)xs/(float)(o->at[o->current].bounds.r - o->at[o->current].bounds.l)*o->at[o->current].range;
     }
@@ -219,15 +245,12 @@ void set_slider(field* o, int x, int y)
     o->at[o->current].repaint = true;
 }
 
-void set_step_slider(field* o, int x, int y)
-{
-    if(o->at[o->current].flag & VERTICAL)
-    {
+void set_step_slider(field* o, int x, int y) {
+    if(o->at[o->current].flags & VERTICAL) {
         int ys = y - o->at[o->current].bounds.t;
         o->at[o->current].value = roundf(o->at[o->current].range - (float)ys/(float)(o->at[o->current].bounds.b - o->at[o->current].bounds.t)*o->at[o->current].range);
     }
-    else 
-    {
+    else {
         int xs = x - o->at[o->current].bounds.l;
         o->at[o->current].value = roundf((float)xs/(float)(o->at[o->current].bounds.r - o->at[o->current].bounds.l)*o->at[o->current].range);
     }
@@ -238,29 +261,25 @@ void set_step_slider(field* o, int x, int y)
     o->at[o->current].repaint = true;
 }
 
-void draw_step_slider(field* o, sector* c)
-{
-    draw_rectangle_filled(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
-    draw_rectangle(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
+void draw_step_slider(field* o, sector* c) {
+    draw_rectangle_filled(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
+    draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
 
-    if(c->flag & VERTICAL)
-    {
+    if(c->flags & VERTICAL) {
         int w   = c->bounds.b - c->bounds.t - GRIP * 2 - GAP * 2;
         int pos = (int)((c->range - c->value)/c->range * (float)w) + c->bounds.t + GRIP + GAP;
-        draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, SELECTIONBACKGROUND);
     }
-    else 
-    {
+    else {
         int w   = c->bounds.r - c->bounds.l - GRIP * 2 - GAP  *2;
         int pos = (int)(c->value/c->range * (float)w) + c->bounds.l + GRIP + GAP;
-        draw_rectangle_filled(&o->canvas, pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     }
 
     c->repaint = false;
 }
 
-void scroll_slider(field* o, int x, int y)
-{
+void scroll_slider(field* o, int x, int y) {
     o->at[o->current].value += (float) y * o->at[o->current].step;
     if (o->at[o->current].value < 0.0f) o->at[o->current].value = 0.0f;
     if (o->at[o->current].value > o->at[o->current].range) o->at[o->current].value = o->at[o->current].range;
@@ -269,8 +288,7 @@ void scroll_slider(field* o, int x, int y)
     if(false) printf("[%d : %d]", x, y);
 }
 
-void scroll_step_slider(field* o, int x, int y)
-{
+void scroll_step_slider(field* o, int x, int y) {
     o->at[o->current].value += (float) y;
     if (o->at[o->current].value < 0.0f) o->at[o->current].value = 0.0f;
     if (o->at[o->current].value > o->at[o->current].range) o->at[o->current].value = o->at[o->current].range;
@@ -279,53 +297,47 @@ void scroll_step_slider(field* o, int x, int y)
     if(false) printf("[%d : %d]", x, y);
 }
 
-void draw_progress_bar(field* o, sector* c)
-{
-    draw_rectangle_filled(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
-    draw_rectangle(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
+void draw_progress_bar(field* o, sector* c) {
+    draw_rectangle_filled(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
+    draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
 
-    if(o->at[o->current].flag & VERTICAL)
-    {
+    if(o->at[o->current].flags & VERTICAL) {
         int w   = c->bounds.b - c->bounds.t - GAP;
         int pos = (int)((c->range - c->value)/c->range * (float)w) + c->bounds.t + GAP;
-        draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, pos, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, pos, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     }
-    else 
-    {
+    else {
         int w   = c->bounds.r - c->bounds.l - GAP;
         int pos = (int)(c->value/c->range * (float)w) + c->bounds.l;
-        draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, c->bounds.t + GAP, pos, c->bounds.b - GAP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, pos, c->bounds.b - GAP, SELECTIONBACKGROUND);
     }
 
     c->repaint = false;
 }
 
-void draw_button(field* o, sector* c)
-{
-    draw_rectangle(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
+void draw_button(field* o, sector* c) {
+    draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
 
     auto colour = c->hovered ? ACTIVE : BUTTONS;
     printf("Draw Button\n");
 
-    draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, colour);
+    draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, colour);
     if(c->value > 0.5f)
-        draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, ACCENT);
+        draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, ACCENT);
     c->repaint = false;
 }
 
-void draw_sprite_slider(field* o, sector* c)
-{
+void draw_sprite_slider(field* o, sector* c) {
     sprite* temp = (sprite*)c->data;
     int f = (c->value / c->range) * temp->nframes;
-    frame_copy_at(&o->canvas, &temp->data[f], c->bounds.l, c->bounds.t);
+    frame_copy_at(o->layer[FG], &temp->data[f], c->bounds.l, c->bounds.t);
 
     c->repaint = false;
 }
 
-void set_sprite_slider(field* o, int x, int y)
-{
-    int dy = roundf((o->at[o->current].lp.y - y)/o->at[o->current].step);
-    int dx = roundf((x - o->at[o->current].lp.x)/o->at[o->current].step);
+void set_sprite_slider(field* o, int x, int y) {
+    int dy = roundf((o->mp[PRIOR].y - y)/o->at[o->current].step);
+    int dx = roundf((x - o->mp[PRIOR].x)/o->at[o->current].step);
 
     o->at[o->current].value += (dy + dx);
 
@@ -333,14 +345,13 @@ void set_sprite_slider(field* o, int x, int y)
     if (o->at[o->current].value > o->at[o->current].range) o->at[o->current].value = o->at[o->current].range;
     o->at[o->current].repaint = true;
 
-    o->at[o->current].lp.x = (float)x;
-    o->at[o->current].lp.y = (float)y;
+    o->mp[PRIOR].x = (float)x;
+    o->mp[PRIOR].y = (float)y;
 }
 
-void set_sprite_inf_slider(field* o, int x, int y)
-{
-    int dy = roundf((y - o->at[o->current].lp.y)/o->at[o->current].step);
-    int dx = roundf((o->at[o->current].lp.x - x)/o->at[o->current].step);
+void set_sprite_inf_slider(field* o, int x, int y) {
+    int dy = roundf((y - o->mp[PRIOR].y)/o->at[o->current].step);
+    int dx = roundf((o->mp[PRIOR].x - x)/o->at[o->current].step);
 
     o->at[o->current].value += (dy + dx);
 
@@ -351,33 +362,30 @@ void set_sprite_inf_slider(field* o, int x, int y)
     // else if (o->at[o->current].value >= o->at[o->current].range) o->at[o->current].value = 0.0f;
 
     o->at[o->current].repaint = true;
-    o->at[o->current].lp.x = (float)x;
-    o->at[o->current].lp.y = (float)y;
+    o->mp[PRIOR].x = (float)x;
+    o->mp[PRIOR].y = (float)y;
 }
 
-void set_button(field* o, int, int)
-{
+void set_button(field* o, int, int) {
     if  (o->at[o->current].value < 0.5f) o->at[o->current].value = 1.0f;
     else o->at[o->current].value = 0.0f;
     o->at[o->current].repaint = true;
     o->prior = o->current;
 }
 
-void release_button(field* o, int, int)
-{
+void release_button(field* o, int, int) {
     if  (o->at[o->prior].value < 0.5f) o->at[o->prior].value = 1.0f;
     else o->at[o->prior].value = 0.0f;
     o->at[o->prior].repaint = true;    
 }
 
-void draw_sprite_button(field* o, sector* c)
-{
+void draw_sprite_button(field* o, sector* c) {
     sprite* temp = (sprite*)c->data;
 
     if(c->value > 0.5f)
-        frame_copy_at(&o->canvas, &temp->data[1], c->bounds.l, c->bounds.t);
+        frame_copy_at(o->layer[FG], &temp->data[1], c->bounds.l, c->bounds.t);
     else
-        frame_copy_at(&o->canvas, &temp->data[0], c->bounds.l, c->bounds.t);
+        frame_copy_at(o->layer[FG], &temp->data[0], c->bounds.l, c->bounds.t);
 
     c->repaint = false;
 }
@@ -386,21 +394,18 @@ void init_socket(sector* s) {
     s->data = (float*)calloc(64, sizeof(float));
 }
 
-void set_socket(field* o, int, int)
-{
-
-    if  (o->at[o->current].value < 0.5f) o->at[o->current].value = 1.0f;
+void set_socket(field* o, int, int) {
+    if (o->at[o->current].value < 0.5f) o->at[o->current].value = 1.0f;
     else o->at[o->current].value = 0.0f;
     o->at[o->current].repaint = true;
     o->prior = o->current;
 }
 
-void draw_socket(field* o, sector* c)
-{
-    draw_rectangle_filled(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
-    draw_rectangle(&o->canvas, c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
+void draw_socket(field* o, sector* c) {
+    draw_rectangle_filled(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
+    draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
     if(c->value > 0.5f)
-        draw_rectangle_filled(&o->canvas, c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     c->repaint = false;
 }
 
@@ -415,7 +420,6 @@ void drag_socket(field* o, int x, int y)
     if(ye > o->height) ye = (float)o->height;
     else if(ye < 0.0f) ye = 0.0f;
 
-
     point a, b, c, d;
 
     float xo = (float)o->at[o->current].bounds.l;
@@ -424,18 +428,16 @@ void drag_socket(field* o, int x, int y)
     a.x = xo;
     a.y = yo;
 
-    b.y = (ye - yo) * (1.0f/3.0f) + yo;
-    c.y = (ye - yo) * (2.0f/3.0f) + yo;
+    b.x = (xe - xo) * (1.0f/3.0f) + xo;
+    c.x = (xe - xo) * (2.0f/3.0f) + xo;
 
-    if(xe < xo)
-    {
-        b.x = fabs(xo - xe) * (1.0E-6f) + xe;
-        c.x = fabs(xo - xe) * (1.0f - 1.0E-6f) + xe;
+    if(ye < yo) {
+        b.y = fabs(yo - ye) * (1.0f - 1.0E-6f) + ye;
+        c.y = fabs(yo - ye) * (1.0E-6f) + ye;
     }
-    else
-    {
-        b.x = fabs(xo - xe) * (1.0f - 1.0E-6f) + xo;
-        c.x = fabs(xo - xe) * (1.0E-6f) + xo;
+    else {
+        b.y = fabs(yo - ye) * (1.0E-6f) + yo;
+        c.y = fabs(yo - ye) * (1.0f - 1.0E-6f) + yo;
     }
 
     d.x = xe;
@@ -445,8 +447,7 @@ void drag_socket(field* o, int x, int y)
     const float inc = 1.0f / (float)(iterations - 1) ;
     float t = 0.0;
 
-    for(int i = 0, j = 0; i < iterations; i++)
-    {
+    for(int i = 0, j = 0; i < iterations; i++) {
         point s = interpolate_bezier(a, b, c, d, t);
         point uv = screen_to_uv(s.x, s.y, o->width, o->height);
 
@@ -456,28 +457,108 @@ void drag_socket(field* o, int x, int y)
         t += inc;
     }
 }
+/*****************************************************************************************************************************/
+
+void init_node(sector* s) {
+    s->data = (frame*)calloc(1, sizeof(frame));
+    frame_init((frame*)s->data, s->width, s->height);
+}
+
+void set_node(field* o, int, int) {
+    o->at[o->current].repaint = true;
+    o->prior = o->current;
+}
+
+void draw_node(field* o, sector* c) {
+
+    auto L = o->staging ? ST : BG;
+
+    if(L == ST)
+        frame_clr(o->layer[L], 0x0);
+
+    draw_rectangle_filled(o->layer[L], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, HIGHLIGHT);
+    draw_rectangle(o->layer[L], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
+
+    c->repaint = false;
+}
+
+static inline int snap_to_grid(int val, int step)
+{
+    return (val >= 0) ? (val / step) * step : ((val - step + 1) / step) * step;
+}
+
+void drag_node(field* o, int x, int y)
+{
+    int dx = ((x - o->mp[PRIOR].x) / o->step) * o->step;
+    int dy = ((y - o->mp[PRIOR].y) / o->step) * o->step;
+
+    bool moved = false;
+
+    if (dx) {
+
+        int X = ((o->at[o->current].bounds.l + dx) / o->step) * o->step;
+        if(X < 0) X = 0;
+
+        o->at[o->current].bounds.l = X;
+        o->at[o->current].bounds.r = X + o->at[o->current].width;
+        moved = true;
+    }
+
+    if (dy) {
+
+        int Y = ((o->at[o->current].bounds.t + dy) / o->step) * o->step;
+        if(Y < 0) Y = 0;
+
+        o->at[o->current].bounds.t = Y; 
+        o->at[o->current].bounds.b = Y + o->at[o->current].height;
+        moved = true;
+    }
+
+    if (moved) {
+        
+        o->mp[PRIOR].x += dx;
+        o->mp[PRIOR].y += dy;
+        
+        o->at[o->current].repaint = true;
+        o->repaint = true;
+        o->refresh = true;
+    }
+}
+
+void release_node(sector* s, int x, int y) 
+{
+    draw_rectangle_filled(
+        s->container->layer[SN],
+        s->bounds.l, 
+        s->bounds.t, 
+        s->bounds.r, 
+        s->bounds.b, 
+        s->id
+    );
+
+    frame_clr(s->container->layer[ST], 0x0);
+    s->container->staging = false;
+    s->repaint = true;
+    s->container->repaint = true;
+    s->container->refresh = true;
+}
+
+/*****************************************************************************************************************************/
 
 void draw_canvas(field* o, sector*) 
 {
-    if(true)
-    {
-        uint32_t step = 25;
-
-        for(uint32_t x = step; x < o->canvas.width; x += step)
-        {
-            for(uint32_t y = 0; y < o->canvas.height; ++y)
-            {
-                if(!frame_get(&o->stencil, x, y))
-                    frame_pset(&o->canvas, x, y, DIMMED);
+    if(true) {
+        for(uint32_t x = o->step; x < o->layer[FG]->width; x += o->step) {
+            for(uint32_t y = 0; y < o->layer[FG]->height; ++y) {
+                if(!frame_get(o->layer[SC], x, y))
+                    frame_pset(o->layer[FG], x, y, DIMMED);
             }
         }
 
-        for(uint32_t y = step; y < o->canvas.height; y += step)
-        {
-            for(uint32_t x = 0; x < o->canvas.width; ++x)
-            {
-                if(!frame_get(&o->stencil, x, y))
-                    frame_pset(&o->canvas, x, y, DIMMED);
+        for(uint32_t y = o->step; y < o->layer[FG]->height; y += o->step) {
+            for(uint32_t x = 0; x < o->layer[FG]->width; ++x) {
+                if(!frame_get(o->layer[SC], x, y))
+                    frame_pset(o->layer[FG], x, y, DIMMED);
             }
         }
     }
@@ -487,8 +568,7 @@ void set_none(field*, int, int) {}
 void init_none(sector*) {}
 
 /*****************************************************************************************************************************/
-void (*init_sector[])(sector*) = 
-{
+void (*init_sector[])(sector*) = {
     init_none,              //SLIDER, 
     init_none,              //STEP_SLIDER, 
     init_none,              //PROGRESS_BAR, 
@@ -500,10 +580,10 @@ void (*init_sector[])(sector*) =
     init_none,              //SPRITE_CHECKBOX, 
     init_none,              //SPRITE_BUTTON, 
     init_none,              //CANVAS            
+    init_node,              //NODE        
 };
 
-void (*set_sector[])(field*, int, int) = 
-{
+void (*set_sector[])(field*, int, int) = {
     set_slider,             //SLIDER, 
     set_step_slider,        //STEP_SLIDER, 
     set_slider,             //PROGRESS_BAR, 
@@ -514,11 +594,11 @@ void (*set_sector[])(field*, int, int) =
     set_button,             //BUTTON, 
     set_checkbox,           //SPRITE_CHECKBOX, 
     set_button,             //SPRITE_BUTTON, 
-    set_none                //CANVAS            
+    set_none,               //CANVAS            
+    set_node                //NODE
 };
 
-void (*draw_sector[])(field*, sector*) =
-{
+void (*draw_sector[])(field*, sector*) = {
     draw_slider,            //SLIDER, 
     draw_step_slider,       //STEP_SLIDER, 
     draw_progress_bar,      //PROGRESS_BAR, 
@@ -529,11 +609,11 @@ void (*draw_sector[])(field*, sector*) =
     draw_button,            //BUTTON, 
     draw_sprite_button,     //SPRITE_CHECKBOX, 
     draw_sprite_button,     //SPRITE_BUTTON, 
-    draw_canvas             //CANVAS                
+    draw_canvas,            //CANVAS                
+    draw_node               //NODE                
 };
 
-void (*drag_sector[])(field*, int, int) =
-{
+void (*drag_sector[])(field*, int, int) = {
     set_slider,             //SLIDER, 
     set_step_slider,        //STEP_SLIDER, 
     set_slider,             //PROGRESS_BAR, 
@@ -544,11 +624,11 @@ void (*drag_sector[])(field*, int, int) =
     set_none,               //BUTTON, 
     set_none,               //SPRITE_CHECKBOX, 
     set_none,               //SPRITE_BUTTON, 
-    set_none                //CANVAS                
+    set_none,               //CANVAS                         
+    drag_node               //NODE                         
 };
 
-void (*scroll_sector[])(field*, int, int) =
-{
+void (*scroll_sector[])(field*, int, int) = {
     scroll_slider,          //SLIDER, 
     scroll_step_slider,     //STEP_SLIDER, 
     scroll_slider,          //PROGRESS_BAR, 
@@ -559,11 +639,11 @@ void (*scroll_sector[])(field*, int, int) =
     set_none,               //BUTTON, 
     set_none,               //SPRITE_CHECKBOX, 
     set_none,               //SPRITE_BUTTON, 
-    set_none                //CANVAS                
+    set_none,               //CANVAS                           
+    set_none                //NODE
 };
 
-void (*leave_sector[])(field*, int, int) =
-{
+void (*leave_sector[])(field*, int, int) = {
     set_none,               //SLIDER, 
     set_none,               //STEP_SLIDER, 
     set_none,               //PROGRESS_BAR, 
@@ -574,10 +654,27 @@ void (*leave_sector[])(field*, int, int) =
     release_button,         //BUTTON, 
     set_none,               //SPRITE_CHECKBOX, 
     release_button,         //SPRITE_BUTTON, 
-    set_none                //CANVAS                
+    set_none,               //CANVAS                
+    set_none                //NODE
 };
 
-    
+
+void release_none(sector*, int, int) {}
+
+void (*release_sector[])(sector*, int, int) = {
+    release_none,           //SLIDER, 
+    release_none,           //STEP_SLIDER, 
+    release_none,           //PROGRESS_BAR, 
+    release_none,           //SPRITE_SLIDER,
+    release_none,           //SPRITE_INF_SLIDER,
+    release_none,           //SOCKET,
+    release_none,           //CHECKBOX, 
+    release_none,           //BUTTON, 
+    release_none,           //SPRITE_CHECKBOX, 
+    release_none,           //SPRITE_BUTTON, 
+    release_none,           //CANVAS                
+    release_node            //NODE
+}; 
     
     
     

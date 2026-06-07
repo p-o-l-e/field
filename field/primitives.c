@@ -2,7 +2,16 @@
 #include <string.h>
 #include "primitives.h"
 
-point32u uv_to_screen(float x, float y, uint32_t w, uint32_t h) {
+/**************************************************************************************************************************
+ * Returns 8-bit value
+ * Data : 0x FF FF FF FF
+ * index:     3  2  1  0     MSB->LSB
+ * ***********************************************************************************************************************/
+uint8_t extract_byte(uint32_t value, uint_fast8_t byte) [[unsequenced]] {
+    return (value >> (byte * 8)) & 0xFF;
+}
+
+point32u uv_to_screen(float x, float y, uint32_t w, uint32_t h) [[reproducible]] {
     point32u s = {
         .x = (uint32_t)(x * (float)w),
         .y = (uint32_t)(y * (float)h)
@@ -10,12 +19,36 @@ point32u uv_to_screen(float x, float y, uint32_t w, uint32_t h) {
     return s;
 }
 
-point screen_to_uv(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+point screen_to_uv(uint32_t x, uint32_t y, uint32_t w, uint32_t h) [[reproducible]] {
     point n = {
         .x =  (float)x / (float)w,
         .y =  1.0f - (float)y / (float)h
     };
     return n;
+}
+
+/**************************************************************************************************************************
+ * Returns 32-bit identifier [ AA BB CC DD  ]
+ * AA : Module type
+ * BB : Module id/position
+ * CC : Parameter type
+ * DD : Parameter id/position
+ * ***********************************************************************************************************************/
+uint32_t encode_uid(uint8_t mt, uint8_t mp, uint8_t pt, uint8_t pp)
+{
+    return ((mt << 24) | (mp << 16) | (pt << 8) | pp);
+}
+
+uid32 decode_uid(uint32_t data)
+{
+    uid32 uid = {
+        .mt = extract_byte(data, MT),
+        .mp = extract_byte(data, MP),
+        .pt = extract_byte(data, PT),
+        .pp = extract_byte(data, PP)
+    };
+
+    return uid;
 }
 
 void draw_rectangle(frame* canvas, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour)

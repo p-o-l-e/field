@@ -1,5 +1,7 @@
 #pragma once
 
+#include "field/colours.h"
+#include "field/primitives.h"
 #include <GLFW/glfw3.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -69,10 +71,8 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mod
                 glfwGetCursorPos(window, &x, &y);
 
                 hit_test_down(context, (int)x, (int)y, LMB);
-                context->at[context->current].lp.x = x;
-                context->at[context->current].lp.y = y;
 
-                if(context->at[context->current].flag && MOVEABLE)
+                if(context->at[context->current].flags & MOVEABLE)
                     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
             }
@@ -110,9 +110,10 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mod
     }
 }
 
-static void error_callback(int/* error*/, const char* description)
+static void error_callback(int error, const char* description)
 {
     fputs(description, stderr);
+    printf("Error: %d\n", error);
 }
 
 static void key_callback(GLFWwindow* /*window*/, int key, int/* scancode*/, int action, int/* mods*/)
@@ -200,7 +201,7 @@ void* draw_field(void* arg)
 
     field* context = (field*)arg;
 
-    window = glfwCreateWindow(context->canvas.width, context->canvas.height, "FIELD", NULL, NULL);
+    window = glfwCreateWindow(context->layer[FG]->width, context->layer[FG]->height, "FIELD", NULL, NULL);
 
     if (!window)
     {
@@ -234,14 +235,9 @@ void* draw_field(void* arg)
     pthread_barrier_wait(&_init_barrier);
     printf("GLFW Initialized...\n");
 
-    GLuint bg = get_buffer(&context->bg);
-    GLuint fg = get_buffer(&context->canvas);
-
-
-    GLfloat line_vertices[] = {
-        0.1f, 0.1f,
-        0.9f, 0.9f
-    };
+    GLuint bg = get_buffer(context->layer[BG]);
+    GLuint fg = get_buffer(context->layer[FG]);
+    GLuint st = get_buffer(context->layer[ST]);
 
     while (_window_on)
     {
@@ -255,18 +251,26 @@ void* draw_field(void* arg)
             glColor3f(1.0f, 1.0f, 1.0f);
             draw_scene(context);
            
-            update_buffer(&context->bg, bg);
-            update_buffer(&context->canvas, fg);
+            update_buffer(context->layer[BG], bg);
+            update_buffer(context->layer[FG], fg);
 
-            context->repaint = false;
+            if(context->staging)
+                update_buffer(context->layer[ST], st);
         }
 
         if(true)
         {
-            glLineWidth(3.0f); 
+            glLineWidth(2.0f); 
             glEnableClientState(GL_VERTEX_ARRAY);
             glVertexPointer(2, GL_FLOAT, 0, context->at[9].data);
-            glColor3f(0.8f, 0.5f, 0.2f);  // red line
+
+            glColor4ub(
+                extract_byte(ORANGE, 3),
+                extract_byte(ORANGE, 2),
+                extract_byte(ORANGE, 1),
+                extract_byte(ORANGE, 0)
+            );
+
             glDrawArrays(GL_LINE_STRIP, 0, 32);
             glDisableClientState(GL_VERTEX_ARRAY);
         }
@@ -280,6 +284,7 @@ void* draw_field(void* arg)
     
     glDeleteTextures(1, &bg);
     glDeleteTextures(1, &fg);
+    glDeleteTextures(1, &st);
 
     pthread_cond_signal(&_escape_condition);
 

@@ -17,7 +17,8 @@ typedef enum {
     BUTTON, 
     SPRITE_CHECKBOX, 
     SPRITE_BUTTON, 
-    CANVAS
+    CANVAS,
+    NODE
 
 } sector_type;
             
@@ -28,45 +29,71 @@ typedef enum {
 
 } mouse_button;
 
+typedef enum { 
+    PRESS,
+    PRIOR,
+
+} mouse_position;
+
+typedef enum { 
+    BG,
+    FG,
+    SC,                         // controls stencil
+    SN,                         // nodes stencil
+    ST,                         // staging
+    CC,                         // controls count
+
+} field_layer;
+
 typedef enum {
-    VERTICAL = 1 << 0,
-    MOVEABLE = 1 << 1,
+    VERTICAL    = 1 << 0,
+    MOVEABLE    = 1 << 1,
 
 } sector_flags;
 
-/*****************************************************************************************************************************/
+typedef enum {
+    ROOT        = 1 << 0,
 
-typedef struct
+} field_flags;
+
+/*****************************************************************************************************************************/
+typedef struct field field;
+typedef struct sector sector;
+
+typedef struct sector
 {
-    uint32_t        id;         // Unique identifier
-    ltrb32          bounds;     // Rectangle area
-    sector_type     type;       // Defined in sector_type 
-    void*           data;       // Type dependent data
-    float           value;
-    float           range;
-    float           step;
-    point           lp;         // Last cursor position
-    bool            visible;
-    bool            hovered;
-    bool            repaint;
-    bool            on;       
-    uint32_t        flag;
-    void (*callback)();         // Callback
-    struct sector*  to;         // Linked node
+    uint32_t    id;             // Unique identifier
+    ltrb32s     bounds;         // Rectangle area
+    uint32_t    width;
+    uint32_t    height;
+    sector_type type;           // Defined in sector_type 
+    void*       data;           // Type dependent data
+    float       value;
+    float       range;
+    float       step;
+    bool        visible;
+    bool        hovered;
+    bool        repaint;
+    bool        on;       
+    uint32_t    flags;
+    uint32_t    nodes;
+    uint32_t    capacity;
+    void        (*callback)();
+    field*      container;
+    sector*     root;
+    sector**    node;
 
 } sector;
 
 /*****************************************************************************************************************************/
 
-typedef struct 
+typedef struct field
 {
-    ltrb32      bounds;
+    ltrb32s     bounds;
     uint32_t    width;
     uint32_t    height;
-    frame       canvas;         // Foreground
-    frame       stencil;        // HitTest data
-    frame       staging;        // Pending data
-    frame       bg;             // Backgroung
+    point32s    mp[2];
+    frame*      layer[CC];      
     sector*     at;             // Controls array
     uint32_t    current;        // HitTest return
     uint32_t    prior;          // Last HitTest
@@ -75,17 +102,23 @@ typedef struct
     bool        refresh;        // Swap buffer flag
     bool        drag;           // Sector drag flag
     bool        move;           // Window drag flag
+    bool        staging;        // Draw staging layer
+    uint32_t    nodes;    
+    uint32_t    capacity;
+    uint32_t    flags;
+    uint32_t    step;
 
 } field;
 
 void empty();
-void draw_scene   (field* o);
+void draw_scene(field* o);
 
+void link_sector(sector*, sector*);
 
 /*****************************************************************************************************************************/
 
 void createSector (field* o, int position, sector_type type, int x, int y, int w, int h, uint32_t flags);
-void init_field   (field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, unsigned size);
+void init_field   (field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags);
 void destroy_field(field* o);
 
 /*****************************************************************************************************************************/
@@ -138,6 +171,13 @@ void set_socket(field*, int, int);
 
 /*****************************************************************************************************************************/
 
+void init_node(sector*);
+void draw_node(field*, sector*);
+void drag_node(field*, int, int);
+void set_node(field*, int, int);
+
+/*****************************************************************************************************************************/
+
 void set_none(field*, int, int);
 void draw_canvas(field*, sector*);
 
@@ -147,3 +187,4 @@ extern void (*draw_sector[])(field*, sector*);
 extern void (*drag_sector[])(field*, int, int);
 extern void (*scroll_sector[])(field*, int, int);
 extern void (*leave_sector[])(field*, int, int);
+extern void (*release_sector[])(sector*, int, int);

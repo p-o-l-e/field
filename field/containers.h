@@ -14,7 +14,16 @@ typedef struct
     uint32_t r;
     uint32_t b;
 
-} ltrb32;
+} ltrb32u;
+
+typedef struct 
+{
+    int32_t l;
+    int32_t t;
+    int32_t r;
+    int32_t b;
+
+} ltrb32s;
 
 typedef struct 
 {
@@ -23,7 +32,7 @@ typedef struct
     uint64_t r;
     uint64_t b;
 
-} ltrb64;
+} ltrb64u;
 
 /******************************************************************************************************************************/
 
@@ -40,6 +49,13 @@ typedef struct
     uint32_t y;
     
 } point32u;
+
+typedef struct 
+{
+    int32_t x;
+    int32_t y;
+    
+} point32s;
 
 /******************************************************************************************************************************/
 

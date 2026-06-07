@@ -62,25 +62,36 @@ int main(int, char**)
     }
 
     {
-        init_field (&context, 0, 0, WIDTH, HEIGHT, 16);
-        createSector(&context, 1, SLIDER, 20, 60, 20, 80, MOVEABLE | VERTICAL);
-        context.at[1].range = 8;
-
-        createSector(&context, 2, STEP_SLIDER, 50, 60, 20, 80, MOVEABLE | VERTICAL);
-        context.at[2].range = 4;
-
-        createSector(&context, 3, SLIDER, 80, 60, 180, 10, MOVEABLE);
-        context.at[3].range = 8;
-
-        createSector(&context, 4, STEP_SLIDER, 80, 80, 180, 10, MOVEABLE);
-        context.at[4].range = 4;
+        init_field (&context, 0, 0, WIDTH, HEIGHT, 16, ROOT);
+        createSector(&context,  1, NODE    , 10,  10, 300, 200, MOVEABLE);
         
-        createSector(&context, 5, BUTTON, 20, 160, 20, 20, 0);
-        context.at[5].callback = &button_call;
+        createSector(&context,  2, SLIDER, 20, 60, 20, 80, MOVEABLE | VERTICAL);
+        context.at[2].range = 8;
 
-        createSector(&context, 7, CHECKBOX, 50, 160, 10, 10, 0);
-        createSector(&context, 8, CHECKBOX, 70, 160, 10, 10, 0);
-        createSector(&context, 9, SOCKET  , 90, 160, 10, 10, MOVEABLE);
+        createSector(&context,  3, STEP_SLIDER, 50, 60, 20, 80, MOVEABLE | VERTICAL);
+        context.at[3].range = 4;
+
+        createSector(&context,  4, SLIDER, 80, 60, 180, 10, MOVEABLE);
+        context.at[4].range = 8;
+
+        createSector(&context,  5, STEP_SLIDER, 80, 80, 180, 10, MOVEABLE);
+        context.at[5].range = 4;
+        
+        createSector(&context,  6, BUTTON, 20, 160, 20, 20, 0);
+        context.at[6].callback = &button_call;
+
+        createSector(&context,  7, CHECKBOX, 50, 160, 10, 10, 0);
+        createSector(&context,  8, CHECKBOX, 70, 160, 10, 10, 0);
+        createSector(&context,  9, SOCKET  , 90, 160, 10, 10, MOVEABLE);
+
+        link_sector(&context.at[1], &context.at[2]);
+        
+    }
+
+    field node;
+    {
+   //     frame_clr(node.bg, YELLOW);
+
     }
 
     pthread_mutex_init(&_screen_lock, NULL);
@@ -94,11 +105,11 @@ int main(int, char**)
     pthread_barrier_destroy(&_init_barrier);
    
 
-    frame_clr(&context.bg, BACKGROUND);
+    frame_clr(context.layer[BG], BACKGROUND);
 
-    draw_text_label(&context.bg, gtFont, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 20, 20, 0, 0, TEXT);
-    draw_text_label(&context.bg, gtFont, "abcdefghijklmnopqrstuvwxyz", 20, 30, 0, 0, TEXT);
-    draw_text_label(&context.bg, gtFont, "0123456789!#$^&*()[]{}/:;,", 20, 40, 0, 0, TEXT);
+    draw_text_label(context.layer[BG], gtFont, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 20, 20, 0, 0, TEXT);
+    draw_text_label(context.layer[BG], gtFont, "abcdefghijklmnopqrstuvwxyz", 20, 30, 0, 0, TEXT);
+    draw_text_label(context.layer[BG], gtFont, "0123456789!#$^&*()[]{}/:;,", 20, 40, 0, 0, TEXT);
 
     while (_switch_on)
     {   
