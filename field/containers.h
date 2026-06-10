@@ -83,7 +83,8 @@ typedef struct
 
 uint32_t frame_get  (frame* o, uint32_t x, uint32_t y);
 void frame_pset     (frame* o, uint32_t x, uint32_t y, uint32_t value);
-void frame_clr      (frame* o, uint32_t value);
+void frame_fill     (frame* o, uint32_t value);
+void frame_clr      (frame*);
 void frame_init     (frame* o, uint32_t x, uint32_t y);
 void frame_flush    (frame* o);
 void frame_copy     (frame* target, frame* source);

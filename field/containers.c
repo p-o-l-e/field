@@ -1,5 +1,6 @@
 #include "containers.h"
 #include <stdint.h>
+#include <string.h>
 
 /******************************************************************************************************************************/
 
@@ -37,7 +38,12 @@ uint32_t frame_get(frame* o, uint32_t x, uint32_t y)
     return o->data[0];
 }
 
-void frame_clr(frame* o, uint32_t value)
+void frame_clr(frame* o)
+{
+    memset(o->data, 0, o->height * o->width * sizeof(uint32_t));
+}
+
+void frame_fill(frame* o, uint32_t value)
 {
     for(uint32_t i = 0; i < (o->height * o->width); ++i) o->data[i] = value;
 }

@@ -236,6 +236,7 @@ void* draw_field(void* arg)
     printf("GLFW Initialized...\n");
 
     GLuint bg = get_buffer(context->layer[BG]);
+    GLuint ng = get_buffer(context->layer[NG]);
     GLuint fg = get_buffer(context->layer[FG]);
     GLuint st = get_buffer(context->layer[ST]);
 
@@ -252,6 +253,7 @@ void* draw_field(void* arg)
             draw_scene(context);
            
             update_buffer(context->layer[BG], bg);
+            update_buffer(context->layer[NG], ng);
             update_buffer(context->layer[FG], fg);
 
             if(context->staging)

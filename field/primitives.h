@@ -25,5 +25,6 @@ uid32 decode_uid(uint32_t);
 void draw_glyph(frame*, const uint8_t*, uint32_t, uint32_t, uint32_t, const uint32_t);
 void draw_text_label(frame*, const uint8_t* , const char*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
 void draw_rectangle(frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
-void draw_rectangle_filled(frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
-
+void draw_ltrb_o(frame*, ltrb32u*, const uint32_t);
+void draw_rect_f(frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+void draw_ltrb_f(frame*, ltrb32u*, const uint32_t);

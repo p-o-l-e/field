@@ -66,12 +66,30 @@ void draw_rectangle(frame* canvas, uint32_t l, uint32_t t, uint32_t r, uint32_t 
     }
 }
 
-void draw_rectangle_filled(frame* canvas, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour)
+void draw_ltrb_o(frame* canvas, ltrb32u* r, const uint32_t colour) {
+    for(uint32_t i = r->l; i <= r->r; ++i) {
+        frame_pset(canvas, i, r->t, colour);
+        frame_pset(canvas, i, r->b, colour);
+    }
+    for(uint32_t i = r->t; i <= r->b; i++) {
+        frame_pset(canvas, r->l, i, colour);
+        frame_pset(canvas, r->r, i, colour);
+    }
+}
+
+void draw_rect_f(frame* canvas, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour)
 {
-    for(uint32_t y = t; y <= b; y++)
-    {
-        for(uint32_t x = l; x <= r; x++)
-        {
+    for(uint32_t y = t; y <= b; ++y) {
+        for(uint32_t x = l; x <= r; ++x) {
+            frame_pset(canvas, x, y, colour);
+        }
+    }
+}
+
+void draw_ltrb_f(frame* canvas, ltrb32u* r, const uint32_t colour)
+{
+    for(uint32_t y = r->t; y <= r->b; ++y) {
+        for(uint32_t x = r->l; x <= r->r; ++x) {
             frame_pset(canvas, x, y, colour);
         }
     }

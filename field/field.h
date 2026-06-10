@@ -18,6 +18,7 @@ typedef enum {
     SPRITE_CHECKBOX, 
     SPRITE_BUTTON, 
     CANVAS,
+    TEXTBOX,
     NODE
 
 } sector_type;
@@ -35,8 +36,9 @@ typedef enum {
 
 } mouse_position;
 
-typedef enum { 
+typedef enum: uint32_t { 
     BG,
+    NG,                         // nodes
     FG,
     SC,                         // controls stencil
     SN,                         // nodes stencil
@@ -45,7 +47,7 @@ typedef enum {
 
 } field_layer;
 
-typedef enum {
+typedef enum: uint32_t {
     VERTICAL    = 1 << 0,
     MOVEABLE    = 1 << 1,
 
@@ -63,7 +65,7 @@ typedef struct sector sector;
 typedef struct sector
 {
     uint32_t    id;             // Unique identifier
-    ltrb32s     bounds;         // Rectangle area
+    ltrb32u     bounds;         // Rectangle area
     uint32_t    width;
     uint32_t    height;
     sector_type type;           // Defined in sector_type 
@@ -89,12 +91,14 @@ typedef struct sector
 
 typedef struct field
 {
-    ltrb32s     bounds;
+    ltrb32u     bounds;
     uint32_t    width;
     uint32_t    height;
     point32s    mp[2];
+    point32s    lt[1];
     frame*      layer[CC];      
     sector*     at;             // Controls array
+    sector*     pressed;
     uint32_t    current;        // HitTest return
     uint32_t    prior;          // Last HitTest
     uint32_t    count;          // Controls quantity
@@ -114,12 +118,14 @@ void empty();
 void draw_scene(field* o);
 
 void link_sector(sector*, sector*);
+void move_sector(sector*, ltrb32u*);
+void erase_sector(sector*);
 
 /*****************************************************************************************************************************/
 
-void createSector (field* o, int position, sector_type type, int x, int y, int w, int h, uint32_t flags);
-void init_field   (field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags);
-void destroy_field(field* o);
+sector* createSector (field*, sector*, int, sector_type, int, int, int, int, uint32_t);
+void init_field   (field*, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+void destroy_field(field*);
 
 /*****************************************************************************************************************************/
 
@@ -175,6 +181,12 @@ void init_node(sector*);
 void draw_node(field*, sector*);
 void drag_node(field*, int, int);
 void set_node(field*, int, int);
+
+/*****************************************************************************************************************************/
+
+void init_textbox(sector*);
+void draw_textbox(field*, sector*);
+void set_textbox(field*, int, int);
 
 /*****************************************************************************************************************************/
 

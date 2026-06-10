@@ -7,7 +7,6 @@
 #include "primitives.h"
 #include "sdfaabb.h"
 #include <stdint.h>
-#include <string.h>
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
@@ -15,7 +14,7 @@
 
 /*****************************************************************************************************************************/
 
-sector* createSector(field* o, sector* node, int pos, sector_type type, int x, int y, int w, int h, uint32_t flags) {
+void createSector(field* o, int pos, sector_type type, int x, int y, int w, int h, uint32_t flags) {
     o->at[pos].type         = type;
     o->at[pos].bounds.l     = x;
     o->at[pos].bounds.t     = y;
@@ -31,18 +30,16 @@ sector* createSector(field* o, sector* node, int pos, sector_type type, int x, i
     o->at[pos].flags        = flags;
     o->at[pos].container    = o;
 
-    draw_ltrb_f (
+    draw_rectangle_filled (
         o->layer[SC],
-        &o->at[pos].bounds,
+        o->at[pos].bounds.l,
+        o->at[pos].bounds.t, 
+        o->at[pos].bounds.r, 
+        o->at[pos].bounds.b, 
         o->at[pos].id
     );
 
     init_sector[type](&o->at[pos]);
-
-    if(node)
-        link_sector(node, &o->at[pos]);
-
-    return &o->at[pos];
 }
 
 void init_field(field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags) {
@@ -103,26 +100,10 @@ void link_sector(sector* parent, sector* child) {
     ++parent->nodes;
 }
 
-void move_sector(sector* s, ltrb32u* bounds) {
-    draw_ltrb_f(s->container->layer[FG], &s->bounds, 0x0);
-    draw_ltrb_f(s->container->layer[SC], &s->bounds, 0x0);
-    
-    draw_ltrb_f(s->container->layer[SC], bounds, s->id);
-
-    s->bounds = *bounds;
-}
-
 /*****************************************************************************************************************************/
 
 void hit_test_down(field* o, int x, int y, mouse_button button) {
     o->current = frame_get(o->layer[SC], x, y);
-
-    // drag
-    {
-        o->pressed = &o->at[o->current];
-        o->lt[0].x = o->pressed->bounds.l;
-        o->lt[0].y = o->pressed->bounds.t;
-    }
 
     o->mp[PRESS].x = x;
     o->mp[PRESS].y = y;
@@ -134,9 +115,12 @@ void hit_test_down(field* o, int x, int y, mouse_button button) {
         if (button == LMB) o->drag = true;
         o->staging = true;
 
-        draw_ltrb_f(
+        draw_rectangle_filled(
             o->at[o->current].container->layer[SN],
-            &o->at[o->current].bounds, 
+            o->at[o->current].bounds.l, 
+            o->at[o->current].bounds.t, 
+            o->at[o->current].bounds.r, 
+            o->at[o->current].bounds.b, 
             0x0
         );
 
@@ -177,7 +161,7 @@ void hit_test_drag(field* o, int x, int y) {
 void hit_test_up(field* o, int x, int y, mouse_button button) {
     o->current = frame_get(o->layer[SC], x, y);
     leave_sector[o->at[o->prior].type](o, x, y);
-    release_sector[o->pressed->type](o->pressed, x, y);
+    release_sector[o->at[o->current].type](&o->at[o->current], x, y);
 
     o->drag    = false;
     o->move    = false;
@@ -199,28 +183,28 @@ void hit_test_up(field* o, int x, int y, mouse_button button) {
 /*****************************************************************************************************************************/
 
 void draw_slider(field* o, sector* c) {
-    draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
-    draw_ltrb_o(o->layer[FG], &c->bounds, BORDER);
+    draw_rectangle_filled(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
+    draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
 
     if(c->flags & VERTICAL) {
         int w   = c->bounds.b - c->bounds.t - GRIP * 2 - GAP * 2;
         int pos = (int)((c->range - c->value)/c->range * (float)w) + c->bounds.t + GRIP + GAP;
-        draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, SELECTIONBACKGROUND);
     }
     else {
         int w   = c->bounds.r - c->bounds.l - GRIP * 2 - GAP * 2;
         int pos = (int)(c->value/c->range * (float)w) + c->bounds.l + GRIP + GAP;
-        draw_rect_f(o->layer[FG], pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     }
 
     c->repaint = false;
 }
 
 void draw_checkbox(field* o, sector* c) {
-    draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
-    draw_ltrb_o(o->layer[FG], &c->bounds, BORDER);
+    draw_rectangle_filled(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
+    draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
     if(c->value > 0.5f)
-        draw_rect_f(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     c->repaint = false;
 }
 
@@ -278,18 +262,18 @@ void set_step_slider(field* o, int x, int y) {
 }
 
 void draw_step_slider(field* o, sector* c) {
-    draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
-    draw_ltrb_o(o->layer[FG], &c->bounds, BORDER);
+    draw_rectangle_filled(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
+    draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
 
     if(c->flags & VERTICAL) {
         int w   = c->bounds.b - c->bounds.t - GRIP * 2 - GAP * 2;
         int pos = (int)((c->range - c->value)/c->range * (float)w) + c->bounds.t + GRIP + GAP;
-        draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, SELECTIONBACKGROUND);
     }
     else {
         int w   = c->bounds.r - c->bounds.l - GRIP * 2 - GAP  *2;
         int pos = (int)(c->value/c->range * (float)w) + c->bounds.l + GRIP + GAP;
-        draw_rect_f(o->layer[FG], pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     }
 
     c->repaint = false;
@@ -314,35 +298,33 @@ void scroll_step_slider(field* o, int x, int y) {
 }
 
 void draw_progress_bar(field* o, sector* c) {
-    draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
+    draw_rectangle_filled(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
     draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
 
     if(o->at[o->current].flags & VERTICAL) {
         int w   = c->bounds.b - c->bounds.t - GAP;
         int pos = (int)((c->range - c->value)/c->range * (float)w) + c->bounds.t + GAP;
-        draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, pos, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     }
     else {
         int w   = c->bounds.r - c->bounds.l - GAP;
         int pos = (int)(c->value/c->range * (float)w) + c->bounds.l;
-        draw_rect_f(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, pos, c->bounds.b - GAP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, pos, c->bounds.b - GAP, SELECTIONBACKGROUND);
     }
 
     c->repaint = false;
 }
 
 void draw_button(field* o, sector* c) {
-    draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
-    draw_ltrb_o(o->layer[FG], &c->bounds, BORDER);
+    draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
 
-    if(c->hovered)
-        draw_rect_f(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, ACTIVE);
-
-    if(c->value > 0.5f)
-        draw_rect_f(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, ACCENT);
-    c->repaint = false;
-    
+    auto colour = c->hovered ? ACTIVE : BUTTONS;
     printf("Draw Button\n");
+
+    draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, colour);
+    if(c->value > 0.5f)
+        draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, ACCENT);
+    c->repaint = false;
 }
 
 void draw_sprite_slider(field* o, sector* c) {
@@ -420,10 +402,10 @@ void set_socket(field* o, int, int) {
 }
 
 void draw_socket(field* o, sector* c) {
-    draw_ltrb_f(o->layer[FG], &c->bounds, BACKGROUND);
+    draw_rectangle_filled(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, BACKGROUND);
     draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
     if(c->value > 0.5f)
-        draw_rect_f(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+        draw_rectangle_filled(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     c->repaint = false;
 }
 
@@ -489,15 +471,13 @@ void set_node(field* o, int, int) {
 
 void draw_node(field* o, sector* c) {
 
-    auto L = o->staging ? ST : NG;
+    auto L = o->staging ? ST : BG;
 
-    if(L == ST) {
+    if(L == ST)
         frame_clr(o->layer[L]);
-        draw_rectangle(o->layer[L], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, HIGHLIGHT);
-    }
-    else
-        draw_ltrb_f(o->layer[L], &c->bounds, SECONDBACKGROUND);
 
+    draw_rectangle_filled(o->layer[L], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, HIGHLIGHT);
+    draw_rectangle(o->layer[L], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
 
     c->repaint = false;
 }
@@ -547,73 +527,20 @@ void drag_node(field* o, int x, int y)
 
 void release_node(sector* s, int x, int y) 
 {
-    ltrb32u ir = {
-        .l = s->container->lt[PRESS].x, 
-        .t = s->container->lt[PRESS].y, 
-        .r = s->container->lt[PRESS].x + s->width, 
-        .b = s->container->lt[PRESS].y + s->height
-    };
-
-    draw_ltrb_f(s->container->layer[SC], &ir, 0x0);
-    draw_ltrb_f(s->container->layer[NG], &ir, 0x0);
-    draw_ltrb_f(s->container->layer[FG], &ir, 0x0);
-
-    draw_ltrb_f(s->container->layer[SC], &s->bounds, s->id);
-
-
-    int dx = s->bounds.l - s->container->lt[PRESS].x;
-    int dy = s->bounds.t - s->container->lt[PRESS].y;
-
-    for(uint32_t i = 0; i < s->nodes; ++i) {
-
-        ltrb32u r = {
-            .l = s->node[i]->bounds.l + dx,
-            .t = s->node[i]->bounds.t + dy,
-            .r = s->node[i]->bounds.r + dx,
-            .b = s->node[i]->bounds.b + dy
-        };
-
-        move_sector(s->node[i], &r);
-
-        s->node[i]->repaint = true;
-    }
-
+    draw_rectangle_filled(
+        s->container->layer[SN],
+        s->bounds.l, 
+        s->bounds.t, 
+        s->bounds.r, 
+        s->bounds.b, 
+        s->id
+    );
 
     frame_clr(s->container->layer[ST]);
     s->container->staging = false;
     s->repaint = true;
     s->container->repaint = true;
     s->container->refresh = true;
-
-    printf("-- Node Released ");
-}
-
-/*****************************************************************************************************************************/
-
-void init_textbox(sector* s) {
-    s->data = (char*)calloc(16, sizeof(char));
-}
-
-void set_textbox(field* o, int, int) {
-    o->at[o->current].repaint = true;
-    char *text = o->at[o->current].data;
-    strcpy(text, "text\0");
-}
-
-void draw_textbox(field* o, sector* c) {
-    char *text = o->at[o->current].data;
-    draw_text_label(
-        o->layer[FG],
-        gtFont,
-        "text",
-        20,
-        20,
-        0,
-        0,
-        TEXT
-    );
-
-    c->repaint = false;
 }
 
 /*****************************************************************************************************************************/
@@ -621,17 +548,17 @@ void draw_textbox(field* o, sector* c) {
 void draw_canvas(field* o, sector*) 
 {
     if(true) {
-        for(uint32_t x = o->step; x < o->layer[BG]->width; x += o->step) {
-            for(uint32_t y = 0; y < o->layer[BG]->height; ++y) {
+        for(uint32_t x = o->step; x < o->layer[FG]->width; x += o->step) {
+            for(uint32_t y = 0; y < o->layer[FG]->height; ++y) {
                 if(!frame_get(o->layer[SC], x, y))
-                    frame_pset(o->layer[BG], x, y, DIMMED);
+                    frame_pset(o->layer[FG], x, y, DIMMED);
             }
         }
 
-        for(uint32_t y = o->step; y < o->layer[BG]->height; y += o->step) {
-            for(uint32_t x = 0; x < o->layer[BG]->width; ++x) {
+        for(uint32_t y = o->step; y < o->layer[FG]->height; y += o->step) {
+            for(uint32_t x = 0; x < o->layer[FG]->width; ++x) {
                 if(!frame_get(o->layer[SC], x, y))
-                    frame_pset(o->layer[BG], x, y, DIMMED);
+                    frame_pset(o->layer[FG], x, y, DIMMED);
             }
         }
     }
@@ -642,118 +569,111 @@ void init_none(sector*) {}
 
 /*****************************************************************************************************************************/
 void (*init_sector[])(sector*) = {
-    [SLIDER]                = init_none,  
-    [STEP_SLIDER]           = init_none,  
-    [PROGRESS_BAR]          = init_none,  
-    [SPRITE_SLIDER]         = init_none,  
-    [SPRITE_INF_SLIDER]     = init_none,  
-    [SOCKET]                = init_socket,
-    [CHECKBOX]              = init_none,  
-    [BUTTON]                = init_none,  
-    [SPRITE_CHECKBOX]       = init_none,  
-    [SPRITE_BUTTON]         = init_none,  
-    [CANVAS]                = init_none,  
-    [TEXTBOX]               = init_textbox,  
-    [NODE]                  = init_node,  
+    init_none,              //SLIDER, 
+    init_none,              //STEP_SLIDER, 
+    init_none,              //PROGRESS_BAR, 
+    init_none,              //SPRITE_SLIDER,
+    init_none,              //SPRITE_INF_SLIDER,
+    init_socket,            //SOCKET,
+    init_none,              //CHECKBOX, 
+    init_none,              //BUTTON, 
+    init_none,              //SPRITE_CHECKBOX, 
+    init_none,              //SPRITE_BUTTON, 
+    init_none,              //CANVAS            
+    init_node,              //NODE        
 };
 
 void (*set_sector[])(field*, int, int) = {
-    [SLIDER]                = set_slider,            
-    [STEP_SLIDER]           = set_step_slider,       
-    [PROGRESS_BAR]          = set_slider,            
-    [SPRITE_SLIDER]         = set_sprite_slider,     
-    [SPRITE_INF_SLIDER]     = set_sprite_inf_slider, 
-    [SOCKET]                = set_socket,            
-    [CHECKBOX]              = set_checkbox,          
-    [BUTTON]                = set_button,            
-    [SPRITE_CHECKBOX]       = set_checkbox,          
-    [SPRITE_BUTTON]         = set_button,            
-    [CANVAS]                = set_none,              
-    [TEXTBOX]               = set_textbox,
-    [NODE]                  = set_node               
+    set_slider,             //SLIDER, 
+    set_step_slider,        //STEP_SLIDER, 
+    set_slider,             //PROGRESS_BAR, 
+    set_sprite_slider,      //SPRITE_SLIDER,
+    set_sprite_inf_slider,  //SPRITE_INF_SLIDER,
+    set_socket,             //SOCKET,
+    set_checkbox,           //CHECKBOX, 
+    set_button,             //BUTTON, 
+    set_checkbox,           //SPRITE_CHECKBOX, 
+    set_button,             //SPRITE_BUTTON, 
+    set_none,               //CANVAS            
+    set_node                //NODE
 };
 
 void (*draw_sector[])(field*, sector*) = {
-    [SLIDER]                = draw_slider,        
-    [STEP_SLIDER]           = draw_step_slider,   
-    [PROGRESS_BAR]          = draw_progress_bar,  
-    [SPRITE_SLIDER]         = draw_sprite_slider, 
-    [SPRITE_INF_SLIDER]     = draw_sprite_slider, 
-    [SOCKET]                = draw_socket,        
-    [CHECKBOX]              = draw_checkbox,      
-    [BUTTON]                = draw_button,        
-    [SPRITE_CHECKBOX]       = draw_sprite_button, 
-    [SPRITE_BUTTON]         = draw_sprite_button, 
-    [CANVAS]                = draw_canvas,        
-    [TEXTBOX]               = draw_textbox,
-    [NODE]                  = draw_node           
+    draw_slider,            //SLIDER, 
+    draw_step_slider,       //STEP_SLIDER, 
+    draw_progress_bar,      //PROGRESS_BAR, 
+    draw_sprite_slider,     //SPRITE_SLIDER,
+    draw_sprite_slider,     //SPRITE_INF_SLIDER,
+    draw_socket,            //SOCKET,
+    draw_checkbox,          //CHECKBOX, 
+    draw_button,            //BUTTON, 
+    draw_sprite_button,     //SPRITE_CHECKBOX, 
+    draw_sprite_button,     //SPRITE_BUTTON, 
+    draw_canvas,            //CANVAS                
+    draw_node               //NODE                
 };
 
 void (*drag_sector[])(field*, int, int) = {
-    [SLIDER]                = set_slider,           
-    [STEP_SLIDER]           = set_step_slider,      
-    [PROGRESS_BAR]          = set_slider,           
-    [SPRITE_SLIDER]         = set_sprite_slider,    
-    [SPRITE_INF_SLIDER]     = set_sprite_inf_slider,
-    [SOCKET]                = drag_socket,          
-    [CHECKBOX]              = set_none,             
-    [BUTTON]                = set_none,             
-    [SPRITE_CHECKBOX]       = set_none,             
-    [SPRITE_BUTTON]         = set_none,             
-    [CANVAS]                = set_none,             
-    [TEXTBOX]               = set_none,  
-    [NODE]                  = drag_node             
+    set_slider,             //SLIDER, 
+    set_step_slider,        //STEP_SLIDER, 
+    set_slider,             //PROGRESS_BAR, 
+    set_sprite_slider,      //SPRITE_SLIDER,
+    set_sprite_inf_slider,  //SPRITE_INF_SLIDER,     
+    drag_socket,            //SOCKET,
+    set_none,               //CHECKBOX, 
+    set_none,               //BUTTON, 
+    set_none,               //SPRITE_CHECKBOX, 
+    set_none,               //SPRITE_BUTTON, 
+    set_none,               //CANVAS                         
+    drag_node               //NODE                         
 };
 
 void (*scroll_sector[])(field*, int, int) = {
-    [SLIDER]                = scroll_slider,     
-    [STEP_SLIDER]           = scroll_step_slider,
-    [PROGRESS_BAR]          = scroll_slider,     
-    [SPRITE_SLIDER]         = scroll_slider,     
-    [SPRITE_INF_SLIDER]     = scroll_slider,     
-    [SOCKET]                = set_none,          
-    [CHECKBOX]              = set_none,          
-    [BUTTON]                = set_none,          
-    [SPRITE_CHECKBOX]       = set_none,          
-    [SPRITE_BUTTON]         = set_none,          
-    [CANVAS]                = set_none,          
-    [TEXTBOX]               = set_none,  
-    [NODE]                  = set_none           
+    scroll_slider,          //SLIDER, 
+    scroll_step_slider,     //STEP_SLIDER, 
+    scroll_slider,          //PROGRESS_BAR, 
+    scroll_slider,          //SPRITE_SLIDER,
+    scroll_slider,          //SPRITE_INF_SLIDER,
+    set_none,               //SOCKET,
+    set_none,               //CHECKBOX, 
+    set_none,               //BUTTON, 
+    set_none,               //SPRITE_CHECKBOX, 
+    set_none,               //SPRITE_BUTTON, 
+    set_none,               //CANVAS                           
+    set_none                //NODE
 };
 
 void (*leave_sector[])(field*, int, int) = {
-    [SLIDER]                = set_none,         
-    [STEP_SLIDER]           = set_none,         
-    [PROGRESS_BAR]          = set_none,         
-    [SPRITE_SLIDER]         = set_none,         
-    [SPRITE_INF_SLIDER]     = set_none,         
-    [SOCKET]                = set_none,         
-    [CHECKBOX]              = set_none,         
-    [BUTTON]                = release_button,   
-    [SPRITE_CHECKBOX]       = set_none,         
-    [SPRITE_BUTTON]         = release_button,   
-    [CANVAS]                = set_none,         
-    [TEXTBOX]               = set_none,  
-    [NODE]                  = set_none          
+    set_none,               //SLIDER, 
+    set_none,               //STEP_SLIDER, 
+    set_none,               //PROGRESS_BAR, 
+    set_none,               //SPRITE_SLIDER,
+    set_none,               //SPRITE_INF_SLIDER,
+    set_none,               //SOCKET,
+    set_none,               //CHECKBOX, 
+    release_button,         //BUTTON, 
+    set_none,               //SPRITE_CHECKBOX, 
+    release_button,         //SPRITE_BUTTON, 
+    set_none,               //CANVAS                
+    set_none                //NODE
 };
 
 
 void release_none(sector*, int, int) {}
 
 void (*release_sector[])(sector*, int, int) = {
-    [SLIDER]                = release_none,
-    [STEP_SLIDER]           = release_none,
-    [PROGRESS_BAR]          = release_none,
-    [SPRITE_SLIDER]         = release_none,
-    [SPRITE_INF_SLIDER]     = release_none,
-    [SOCKET]                = release_none,
-    [CHECKBOX]              = release_none,
-    [BUTTON]                = release_none,
-    [SPRITE_CHECKBOX]       = release_none,
-    [SPRITE_BUTTON]         = release_none,
-    [CANVAS]                = release_none,
-    [TEXTBOX]               = release_none,  
-    [NODE]                  = release_node 
+    [SLIDER] = release_none,           //SLIDER, 
+    release_none,           //STEP_SLIDER, 
+    release_none,           //PROGRESS_BAR, 
+    release_none,           //SPRITE_SLIDER,
+    release_none,           //SPRITE_INF_SLIDER,
+    release_none,           //SOCKET,
+    release_none,           //CHECKBOX, 
+    release_none,           //BUTTON, 
+    release_none,           //SPRITE_CHECKBOX, 
+    release_none,           //SPRITE_BUTTON, 
+    release_none,           //CANVAS                
+    release_node            //NODE
 }; 
     
     
