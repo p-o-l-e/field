@@ -83,7 +83,7 @@ int main(int, char**)
         createSector(&context, node, 7, CHECKBOX, 50, 160, 10, 10, 0);
         createSector(&context, node, 8, CHECKBOX, 70, 160, 10, 10, 0);
         createSector(&context, node, 9, SOCKET  , 90, 160, 10, 10, MOVEABLE);
-        createSector(&context, node, 10, TEXTBOX, 5, 5, 20, 80, 0);
+        createSector(&context, node, 10, TEXTBOX, 25, 25, 20, 80, 0);
 
     //    link_sector(&context.at[1], &context.at[2]);
         

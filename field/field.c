@@ -176,8 +176,11 @@ void hit_test_drag(field* o, int x, int y) {
 
 void hit_test_up(field* o, int x, int y, mouse_button button) {
     o->current = frame_get(o->layer[SC], x, y);
-    leave_sector[o->at[o->prior].type](o, x, y);
-    release_sector[o->pressed->type](o->pressed, x, y);
+
+    if(o->pressed) {
+        release_sector[o->pressed->type](o->pressed, x, y);
+        o->pressed = nullptr;
+    }
 
     o->drag    = false;
     o->move    = false;
@@ -391,10 +394,17 @@ void set_button(field* o, int, int) {
     o->prior = o->current;
 }
 
-void release_button(field* o, int, int) {
-    if  (o->at[o->prior].value < 0.5f) o->at[o->prior].value = 1.0f;
-    else o->at[o->prior].value = 0.0f;
-    o->at[o->prior].repaint = true;    
+void release_button(sector* s, int, int) {
+    auto p = s->container->pressed; 
+    if(p) {
+        if(p == s) {
+            if  (p->value < 0.5f) p->value = 1.0f;
+            else p->value = 0.0f;
+        }
+        else p->value = 0.0f;
+
+        p->repaint = true;
+    }
 }
 
 void draw_sprite_button(field* o, sector* c) {
@@ -591,7 +601,7 @@ void release_node(sector* s, int x, int y)
 /*****************************************************************************************************************************/
 
 void init_textbox(sector* s) {
-    s->data = (char*)calloc(16, sizeof(char));
+    s->data = (char*)calloc(16, sizeof(char)); 
 }
 
 void set_textbox(field* o, int, int) {
@@ -601,13 +611,13 @@ void set_textbox(field* o, int, int) {
 }
 
 void draw_textbox(field* o, sector* c) {
-    char *text = o->at[o->current].data;
+    char *text = c->data;
     draw_text_label(
         o->layer[FG],
         gtFont,
-        "text",
-        20,
-        20,
+        text,
+        c->bounds.l,
+        c->bounds.t,
         0,
         0,
         TEXT
@@ -729,16 +739,19 @@ void (*leave_sector[])(field*, int, int) = {
     [SPRITE_INF_SLIDER]     = set_none,         
     [SOCKET]                = set_none,         
     [CHECKBOX]              = set_none,         
-    [BUTTON]                = release_button,   
+    [BUTTON]                = set_none,   
     [SPRITE_CHECKBOX]       = set_none,         
-    [SPRITE_BUTTON]         = release_button,   
+    [SPRITE_BUTTON]         = set_none,   
     [CANVAS]                = set_none,         
     [TEXTBOX]               = set_none,  
     [NODE]                  = set_none          
 };
 
 
-void release_none(sector*, int, int) {}
+void release_none(sector* s, int, int) 
+{
+
+}
 
 void (*release_sector[])(sector*, int, int) = {
     [SLIDER]                = release_none,
@@ -748,9 +761,9 @@ void (*release_sector[])(sector*, int, int) = {
     [SPRITE_INF_SLIDER]     = release_none,
     [SOCKET]                = release_none,
     [CHECKBOX]              = release_none,
-    [BUTTON]                = release_none,
+    [BUTTON]                = release_button,
     [SPRITE_CHECKBOX]       = release_none,
-    [SPRITE_BUTTON]         = release_none,
+    [SPRITE_BUTTON]         = release_button,
     [CANVAS]                = release_none,
     [TEXTBOX]               = release_none,  
     [NODE]                  = release_node 

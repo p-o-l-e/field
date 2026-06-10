@@ -158,7 +158,7 @@ void scroll_step_slider(field*, int, int);
 /*****************************************************************************************************************************/
 
 void draw_button(field*, sector*);
-void release_button(field*, int, int);
+void release_button(sector*, int, int);
 void set_button(field*, int, int);
 
 /*****************************************************************************************************************************/
