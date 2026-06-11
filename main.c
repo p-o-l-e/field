@@ -2,6 +2,7 @@
 #include "field/field.h"
 #include "field_glfw.h"
 #include "field/image_load.h"
+#include <stdio.h>
 #include <time.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -15,11 +16,15 @@ static field context;
 
 double last_time = 0;
 
-void button_call()
+static void slider_call(sector* slider, sector* tbox)
 {
-    static int t;
-    t++;
-    printf("BUTTON PRESSED: %d times\n", t);
+    char *text = tbox->data;
+    float val = slider->value;
+
+    snprintf(text, 16, "%.3f", val);
+    tbox->repaint = true;
+
+    printf("Slider callback\n");
 }
 
 void timer_callback(union sigval) 
@@ -65,8 +70,9 @@ int main(int, char**)
         init_field (&context, 0, 0, WIDTH, HEIGHT, 16, ROOT);
         auto node = createSector(&context, nullptr, 1, NODE    , 10,  10, 300, 200, MOVEABLE);
         
-        createSector(&context, node, 2, SLIDER, 20, 60, 20, 80, MOVEABLE | VERTICAL);
+        auto slider = createSector(&context, node, 2, SLIDER, 20, 60, 20, 80, MOVEABLE | VERTICAL);
         context.at[2].range = 8;
+        context.at[2].step = 0.001f;
 
         createSector(&context, node, 3, STEP_SLIDER, 50, 60, 20, 80, MOVEABLE | VERTICAL);
         context.at[3].range = 4;
@@ -78,12 +84,15 @@ int main(int, char**)
         context.at[5].range = 4;
         
         createSector(&context, node, 6, BUTTON, 20, 160, 20, 20, 0);
-        context.at[6].callback = &button_call;
 
         createSector(&context, node, 7, CHECKBOX, 50, 160, 10, 10, 0);
         createSector(&context, node, 8, CHECKBOX, 70, 160, 10, 10, 0);
         createSector(&context, node, 9, SOCKET  , 90, 160, 10, 10, MOVEABLE);
-        createSector(&context, node, 10, TEXTBOX, 25, 25, 20, 80, 0);
+        auto tbox = createSector(&context, node, 10, TEXTBOX, 25, 25, 80, 20, 0);
+
+
+        add_mod_link(slider, tbox, CALLBACK_VALUE, slider_call);
+
 
     //    link_sector(&context.at[1], &context.at[2]);
         

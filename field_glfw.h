@@ -42,7 +42,7 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
     hit_test(context, (int)x, (int)y);
     if(context->current != 0)
     {
-        scroll_sector[context->at[context->current].type](context, (int)xoffset, (int)yoffset);
+        scroll_sector[context->at[context->current].type](&context->at[context->current], (int)xoffset, (int)yoffset);
     }
     context->current = 0;
 }

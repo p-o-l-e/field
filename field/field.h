@@ -21,20 +21,28 @@ typedef enum {
     TEXTBOX,
     NODE
 
-} sector_type;
+} SectorType;
+
+typedef enum {
+    CALLBACK_PRESS,
+    CALLBACK_RELEASE,
+    CALLBACK_VALUE,
+    CALLBACK_LIMIT,
+
+} CallbackType;
             
 typedef enum { 
     LMB,
     MMB,
     RMB
 
-} mouse_button;
+} MouseButton;
 
 typedef enum { 
-    PRESS,
-    PRIOR,
+    CP_PRESS,
+    CP_PRIOR,
 
-} mouse_position;
+} CursorPosition;
 
 typedef enum: uint32_t { 
     BG,
@@ -45,7 +53,7 @@ typedef enum: uint32_t {
     ST,                         // staging
     CC,                         // controls count
 
-} field_layer;
+} FieldLayer;
 
 typedef enum: uint32_t {
     VERTICAL    = 1 << 0,
@@ -62,13 +70,12 @@ typedef enum {
 typedef struct field field;
 typedef struct sector sector;
 
-typedef struct sector
-{
+struct sector {
     uint32_t    id;             // Unique identifier
     ltrb32u     bounds;         // Rectangle area
     uint32_t    width;
     uint32_t    height;
-    sector_type type;           // Defined in sector_type 
+    SectorType  type;           // Defined in sector_type 
     void*       data;           // Type dependent data
     float       value;
     float       range;
@@ -80,22 +87,21 @@ typedef struct sector
     uint32_t    flags;
     uint32_t    nodes;
     uint32_t    capacity;
-    void        (*callback)();
-    field*      container;
+    void        (*callback[CALLBACK_LIMIT])(sector*, sector*);
+    sector*     target[CALLBACK_LIMIT];
+    field*      carrier;
     sector*     root;
     sector**    node;
-
-} sector;
+};
 
 /*****************************************************************************************************************************/
 
-typedef struct field
-{
+struct field {
     ltrb32u     bounds;
     uint32_t    width;
     uint32_t    height;
-    point32s    mp[2];
-    point32s    lt[1];
+    point32s    mp[2];          // Saved cursor position
+    point32s    lt[1];          // Saved left-top position
     frame*      layer[CC];      
     sector*     at;             // Controls array
     sector*     pressed;
@@ -111,27 +117,27 @@ typedef struct field
     uint32_t    capacity;
     uint32_t    flags;
     uint32_t    step;
+};
 
-} field;
-
-void empty();
+void fuse_link(sector*, sector*);
 void draw_scene(field* o);
 
+void add_mod_link(sector*, sector*, CallbackType, void (*)(sector*, sector*));
 void link_sector(sector*, sector*);
 void move_sector(sector*, ltrb32u*);
 void erase_sector(sector*);
 
 /*****************************************************************************************************************************/
 
-sector* createSector (field*, sector*, int, sector_type, int, int, int, int, uint32_t);
+sector* createSector(field*, sector*, uint32_t, SectorType, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 void init_field   (field*, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 void destroy_field(field*);
 
 /*****************************************************************************************************************************/
 
-void hit_test_down(field*, int, int, mouse_button);
+void hit_test_down(field*, int, int, MouseButton);
 void hit_test_drag(field*, int, int);
-void hit_test_up  (field*, int, int, mouse_button);
+void hit_test_up  (field*, int, int, MouseButton);
 void hit_test     (field*, int, int);
 
 /*****************************************************************************************************************************/
@@ -142,7 +148,7 @@ void draw_progress_bar(field*, sector*);
 
 void draw_slider(field*, sector*);
 void set_slider(field*, int, int);
-void scroll_slider (field*, int, int);
+void scroll_slider(sector*, int, int);
 
 /*****************************************************************************************************************************/
 
@@ -153,7 +159,7 @@ void set_checkbox(field*, int, int);
 
 void set_step_slider(field*, int, int);
 void drag_step_lider(field*, int, int);
-void scroll_step_slider(field*, int, int);
+void scroll_step_slider(sector*, int, int);
 
 /*****************************************************************************************************************************/
 
@@ -190,13 +196,12 @@ void set_textbox(field*, int, int);
 
 /*****************************************************************************************************************************/
 
-void set_none(field*, int, int);
 void draw_canvas(field*, sector*);
 
 extern void (*init_sector[])(sector*);
 extern void (*set_sector[])(field*, int, int);
 extern void (*draw_sector[])(field*, sector*);
 extern void (*drag_sector[])(field*, int, int);
-extern void (*scroll_sector[])(field*, int, int);
+extern void (*scroll_sector[])(sector*, int, int);
 extern void (*leave_sector[])(field*, int, int);
 extern void (*release_sector[])(sector*, int, int);
