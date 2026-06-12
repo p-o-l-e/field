@@ -67,36 +67,33 @@ int main(int, char**)
     }
 
     
-        init_field (&context, 0, 0, WIDTH, HEIGHT, 16, ROOT);
-        auto node = createSector(&context, nullptr, 1, NODE    , 10,  10, 300, 200, MOVEABLE);
-        
-        auto slider = createSector(&context, node, 2, SLIDER, 20, 60, 20, 80, MOVEABLE | VERTICAL);
-        context.at[2].range = 8;
-        context.at[2].step = 0.001f;
-
-        createSector(&context, node, 3, STEP_SLIDER, 50, 60, 20, 80, MOVEABLE | VERTICAL);
-        context.at[3].range = 4;
-
-        createSector(&context, node, 4, SLIDER, 80, 60, 180, 10, MOVEABLE);
-        context.at[4].range = 8;
-
-        createSector(&context, node, 5, STEP_SLIDER, 80, 80, 180, 10, MOVEABLE);
-        context.at[5].range = 4;
-        
-        createSector(&context, node, 6, BUTTON, 20, 160, 20, 20, 0);
-
-        createSector(&context, node, 7, CHECKBOX, 50, 160, 10, 10, 0);
-        createSector(&context, node, 8, CHECKBOX, 70, 160, 10, 10, 0);
-        createSector(&context, node, 9, SOCKET  , 90, 160, 10, 10, MOVEABLE);
-        auto tbox = createSector(&context, node, 10, TEXTBOX, 25, 25, 80, 20, 0);
-
-
-        add_mod_link(slider, tbox, CALLBACK_VALUE, slider_call);
-
-
-    //    link_sector(&context.at[1], &context.at[2]);
-        
+    /*****************************************************************************************************************************/
+    initField (&context, 0, 0, WIDTH, HEIGHT, 26, ROOT);
+    auto node = createSector(&context, nullptr, NODE    , 10,  10, 300, 200, MOVEABLE);
     
+    auto slider = createSector(&context, node, SLIDER, 20, 60, 20, 80, MOVEABLE | VERTICAL);
+    slider->range = 8;
+    slider->step = 0.001f;
+
+    auto vs_slider = createSector(&context, node, STEP_SLIDER, 50, 60, 20, 80, MOVEABLE | VERTICAL);
+    vs_slider->range = 4;
+
+    createSector(&context, node, SLIDER, 80, 60, 180, 10, MOVEABLE);
+    //context.at[4].range = 8;
+
+    createSector(&context, node, STEP_SLIDER, 80, 80, 180, 10, MOVEABLE);
+    //context.at[5].range = 4;
+    
+    createSector(&context, node, BUTTON, 20, 160, 20, 20, 0);
+
+    createSector(&context, node, CHECKBOX, 50, 160, 10, 10, 0);
+    createSector(&context, node, CHECKBOX, 70, 160, 10, 10, 0);
+    createSector(&context, node, SOCKET  , 90, 160, 10, 10, MOVEABLE | INTERCON);
+    auto tbox = createSector(&context, node, TEXTBOX, 25, 25, 80, 20, 0);
+
+    add_mod_link(slider, tbox, CALLBACK_VALUE, slider_call);
+
+    /*****************************************************************************************************************************/
 
     pthread_mutex_init(&_screen_lock, NULL);
     pthread_mutex_init(&_main_lock, NULL);

@@ -30,4 +30,5 @@ target_compile_options(loom PRIVATE
     -Wextra
     -Wpedantic
     #-O3
+    $<$<CONFIG:Debug>:-g>
 )

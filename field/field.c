@@ -15,7 +15,9 @@
 
 /*****************************************************************************************************************************/
 
-sector* createSector(field* o, sector* node, uint32_t pos, SectorType type, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t flags) {
+sector* createSector(field* o, sector* node, SectorType type, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t flags) {
+    auto pos = ++o->sectors;
+
     o->at[pos].type         = type;
     o->at[pos].bounds.l     = x;
     o->at[pos].bounds.t     = y;
@@ -48,7 +50,7 @@ sector* createSector(field* o, sector* node, uint32_t pos, SectorType type, uint
     return &o->at[pos];
 }
 
-void init_field(field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags) {
+void initField(field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags) {
     o->bounds.l     = x;
     o->bounds.t     = y;
     o->bounds.r     = x + w;
@@ -59,10 +61,10 @@ void init_field(field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32
 
     o->drag         = false;
     o->move         = false;
-    o->count        = size + 1u;
+    o->capacity     = size + 1u;
     o->repaint      = true;
     o->refresh      = true;
-    o->nodes        = 0;
+    o->sectors      = 0;
     o->flags        = flags;
     o->step         = 25;
     o->staging      = false;
@@ -79,18 +81,21 @@ void init_field(field* o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32
         frame_fill(o->layer[BG], BACKGROUND);
     }
 
-    o->at = malloc(o->count * sizeof(sector));
-    for(uint32_t i = 0; i < o->count; i++) o->at[i].id = i;
+    o->at = malloc(o->capacity * sizeof(sector));
+    for(uint32_t i = 0; i < o->capacity; i++) o->at[i].id = i;
 
-    o->at[0].type = CANVAS;
+    auto canvas = &o->at[0];
+
+    canvas->type = CANVAS;
+    canvas->carrier = o;
+    canvas->repaint = true;
 
     for(uint32_t i = 0; i < CALLBACK_LIMIT; ++i) {
-        o->at[0].callback[i] = &fuse_link;
+        canvas->callback[i] = &fuse_link;
     }
-
 }
 
-void destroy_field(field* o) {
+void destroyField(field* o) {
     for(uint32_t i = 0; i < CC; ++i) {
         frame_flush(o->layer[i]);
         free(o->layer[i]);
@@ -147,9 +152,14 @@ void hit_test_down(field* o, int x, int y, MouseButton button) {
     o->mp[CP_PRIOR].x = x;
     o->mp[CP_PRIOR].y = y;
 
+    if(p->flags & INTERCON) {
+        o->connecting = true;
+    }
+
     if (p->flags & MOVEABLE) {
         if (button == LMB) o->drag = true;
         o->staging = true;
+        p->staging = true;
 
         draw_ltrb_f(
             p->carrier->layer[SN],
@@ -159,7 +169,7 @@ void hit_test_down(field* o, int x, int y, MouseButton button) {
 
     }
     else {
-        set_sector[p->type](o, x, y);
+        set_sector[p->type](o->pressed, x, y);
     }
     o->repaint = true;
     o->refresh = true;
@@ -187,9 +197,10 @@ void hit_test(field* o, int x, int y) {
 }
 
 void hit_test_drag(field* o, int x, int y) {
-    drag_sector[o->at[o->current].type](o, x, y);
+    drag_sector[o->pressed->type](o->pressed, x, y);
     o->repaint = true;
     o->refresh = true;
+    printf("Hit Test Drag : %d\n", o->pressed->type);
 }
 
 void hit_test_up(field* o, int x, int y, MouseButton button) {
@@ -202,6 +213,7 @@ void hit_test_up(field* o, int x, int y, MouseButton button) {
 
     o->drag    = false;
     o->move    = false;
+    o->connecting = false;
     o->repaint = true;
     o->refresh = true;
 
@@ -219,7 +231,8 @@ void hit_test_up(field* o, int x, int y, MouseButton button) {
 
 /*****************************************************************************************************************************/
 
-void draw_slider(field* o, sector* c) {
+static void draw_slider(sector* c) {
+    auto o = c->carrier;
     draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
     draw_ltrb_o(o->layer[FG], &c->bounds, BORDER);
 
@@ -237,7 +250,8 @@ void draw_slider(field* o, sector* c) {
     c->repaint = false;
 }
 
-void draw_checkbox(field* o, sector* c) {
+static void draw_checkbox(sector* c) {
+    auto o = c->carrier;
     draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
     draw_ltrb_o(o->layer[FG], &c->bounds, BORDER);
     if(c->value > 0.5f)
@@ -246,11 +260,12 @@ void draw_checkbox(field* o, sector* c) {
 }
 
 void draw_scene(field* o) {
-    printf("Draw scene:\n");
-    for(uint32_t i = 0; i < o->count; ++i) {
-        if(o->at[i].repaint) {
-            draw_sector[o->at[i].type](o, &o->at[i]);
-            printf("-- Repaint: %d\n", i);
+    // printf("Draw scene:\n");
+    for(uint32_t i = 0; i <= o->sectors; ++i) {
+        auto s = &o->at[i];
+        if(s->repaint) {
+            draw_sector[s->type](s);
+            // printf("-- Repaint: %d\n", i);
         }
     }
     
@@ -259,50 +274,49 @@ void draw_scene(field* o) {
 
 /*****************************************************************************************************************************/
 
-void set_checkbox(field* o, int x, int y) {
-    if (o->at[o->current].value < 0.5f) o->at[o->current].value = 1.0f;
-    else o->at[o->current].value = 0.0f;
-    o->at[o->current].repaint = true;
+static void set_checkbox(sector* o, int x, int y) {
+    if (o->value < 0.5f) o->value = 1.0f;
+    else o->value = 0.0f;
+    o->repaint = true;
 
     if(false) printf("[%d : %d]", x, y);
 }
 
-void set_slider(field* o, int x, int y) {
-    auto cs = &o->at[o->current];
-
-    if(cs->flags & VERTICAL) {
-        int ys = y - cs->bounds.t;
-        cs->value = cs->range - (float)ys/(float)(cs->bounds.b - cs->bounds.t) * cs->range;
+static void set_slider(sector* o, int x, int y) {
+    if(o->flags & VERTICAL) {
+        int ys = y - o->bounds.t;
+        o->value = o->range - (float)ys/(float)(o->bounds.b - o->bounds.t) * o->range;
     }
     else {
-        int xs = x - cs->bounds.l;
-        cs->value = (float)xs/(float)(cs->bounds.r - cs->bounds.l) * cs->range;
+        int xs = x - o->bounds.l;
+        o->value = (float)xs/(float)(o->bounds.r - o->bounds.l) * o->range;
     }
 
-    if (cs->value < 0.0f) cs->value = 0.0f;
-    if (cs->value > cs->range) cs->value = cs->range;
-    cs->repaint = true;
+    if (o->value < 0.0f) o->value = 0.0f;
+    if (o->value > o->range) o->value = o->range;
+    o->repaint = true;
 
-    cs->callback[CALLBACK_VALUE](cs, cs->target[CALLBACK_VALUE]);
+    o->callback[CALLBACK_VALUE](o, o->target[CALLBACK_VALUE]);
 }
 
-void set_step_slider(field* o, int x, int y) {
-    if(o->at[o->current].flags & VERTICAL) {
-        int ys = y - o->at[o->current].bounds.t;
-        o->at[o->current].value = roundf(o->at[o->current].range - (float)ys/(float)(o->at[o->current].bounds.b - o->at[o->current].bounds.t)*o->at[o->current].range);
+static void set_step_slider(sector* o, int x, int y) {
+    if(o->flags & VERTICAL) {
+        int ys = y - o->bounds.t;
+        o->value = roundf(o->range - (float)ys/(float)(o->bounds.b - o->bounds.t) * o->range);
     }
     else {
-        int xs = x - o->at[o->current].bounds.l;
-        o->at[o->current].value = roundf((float)xs/(float)(o->at[o->current].bounds.r - o->at[o->current].bounds.l)*o->at[o->current].range);
+        int xs = x - o->bounds.l;
+        o->value = roundf((float)xs/(float)(o->bounds.r - o->bounds.l) * o->range);
     }
 
-    if (o->at[o->current].value < 0.0f) o->at[o->current].value = 0.0f;
-    if (o->at[o->current].value > o->at[o->current].range) o->at[o->current].value = o->at[o->current].range;
+    if (o->value < 0.0f) o->value = 0.0f;
+    if (o->value > o->range) o->value = o->range;
 
-    o->at[o->current].repaint = true;
+    o->repaint = true;
 }
 
-void draw_step_slider(field* o, sector* c) {
+static void draw_step_slider(sector* c) {
+    auto o = c->carrier;
     draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
     draw_ltrb_o(o->layer[FG], &c->bounds, BORDER);
 
@@ -320,7 +334,7 @@ void draw_step_slider(field* o, sector* c) {
     c->repaint = false;
 }
 
-void scroll_slider(sector* o, int x, int y) {
+static void scroll_slider(sector* o, int x, int y) {
     o->value += (float) y * o->step;
     if (o->value < 0.0f) o->value = 0.0f;
     if (o->value > o->range) o->value = o->range;
@@ -330,7 +344,7 @@ void scroll_slider(sector* o, int x, int y) {
     o->callback[CALLBACK_VALUE](o, o->target[CALLBACK_VALUE]);
 }
 
-void scroll_step_slider(sector* o, int x, int y) {
+static void scroll_step_slider(sector* o, int x, int y) {
     o->value += (float) y;
     if (o->value < 0.0f) o->value = 0.0f;
     if (o->value > o->range) o->value = o->range;
@@ -339,7 +353,8 @@ void scroll_step_slider(sector* o, int x, int y) {
     if(false) printf("[%d : %d]", x, y);
 }
 
-void draw_progress_bar(field* o, sector* c) {
+static void draw_progress_bar(sector* c) {
+    auto o = c->carrier;
     draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
     draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
 
@@ -357,7 +372,8 @@ void draw_progress_bar(field* o, sector* c) {
     c->repaint = false;
 }
 
-void draw_button(field* o, sector* c) {
+static void draw_button(sector* c) {
+    auto o = c->carrier;
     draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
     draw_ltrb_o(o->layer[FG], &c->bounds, BORDER);
 
@@ -371,7 +387,8 @@ void draw_button(field* o, sector* c) {
     printf("Draw Button\n");
 }
 
-void draw_sprite_slider(field* o, sector* c) {
+static void draw_sprite_slider(sector* c) {
+    auto o = c->carrier;
     sprite* temp = (sprite*)c->data;
     int f = (c->value / c->range) * temp->nframes;
     frame_copy_at(o->layer[FG], &temp->data[f], c->bounds.l, c->bounds.t);
@@ -379,45 +396,50 @@ void draw_sprite_slider(field* o, sector* c) {
     c->repaint = false;
 }
 
-void set_sprite_slider(field* o, int x, int y) {
-    int dy = roundf((o->mp[CP_PRIOR].y - y)/o->at[o->current].step);
-    int dx = roundf((x - o->mp[CP_PRIOR].x)/o->at[o->current].step);
+static void set_sprite_slider(sector* o, int x, int y) {
+    auto f = o->carrier;
 
-    o->at[o->current].value += (dy + dx);
+    int dy = roundf((f->mp[CP_PRIOR].y - y)/o->step);
+    int dx = roundf((x - f->mp[CP_PRIOR].x)/o->step);
 
-    if (o->at[o->current].value < 0.0f) o->at[o->current].value = 0.0f;
-    if (o->at[o->current].value > o->at[o->current].range) o->at[o->current].value = o->at[o->current].range;
-    o->at[o->current].repaint = true;
+    o->value += (dy + dx);
 
-    o->mp[CP_PRIOR].x = (float)x;
-    o->mp[CP_PRIOR].y = (float)y;
+    if (o->value < 0.0f) o->value = 0.0f;
+    if (o->value > o->range) o->value = o->range;
+    o->repaint = true;
+
+    f->mp[CP_PRIOR].x = (float)x;
+    f->mp[CP_PRIOR].y = (float)y;
 }
 
-void set_sprite_inf_slider(field* o, int x, int y) {
-    int dy = roundf((y - o->mp[CP_PRIOR].y)/o->at[o->current].step);
-    int dx = roundf((o->mp[CP_PRIOR].x - x)/o->at[o->current].step);
+static void set_sprite_inf_slider(sector* o, int x, int y) {
+    auto f = o->carrier;
+    int dy = roundf((y - f->mp[CP_PRIOR].y)/o->step);
+    int dx = roundf((f->mp[CP_PRIOR].x - x)/o->step);
 
-    o->at[o->current].value += (dy + dx);
+    o->value += (dy + dx);
 
-    if (o->at[o->current].value < 0.0f) o->at[o->current].value += o->at[o->current].range;
-    else if (o->at[o->current].value > o->at[o->current].range) o->at[o->current].value -= o->at[o->current].range;
+    if (o->value < 0.0f) o->value += o->range;
+    else if (o->value > o->range) o->value -= o->range;
 
     // if (o->at[o->current].value <= 0.0f) o->at[o->current].value = o->at[o->current].range;
     // else if (o->at[o->current].value >= o->at[o->current].range) o->at[o->current].value = 0.0f;
 
-    o->at[o->current].repaint = true;
-    o->mp[CP_PRIOR].x = (float)x;
-    o->mp[CP_PRIOR].y = (float)y;
+    o->repaint = true;
+    f->mp[CP_PRIOR].x = (float)x;
+    f->mp[CP_PRIOR].y = (float)y;
 }
 
-void set_button(field* o, int, int) {
-    if  (o->at[o->current].value < 0.5f) o->at[o->current].value = 1.0f;
-    else o->at[o->current].value = 0.0f;
-    o->at[o->current].repaint = true;
-    o->prior = o->current;
+static void set_button(sector* o, int, int) {
+    if  (o->value < 0.5f) o->value = 1.0f;
+    else o->value = 0.0f;
+    o->repaint = true;
+
+    auto f = o->carrier;
+    f->prior = f->current;
 }
 
-void release_button(sector* s, int, int) {
+static void release_button(sector* s, int, int) {
     auto p = s->carrier->pressed; 
     if(p) {
         if(p == s) {
@@ -430,7 +452,8 @@ void release_button(sector* s, int, int) {
     }
 }
 
-void draw_sprite_button(field* o, sector* c) {
+static void draw_sprite_button(sector* c) {
+    auto o = c->carrier;
     sprite* temp = (sprite*)c->data;
 
     if(c->value > 0.5f)
@@ -441,146 +464,146 @@ void draw_sprite_button(field* o, sector* c) {
     c->repaint = false;
 }
 
-void init_socket(sector* s) {
+static void init_socket(sector* s) {
     s->data = (float*)calloc(64, sizeof(float));
 }
 
-void set_socket(field* o, int, int) {
-    auto cs = &o->at[o->current];
-    if (cs->value < 0.5f) cs->value = 1.0f;
-    else cs->value = 0.0f;
-    cs->repaint = true;
-    o->prior = o->current;
+static void set_socket(sector* o, int, int) {
+    if (o->value < 0.5f) o->value = 1.0f;
+    else o->value = 0.0f;
+    o->repaint = true;
+
+    auto f = o->carrier;
+    f->prior = f->current;
 }
 
-void draw_socket(field* o, sector* c) {
-    draw_ltrb_f(o->layer[FG], &c->bounds, BACKGROUND);
-    draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
+static void draw_socket(sector* c) {
+    auto o = c->carrier;
+    draw_ltrb_f(o->layer[FG], &c->bounds, BUTTON);
+    draw_ltrb_o(o->layer[FG], &c->bounds, BORDER);
     if(c->value > 0.5f)
         draw_rect_f(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     c->repaint = false;
 }
 
-void drag_socket(field* o, int x, int y)
+static void drag_socket(sector* s, int x, int y)
 {
-    auto p = o->pressed;
+    printf("Drag socket : %d\n", s->type);
 
-    if(p) {
+    auto o = s->carrier;
 
-        float xe = (float)x;
-        float ye = (float)y;
+    float xe = (float)x;
+    float ye = (float)y;
 
-        if(xe > o->width) xe = (float)o->width;
-        else if(xe < 0.0f) xe = 0.0f;
+    if(xe > o->width) xe = (float)o->width;
+    else if(xe < 0.0f) xe = 0.0f;
 
-        if(ye > o->height) ye = (float)o->height;
-        else if(ye < 0.0f) ye = 0.0f;
+    if(ye > o->height) ye = (float)o->height;
+    else if(ye < 0.0f) ye = 0.0f;
 
-        point a, b, c, d;
+    point a, b, c, d;
 
-        float xo = (float)p->bounds.l + 0.5f * (float)p->width;
-        float yo = (float)p->bounds.t + 0.5f * (float)p->height;
+    float xo = (float)s->bounds.l + 0.5f * (float)s->width;
+    float yo = (float)s->bounds.t + 0.5f * (float)s->height;
 
-        a.x = xo;
-        a.y = yo;
+    a.x = xo;
+    a.y = yo;
 
-        b.x = (xe - xo) * (1.0f/3.0f) + xo;
-        c.x = (xe - xo) * (2.0f/3.0f) + xo;
+    b.x = (xe - xo) * (1.0f/3.0f) + xo;
+    c.x = (xe - xo) * (2.0f/3.0f) + xo;
 
-        if(ye < yo) {
-            b.y = fabs(yo - ye) * (1.0f - 1.0E-6f) + ye;
-            c.y = fabs(yo - ye) * (1.0E-6f) + ye;
-        }
-        else {
-            b.y = fabs(yo - ye) * (1.0E-6f) + yo;
-            c.y = fabs(yo - ye) * (1.0f - 1.0E-6f) + yo;
-        }
+    if(ye < yo) {
+        b.y = fabs(yo - ye) * (1.0f - 1.0E-6f) + ye;
+        c.y = fabs(yo - ye) * (1.0E-6f) + ye;
+    }
+    else {
+        b.y = fabs(yo - ye) * (1.0E-6f) + yo;
+        c.y = fabs(yo - ye) * (1.0f - 1.0E-6f) + yo;
+    }
 
-        d.x = xe;
-        d.y = ye;
+    d.x = xe;
+    d.y = ye;
 
-        int iterations = 32;
-        const float inc = 1.0f / (float)(iterations - 1) ;
-        float t = 0.0;
+    int iterations = 32;
+    const float inc = 1.0f / (float)(iterations - 1) ;
+    float t = 0.0;
 
-        for(int i = 0, j = 0; i < iterations; i++) {
-            point s = interpolate_bezier(a, b, c, d, t);
-            point uv = screen_to_uv(s.x, s.y, o->width, o->height);
+    for(int i = 0, j = 0; i < iterations; i++) {
+        point p = interpolate_bezier(a, b, c, d, t);
+        point uv = screen_to_uv(p.x, p.y, o->width, o->height);
 
-            ((float*)o->at[o->current].data)[j++] = uv.x;
-            ((float*)o->at[o->current].data)[j++] = uv.y;
+        ((float*)s->data)[j++] = uv.x;
+        ((float*)s->data)[j++] = uv.y;
 
-            t += inc;
-        }
+        t += inc;
     }
 }
 /*****************************************************************************************************************************/
 
-void init_node(sector* s) {
+static void init_node(sector* s) {
     s->data = (frame*)calloc(1, sizeof(frame));
     frame_init((frame*)s->data, s->width, s->height);
 }
 
-void set_node(field* o, int, int) {
-    o->at[o->current].repaint = true;
-    o->prior = o->current;
+static void set_node(sector* o, int, int) {
+    o->repaint = true;
+    auto f = o->carrier;
+    f->prior = f->current;
 }
 
-void draw_node(field* o, sector* c) {
+static void draw_node(sector* c) {
+    auto o = c->carrier;
+    auto l = c->staging ? ST : NG;
 
-    auto L = o->staging ? ST : NG;
-
-    if(L == ST) {
-        frame_clr(o->layer[L]);
-        draw_rectangle(o->layer[L], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, HIGHLIGHT);
+    if(l == ST) {
+        frame_clr(o->layer[l]);
+        draw_ltrb_o(o->layer[l], &c->bounds, HIGHLIGHT);
     }
     else
-        draw_ltrb_f(o->layer[L], &c->bounds, SECONDBACKGROUND);
-
+        draw_ltrb_f(o->layer[l], &c->bounds, SECONDBACKGROUND);
 
     c->repaint = false;
 }
 
-void drag_node(field* o, int x, int y)
+static void drag_node(sector* o, int x, int y)
 {
-    auto p = o->pressed;
-    if(p) {
+    auto f = o->carrier;
+    bool moved = false;
 
-        bool moved = false;
-
-        int dx = ((x - o->mp[CP_PRIOR].x) / o->step) * o->step;
-        {
-            int l = ((p->bounds.l + dx) / o->step) * o->step;
-            if((l >= 0) && (l + p->width <= o->width)) {
-                p->bounds.l = l;
-                p->bounds.r = l + p->width;
-                moved = true;
-            }
-        }
-
-        int dy = ((y - o->mp[CP_PRIOR].y) / o->step) * o->step;
-        {
-            int t = ((p->bounds.t + dy) / o->step) * o->step;
-            if((t >= 0) && (t + p->height <= o->height)) {
-                p->bounds.t = t; 
-                p->bounds.b = t + p->height;
-                moved = true;
-            }
-        }
-
-        if (moved) {
-            
-            o->mp[CP_PRIOR].x += dx;
-            o->mp[CP_PRIOR].y += dy;
-            
-            p->repaint = true;
-            o->repaint = true;
-            o->refresh = true;
+    int dx = ((x - f->mp[CP_PRIOR].x) / f->step) * f->step;
+    {
+        int l = ((o->bounds.l + dx) / f->step) * f->step;
+        if((l >= 0) && (l + o->width <= f->width)) {
+            o->bounds.l = l;
+            o->bounds.r = l + o->width;
+            moved = true;
         }
     }
+
+    int dy = ((y - f->mp[CP_PRIOR].y) / f->step) * f->step;
+    {
+        int t = ((o->bounds.t + dy) / f->step) * f->step;
+        if((t >= 0) && (t + o->height <= f->height)) {
+            o->bounds.t = t; 
+            o->bounds.b = t + o->height;
+            moved = true;
+        }
+    }
+
+    if (moved) {
+        
+        f->mp[CP_PRIOR].x += dx;
+        f->mp[CP_PRIOR].y += dy;
+        
+        o->repaint = true;
+        f->repaint = true;
+        f->refresh = true;
+    }
+    
+    printf("Drag node\n");
 }
 
-void release_node(sector* s, int x, int y) 
+static void release_node(sector* s, int, int) 
 {
     ltrb32u ir = {
         .l = s->carrier->lt[CP_PRESS].x, 
@@ -594,7 +617,6 @@ void release_node(sector* s, int x, int y)
     draw_ltrb_f(s->carrier->layer[FG], &ir, 0x0);
 
     draw_ltrb_f(s->carrier->layer[SC], &s->bounds, s->id);
-
 
     int dx = s->bounds.l - s->carrier->lt[CP_PRESS].x;
     int dy = s->bounds.t - s->carrier->lt[CP_PRESS].y;
@@ -613,9 +635,9 @@ void release_node(sector* s, int x, int y)
         s->node[i]->repaint = true;
     }
 
-
     frame_clr(s->carrier->layer[ST]);
     s->carrier->staging = false;
+    s->staging = false;
     s->repaint = true;
     s->carrier->repaint = true;
     s->carrier->refresh = true;
@@ -625,22 +647,18 @@ void release_node(sector* s, int x, int y)
 
 /*****************************************************************************************************************************/
 
-void init_textbox(sector* s) {
+static void init_textbox(sector* s) {
     s->data = (char*)calloc(64, sizeof(char)); 
 }
 
-void set_textbox(field* o, int, int) {
-    o->at[o->current].repaint = true;
-    char *text = o->at[o->current].data;
-    strcpy(text, "text");
+static void set_textbox(sector* o, int, int) {
+    o->repaint = true;
 }
 
-void draw_textbox(field* o, sector* c) {
-
+static void draw_textbox(sector* c) {
+    auto o = c->carrier;
     draw_ltrb_f(o->layer[FG], &c->bounds, SECONDBACKGROUND);
-
     char *text = c->data;
-
 
     draw_text_label(
         o->layer[FG],
@@ -654,12 +672,14 @@ void draw_textbox(field* o, sector* c) {
     );
 
     c->repaint = false;
+    printf("-- Draw TEXTBOX");
 }
 
 /*****************************************************************************************************************************/
 
-void draw_canvas(field* o, sector*) 
+static void draw_canvas(sector* s) 
 {
+    auto o = s->carrier;
     uint32_t major = 4;
     if(true) {
             
@@ -684,7 +704,7 @@ void draw_canvas(field* o, sector*)
 
 /*****************************************************************************************************************************/
 
-void init_none(sector*) {}
+static inline void init_none(sector*) {}
 
 void (*init_sector[])(sector*) = {
     [SLIDER]                = init_none,  
@@ -702,9 +722,9 @@ void (*init_sector[])(sector*) = {
     [NODE]                  = init_node,  
 };
 
-static inline void set_none(field*, int, int) {}
+static inline void set_none(sector*, int, int) {}
 
-void (*set_sector[])(field*, int, int) = {
+void (*set_sector[])(sector*, int, int) = {
     [SLIDER]                = set_slider,            
     [STEP_SLIDER]           = set_step_slider,       
     [PROGRESS_BAR]          = set_slider,            
@@ -720,7 +740,7 @@ void (*set_sector[])(field*, int, int) = {
     [NODE]                  = set_node               
 };
 
-void (*draw_sector[])(field*, sector*) = {
+void (*draw_sector[])(sector*) = {
     [SLIDER]                = draw_slider,        
     [STEP_SLIDER]           = draw_step_slider,   
     [PROGRESS_BAR]          = draw_progress_bar,  
@@ -736,19 +756,21 @@ void (*draw_sector[])(field*, sector*) = {
     [NODE]                  = draw_node           
 };
 
-void (*drag_sector[])(field*, int, int) = {
+static inline void drag_none(sector*, int, int) {}
+
+void (*drag_sector[])(sector*, int, int) = {
     [SLIDER]                = set_slider,           
     [STEP_SLIDER]           = set_step_slider,      
     [PROGRESS_BAR]          = set_slider,           
     [SPRITE_SLIDER]         = set_sprite_slider,    
     [SPRITE_INF_SLIDER]     = set_sprite_inf_slider,
     [SOCKET]                = drag_socket,          
-    [CHECKBOX]              = set_none,             
-    [BUTTON]                = set_none,             
-    [SPRITE_CHECKBOX]       = set_none,             
-    [SPRITE_BUTTON]         = set_none,             
-    [CANVAS]                = set_none,             
-    [TEXTBOX]               = set_none,  
+    [CHECKBOX]              = drag_none,             
+    [BUTTON]                = drag_none,             
+    [SPRITE_CHECKBOX]       = drag_none,             
+    [SPRITE_BUTTON]         = drag_none,             
+    [CANVAS]                = drag_none,             
+    [TEXTBOX]               = drag_none,  
     [NODE]                  = drag_node             
 };
 
@@ -770,20 +792,22 @@ void (*scroll_sector[])(sector*, int, int) = {
     [NODE]                  = scroll_none 
 };
 
-void (*leave_sector[])(field*, int, int) = {
-    [SLIDER]                = set_none,         
-    [STEP_SLIDER]           = set_none,         
-    [PROGRESS_BAR]          = set_none,         
-    [SPRITE_SLIDER]         = set_none,         
-    [SPRITE_INF_SLIDER]     = set_none,         
-    [SOCKET]                = set_none,         
-    [CHECKBOX]              = set_none,         
-    [BUTTON]                = set_none,   
-    [SPRITE_CHECKBOX]       = set_none,         
-    [SPRITE_BUTTON]         = set_none,   
-    [CANVAS]                = set_none,         
-    [TEXTBOX]               = set_none,  
-    [NODE]                  = set_none          
+static inline void leave_none(sector*, int, int) {}
+
+void (*leave_sector[])(sector*, int, int) = {
+    [SLIDER]                = leave_none,         
+    [STEP_SLIDER]           = leave_none,         
+    [PROGRESS_BAR]          = leave_none,         
+    [SPRITE_SLIDER]         = leave_none,         
+    [SPRITE_INF_SLIDER]     = leave_none,         
+    [SOCKET]                = leave_none,         
+    [CHECKBOX]              = leave_none,         
+    [BUTTON]                = leave_none,   
+    [SPRITE_CHECKBOX]       = leave_none,         
+    [SPRITE_BUTTON]         = leave_none,   
+    [CANVAS]                = leave_none,         
+    [TEXTBOX]               = leave_none,  
+    [NODE]                  = leave_none          
 };
 
 static inline void release_none(sector*, int, int) {}

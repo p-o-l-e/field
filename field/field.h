@@ -58,13 +58,14 @@ typedef enum: uint32_t {
 typedef enum: uint32_t {
     VERTICAL    = 1 << 0,
     MOVEABLE    = 1 << 1,
+    INTERCON    = 1 << 2,
 
-} sector_flags;
+} SectorFlags;
 
 typedef enum {
     ROOT        = 1 << 0,
 
-} field_flags;
+} FieldFlags;
 
 /*****************************************************************************************************************************/
 typedef struct field field;
@@ -83,6 +84,7 @@ struct sector {
     bool        visible;
     bool        hovered;
     bool        repaint;
+    bool        staging;
     bool        on;       
     uint32_t    flags;
     uint32_t    nodes;
@@ -107,13 +109,13 @@ struct field {
     sector*     pressed;
     uint32_t    current;        // HitTest return
     uint32_t    prior;          // Last HitTest
-    uint32_t    count;          // Controls quantity
     bool        repaint;        // Repaint flag
     bool        refresh;        // Swap buffer flag
     bool        drag;           // Sector drag flag
     bool        move;           // Window drag flag
     bool        staging;        // Draw staging layer
-    uint32_t    nodes;    
+    bool        connecting;
+    uint32_t    sectors;    
     uint32_t    capacity;
     uint32_t    flags;
     uint32_t    step;
@@ -129,9 +131,9 @@ void erase_sector(sector*);
 
 /*****************************************************************************************************************************/
 
-sector* createSector(field*, sector*, uint32_t, SectorType, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-void init_field   (field*, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-void destroy_field(field*);
+sector* createSector(field*, sector*, SectorType, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+void initField   (field*, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+void destroyField(field*);
 
 /*****************************************************************************************************************************/
 
@@ -142,66 +144,10 @@ void hit_test     (field*, int, int);
 
 /*****************************************************************************************************************************/
 
-void draw_progress_bar(field*, sector*);
-
-/*****************************************************************************************************************************/
-
-void draw_slider(field*, sector*);
-void set_slider(field*, int, int);
-void scroll_slider(sector*, int, int);
-
-/*****************************************************************************************************************************/
-
-void draw_checkbox(field*, sector*);
-void set_checkbox(field*, int, int);
-
-/*****************************************************************************************************************************/
-
-void set_step_slider(field*, int, int);
-void drag_step_lider(field*, int, int);
-void scroll_step_slider(sector*, int, int);
-
-/*****************************************************************************************************************************/
-
-void draw_button(field*, sector*);
-void release_button(sector*, int, int);
-void set_button(field*, int, int);
-
-/*****************************************************************************************************************************/
-
-void draw_sprite_button(field*, sector*);
-void draw_sprite_slider(field*, sector*);
-void set_sprite_slider(field*, int, int);
-void set_sprite_inf_slider(field*, int, int);
-
-/*****************************************************************************************************************************/
-
-void init_socket(sector*);
-void draw_socket(field*, sector*);
-void drag_socket(field*, int, int);
-void set_socket(field*, int, int);
-
-/*****************************************************************************************************************************/
-
-void init_node(sector*);
-void draw_node(field*, sector*);
-void drag_node(field*, int, int);
-void set_node(field*, int, int);
-
-/*****************************************************************************************************************************/
-
-void init_textbox(sector*);
-void draw_textbox(field*, sector*);
-void set_textbox(field*, int, int);
-
-/*****************************************************************************************************************************/
-
-void draw_canvas(field*, sector*);
-
 extern void (*init_sector[])(sector*);
-extern void (*set_sector[])(field*, int, int);
-extern void (*draw_sector[])(field*, sector*);
-extern void (*drag_sector[])(field*, int, int);
+extern void (*set_sector[])(sector*, int, int);
+extern void (*draw_sector[])(sector*);
+extern void (*drag_sector[])(sector*, int, int);
 extern void (*scroll_sector[])(sector*, int, int);
-extern void (*leave_sector[])(field*, int, int);
+extern void (*leave_sector[])(sector*, int, int);
 extern void (*release_sector[])(sector*, int, int);

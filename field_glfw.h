@@ -12,7 +12,6 @@
 #include "field/field.h"
 #define FIELD_TRANSPARENCY 1
 
-
 GLFWwindow* window;
 
 static bool _switch_on = true;
@@ -73,7 +72,7 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mod
                 hit_test_down(context, (int)x, (int)y, LMB);
 
                 if(context->at[context->current].flags & MOVEABLE)
-                    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
 
             }
             else if(action == GLFW_RELEASE)
@@ -260,11 +259,11 @@ void* draw_field(void* arg)
                 update_buffer(context->layer[ST], st);
         }
 
-        if(true)
+        if(context->connecting)
         {
             glLineWidth(2.0f); 
             glEnableClientState(GL_VERTEX_ARRAY);
-            glVertexPointer(2, GL_FLOAT, 0, context->at[9].data);
+            glVertexPointer(2, GL_FLOAT, 0, context->pressed->data);
 
             glColor4ub(
                 extract_byte(ORANGE, 3),
@@ -275,6 +274,7 @@ void* draw_field(void* arg)
 
             glDrawArrays(GL_LINE_STRIP, 0, 32);
             glDisableClientState(GL_VERTEX_ARRAY);
+            printf("Connecting : %d\n", context->pressed->type);
         }
 
         if(context->refresh)
@@ -294,7 +294,7 @@ void* draw_field(void* arg)
     _handle_events  = false;
     glfwPostEmptyEvent();
 
-    destroy_field(context);
+    destroyField(context);
     glfwSetWindowShouldClose(window, GL_TRUE);
     glfwDestroyWindow(window);
 
