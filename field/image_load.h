@@ -4,4 +4,4 @@
 #include "containers.h"
 #include "upng/upng.h"
 
-void load_png_rgba(const char* path, frame *o, uint32_t xo, uint32_t yo);
+void load_png_rgba(const char* path, frame *o);

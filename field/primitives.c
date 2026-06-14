@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <string.h>
+#include <math.h>
 #include "primitives.h"
+#include "containers.h"
 
 /**************************************************************************************************************************
  * Returns 8-bit value
@@ -55,25 +57,25 @@ void draw_rectangle(frame* canvas, uint32_t l, uint32_t t, uint32_t r, uint32_t 
 {
     for(uint32_t i = l; i <= r; i++)
     {
-        frame_pset(canvas, i, t, colour);
-        frame_pset(canvas, i, b, colour);
+        frame_set(canvas, i, t, colour);
+        frame_set(canvas, i, b, colour);
     }
 
     for(uint32_t i = t; i <= b; i++)
     {
-        frame_pset(canvas, l, i, colour);
-        frame_pset(canvas, r, i, colour);
+        frame_set(canvas, l, i, colour);
+        frame_set(canvas, r, i, colour);
     }
 }
 
 void draw_ltrb_o(frame* canvas, ltrb32u* r, const uint32_t colour) {
     for(uint32_t i = r->l; i <= r->r; ++i) {
-        frame_pset(canvas, i, r->t, colour);
-        frame_pset(canvas, i, r->b, colour);
+        frame_set(canvas, i, r->t, colour);
+        frame_set(canvas, i, r->b, colour);
     }
     for(uint32_t i = r->t; i <= r->b; i++) {
-        frame_pset(canvas, r->l, i, colour);
-        frame_pset(canvas, r->r, i, colour);
+        frame_set(canvas, r->l, i, colour);
+        frame_set(canvas, r->r, i, colour);
     }
 }
 
@@ -81,7 +83,7 @@ void draw_rect_f(frame* canvas, uint32_t l, uint32_t t, uint32_t r, uint32_t b, 
 {
     for(uint32_t y = t; y <= b; ++y) {
         for(uint32_t x = l; x <= r; ++x) {
-            frame_pset(canvas, x, y, colour);
+            frame_set(canvas, x, y, colour);
         }
     }
 }
@@ -90,9 +92,77 @@ void draw_ltrb_f(frame* canvas, ltrb32u* r, const uint32_t colour)
 {
     for(uint32_t y = r->t; y <= r->b; ++y) {
         for(uint32_t x = r->l; x <= r->r; ++x) {
-            frame_pset(canvas, x, y, colour);
+            frame_set(canvas, x, y, colour);
         }
     }
+}
+
+inline void draw_line_v(frame* o, uint32_t x, uint32_t yo, uint32_t ye, const uint32_t value) {
+    for(uint32_t y = yo; y <= ye; ++y)
+        frame_set(o, x, y, value);
+}
+
+inline void draw_line_h(frame* o, uint32_t y, uint32_t xo, uint32_t xe, const uint32_t value) {
+    for(uint32_t x = xo; x <= xe; ++x)
+        frame_set(o, x, y, value);
+}
+
+void draw_circle_f(frame* o, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value)
+{
+    int x = 0;
+    int y = r;
+    int p = 1 - r;
+
+    while (x <= y) {
+        ++x;
+        if (p < 0) {
+            p = p + 2 * x + 1;
+        } 
+        else{
+            --y;
+            p = p + 2 * (x - y) + 1;
+        }
+
+        draw_line_h(o, yc + x, xc - y, xc + y, value);
+        draw_line_h(o, yc - x, xc - y, xc + y, value);
+        draw_line_h(o, yc + y, xc - x, xc + x, value);
+        draw_line_h(o, yc - y, xc - x, xc + x, value);
+    }
+
+    draw_line_h(o, yc, xc - r, xc + r, value);
+}
+
+void draw_circle_o(frame* o, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value)
+{
+    int x = 0;
+    int y = r;
+    int p = 1 - r;
+
+    while (x <= y) {
+        ++x;
+        if (p < 0) {
+            p = p + 2 * x + 1;
+        } 
+        else{
+            --y;
+            p = p + 2 * (x - y) + 1;
+        }
+
+        frame_set(o, xc + x, yc + y, value);
+        frame_set(o, xc - x, yc + y, value);
+        frame_set(o, xc + x, yc - y, value);
+        frame_set(o, xc - x, yc - y, value);
+        frame_set(o, xc + y, yc + x, value);
+        frame_set(o, xc - y, yc + x, value);
+        frame_set(o, xc + y, yc - x, value);
+        frame_set(o, xc - y, yc - x, value); 
+
+    }
+
+    frame_set(o, xc, yc - r, value);
+    frame_set(o, xc, yc + r, value);
+    frame_set(o, xc + r, yc, value);
+    frame_set(o, xc - r, yc, value);
 }
 
 void draw_glyph(frame* canvas, const uint8_t* font, uint32_t id, uint32_t l, uint32_t t, const uint32_t colour)
@@ -104,7 +174,7 @@ void draw_glyph(frame* canvas, const uint8_t* font, uint32_t id, uint32_t l, uin
     {
         for(uint32_t x = 0; x < 7; x++)
         {
-            if(font[pos + x] & stencil) frame_pset(canvas, x + l, y + t, colour);
+            if(font[pos + x] & stencil) frame_set(canvas, x + l, y + t, colour);
 
         }
         stencil<<=1;

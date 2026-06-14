@@ -16,7 +16,7 @@ float capsule_sdf(float px, float py, float ax, float ay, float bx, float by, fl
 
 void alphablend(frame* canvas, int x, int y, float alpha) 
 {   
-    frame_pset(canvas, x, y, 0x000000ff * (1.0f - alpha) + alpha);
+    frame_set(canvas, x, y, 0x000000ff * (1.0f - alpha) + alpha);
 }
 
 void lineSDFAABB(frame* canvas, float ax, float ay, float bx, float by, float radius, float alpha) 

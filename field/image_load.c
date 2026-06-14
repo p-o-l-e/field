@@ -1,6 +1,6 @@
 #include "image_load.h"
 
-void load_png_rgba(const char* path, frame *o, uint32_t xo, uint32_t yo)
+void load_png_rgba(const char* path, frame *o)
 {
     upng_t* upng = upng_new_from_file(path);
     upng_decode(upng);
@@ -29,7 +29,7 @@ void load_png_rgba(const char* path, frame *o, uint32_t xo, uint32_t yo)
                 colour += data[(x + y * w) * channels + c];
             }
 
-            frame_pset(o, x + xo, y + yo, colour);
+            frame_set(o, x, y, colour);
         }
     }
 }

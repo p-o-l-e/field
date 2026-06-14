@@ -26,7 +26,7 @@ float wavering_get(wavering* o)
 
 /******************************************************************************************************************************/
 
-void frame_pset(frame* o, uint32_t x, uint32_t y, uint32_t value)
+void frame_set(frame* o, uint32_t x, uint32_t y, uint32_t value)
 {
     if(x < o->width && y < o->height)
     o->data[x + y * o->width] = value;
@@ -71,7 +71,7 @@ void frame_copy_at(frame* target, frame* source, uint32_t xo, uint32_t yo)
     {
         for(uint32_t x = 0; x < source->width; x++)
         {
-            frame_pset(target, x + xo, y + yo, frame_get(source, x, y));
+            frame_set(target, x + xo, y + yo, frame_get(source, x, y));
         }
     }
 }
@@ -114,7 +114,7 @@ void sprite_load_stripe(sprite* o, frame* f)
         {
             for(uint32_t x = 0; x < o->width; x++)
             {
-                frame_pset(&o->data[i], x, y, frame_get(f, x, y + (i * o->height)));
+                frame_set(&o->data[i], x, y, frame_get(f, x, y + (i * o->height)));
             }
         }
     }

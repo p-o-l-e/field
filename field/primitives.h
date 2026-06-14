@@ -28,3 +28,7 @@ void draw_rectangle(frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32
 void draw_ltrb_o(frame*, ltrb32u*, const uint32_t);
 void draw_rect_f(frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
 void draw_ltrb_f(frame*, ltrb32u*, const uint32_t);
+void draw_line_v(frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
+void draw_line_h(frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
+void draw_circle_f(frame*, uint32_t, uint32_t, uint32_t, uint32_t);
+void draw_circle_o(frame*, uint32_t, uint32_t, uint32_t, uint32_t);

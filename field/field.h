@@ -7,27 +7,29 @@
 #include "colours.h"
 
 typedef enum {
-    SLIDER, 
-    STEP_SLIDER, 
-    PROGRESS_BAR, 
-    SPRITE_SLIDER,
-    SPRITE_INF_SLIDER,
-    SOCKET,
-    CHECKBOX, 
-    BUTTON, 
-    SPRITE_CHECKBOX, 
-    SPRITE_BUTTON, 
-    CANVAS,
-    TEXTBOX,
-    NODE
+    ST_SLIDER, 
+    ST_PROGRESS_BAR, 
+    ST_SPRITE_SLIDER,
+    ST_SPRITE_INF_SLIDER,
+    ST_SOCKET,
+    ST_CHECKBOX, 
+    ST_BUTTON, 
+    ST_SPRITE_CHECKBOX, 
+    ST_SPRITE_BUTTON, 
+    ST_CANVAS,
+    ST_TEXTBOX,
+    ST_NODE,
+
+    ST_LIMIT
 
 } SectorType;
 
 typedef enum {
-    CALLBACK_PRESS,
-    CALLBACK_RELEASE,
-    CALLBACK_VALUE,
-    CALLBACK_LIMIT,
+    CT_PRESS,
+    CT_RELEASE,
+    CT_VALUE,
+
+    CT_LIMIT
 
 } CallbackType;
             
@@ -39,10 +41,21 @@ typedef enum {
 } MouseButton;
 
 typedef enum { 
-    CP_PRESS,
-    CP_PRIOR,
+    CP_COARSE,
+    CP_FINE,
 
-} CursorPosition;
+    CP_LIMIT
+
+} ControlPrecision;
+
+typedef enum { 
+    SP_CURSOR_PRESS,
+    SP_CURSOR_PRIOR,
+    SP_LT_PRESS,
+
+    SP_LIMIT
+
+} SavedPosition;
 
 typedef enum: uint32_t { 
     BG,
@@ -72,15 +85,16 @@ typedef struct field field;
 typedef struct sector sector;
 
 struct sector {
-    uint32_t    id;             // Unique identifier
-    ltrb32u     bounds;         // Rectangle area
+    uint32_t    id;
+    ltrb32u     bounds;
     uint32_t    width;
     uint32_t    height;
-    SectorType  type;           // Defined in sector_type 
-    void*       data;           // Type dependent data
-    float       value;
-    float       range;
-    float       step;
+    SectorType  type;                   
+    void*       data;                   // Type dependent data
+    float       value[CP_LIMIT];
+    float       memory[CP_LIMIT];
+    float       range[2];
+    float       step[CP_LIMIT];
     bool        visible;
     bool        hovered;
     bool        repaint;
@@ -89,8 +103,8 @@ struct sector {
     uint32_t    flags;
     uint32_t    nodes;
     uint32_t    capacity;
-    void        (*callback[CALLBACK_LIMIT])(sector*, sector*);
-    sector*     target[CALLBACK_LIMIT];
+    void        (*callback[CT_LIMIT])(sector*, sector*);
+    sector*     target[CT_LIMIT];
     field*      carrier;
     sector*     root;
     sector**    node;
@@ -102,20 +116,19 @@ struct field {
     ltrb32u     bounds;
     uint32_t    width;
     uint32_t    height;
-    point32s    mp[2];          // Saved cursor position
-    point32s    lt[1];          // Saved left-top position
+    point32s    memory[SP_LIMIT];   // Saved cursor position
     frame*      layer[CC];      
-    sector*     at;             // Controls array
+    sector*     at;                 // Controls array
     sector*     pressed;
-    uint32_t    current;        // HitTest return
-    uint32_t    prior;          // Last HitTest
-    bool        repaint;        // Repaint flag
-    bool        refresh;        // Swap buffer flag
-    bool        drag;           // Sector drag flag
-    bool        move;           // Window drag flag
-    bool        staging;        // Draw staging layer
+    uint32_t    current;            // HitTest return
+    uint32_t    prior;              // Last HitTest
+    bool        repaint;            // Repaint flag
+    bool        refresh;            // Swap buffer flag
+    bool        drag;               // Sector drag flag
+    bool        move;               // Window drag flag
+    bool        staging;            // Draw staging layer
     bool        connecting;
-    uint32_t    sectors;    
+    uint32_t    sectors;
     uint32_t    capacity;
     uint32_t    flags;
     uint32_t    step;

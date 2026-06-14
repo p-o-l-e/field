@@ -62,14 +62,14 @@ typedef struct
 typedef struct
 {
     float data[WAVERING_LENGTH];
-    uint32_t i;             // In
-    uint32_t o;             // Out
+    uint32_t i;
+    uint32_t o;
 
 } wavering;
 
-void  wavering_init(wavering* o);
-void  wavering_set (wavering* o, float value);
-float wavering_get (wavering* o);
+void  wavering_init(wavering*);
+void  wavering_set (wavering*, float);
+float wavering_get (wavering*);
 
 /******************************************************************************************************************************/
 
@@ -81,14 +81,14 @@ typedef struct
 
 } frame;
 
-uint32_t frame_get  (frame* o, uint32_t x, uint32_t y);
-void frame_pset     (frame* o, uint32_t x, uint32_t y, uint32_t value);
-void frame_fill     (frame* o, uint32_t value);
+uint32_t frame_get  (frame*, uint32_t, uint32_t);
+void frame_set      (frame*, uint32_t, uint32_t, uint32_t);
+void frame_fill     (frame*, uint32_t);
 void frame_clr      (frame*);
-void frame_init     (frame* o, uint32_t x, uint32_t y);
-void frame_flush    (frame* o);
-void frame_copy     (frame* target, frame* source);
-void frame_copy_at  (frame* target, frame* source, uint32_t x, uint32_t y);
+void frame_init     (frame*, uint32_t, uint32_t);
+void frame_flush    (frame*);
+void frame_copy     (frame*, frame*);
+void frame_copy_at  (frame*, frame*, uint32_t, uint32_t);
 
 /******************************************************************************************************************************/
 
@@ -101,7 +101,7 @@ typedef struct
 
 } sprite;
 
-void sprite_init (sprite* o, uint32_t w, uint32_t h, uint32_t nframes);
-void sprite_flush(sprite* o);
-void sprite_load_stripe(sprite* o, frame* f);
+void sprite_init (sprite*, uint32_t, uint32_t, uint32_t);
+void sprite_flush(sprite*);
+void sprite_load_stripe(sprite*, frame*);
 

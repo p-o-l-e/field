@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 static field context;
+static sprite button;
 
 #define TARGET_FPS 60.0
 #define WIDTH  800
@@ -19,12 +20,12 @@ double last_time = 0;
 static void slider_call(sector* slider, sector* tbox)
 {
     char *text = tbox->data;
-    float val = slider->value;
+    float val = slider->value[CP_COARSE] + slider->value[CP_FINE];
 
     snprintf(text, 16, "%.3f", val);
     tbox->repaint = true;
 
-    printf("Slider callback\n");
+    //printf("Slider callback\n");
 }
 
 void timer_callback(union sigval) 
@@ -69,30 +70,39 @@ int main(int, char**)
     
     /*****************************************************************************************************************************/
     initField (&context, 0, 0, WIDTH, HEIGHT, 26, ROOT);
-    auto node = createSector(&context, nullptr, NODE    , 10,  10, 300, 200, MOVEABLE);
+    auto node = createSector(&context, nullptr, ST_NODE    , 0,  0, 300, 200, MOVEABLE);
     
-    auto slider = createSector(&context, node, SLIDER, 20, 60, 20, 80, MOVEABLE | VERTICAL);
-    slider->range = 8;
-    slider->step = 0.001f;
+    auto slider = createSector(&context, node, ST_SLIDER, 20, 40, 20, 80, MOVEABLE | VERTICAL);
+    slider->range[0] = -2.0f;
+    slider->range[1] = 2.0f;
 
-    auto vs_slider = createSector(&context, node, STEP_SLIDER, 50, 60, 20, 80, MOVEABLE | VERTICAL);
-    vs_slider->range = 4;
+    auto vs_slider = createSector(&context, node, ST_SLIDER, 50, 40, 20, 80, MOVEABLE | VERTICAL);
 
-    createSector(&context, node, SLIDER, 80, 60, 180, 10, MOVEABLE);
+    createSector(&context, node, ST_SLIDER, 80, 40, 180, 10, MOVEABLE);
     //context.at[4].range = 8;
 
-    createSector(&context, node, STEP_SLIDER, 80, 80, 180, 10, MOVEABLE);
-    //context.at[5].range = 4;
+    auto hs_slider = createSector(&context, node, ST_SLIDER, 80, 60, 180, 10, MOVEABLE);
     
-    createSector(&context, node, BUTTON, 20, 160, 20, 20, 0);
+    createSector(&context, node, ST_BUTTON, 20, 160, 20, 20, 0);
 
-    createSector(&context, node, CHECKBOX, 50, 160, 10, 10, 0);
-    createSector(&context, node, CHECKBOX, 70, 160, 10, 10, 0);
-    createSector(&context, node, SOCKET  , 90, 160, 10, 10, MOVEABLE | INTERCON);
-    auto tbox = createSector(&context, node, TEXTBOX, 25, 25, 80, 20, 0);
+    createSector(&context, node, ST_CHECKBOX, 50, 140, 10, 10, 0);
+    createSector(&context, node, ST_CHECKBOX, 70, 140, 10, 10, 0);
+    createSector(&context, node, ST_SOCKET  , 280, 100, 10, 10, MOVEABLE | INTERCON);
+    createSector(&context, node, ST_SOCKET  , 280, 120, 10, 10, MOVEABLE | INTERCON);
+    createSector(&context, node, ST_SOCKET  , 280, 140, 10, 10, MOVEABLE | INTERCON);
+    auto tbox = createSector(&context, node, ST_TEXTBOX, 15, 15, 60, 10, 0);
 
-    add_mod_link(slider, tbox, CALLBACK_VALUE, slider_call);
+    add_mod_link(slider, tbox, CT_VALUE, slider_call);
 
+    
+    auto cbox = createSector(&context, node, ST_SPRITE_BUTTON, 280, 4, 16, 16, 0);
+
+
+    sprite_init(&button, 16, 16, 2);
+    load_png_rgba("resin_knob_16_y.png", &button.data[1]);
+    load_png_rgba("resin_knob_16_off.png", &button.data[0]);
+
+    cbox->data = &button;
     /*****************************************************************************************************************************/
 
     pthread_mutex_init(&_screen_lock, NULL);
