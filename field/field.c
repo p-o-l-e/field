@@ -561,6 +561,27 @@ static void drag_socket(sector* restrict s, int x, int y)
     s->has_data = true;
 }
 
+inline static void connect(sector* restrict source, sector* restrict target) {
+    if(target->connected) {
+        if(target->has_data) {
+            memset(source->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+        }
+        if(target->connection->has_data) {
+            memset(source->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+            target->connection->has_data = false;
+            target->connection->connected = false;
+        }
+    }
+    drag_socket(source, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
+    source->connected = true;
+    target->connected = true;
+    source->connection = target;
+    source->hovered = false;
+    target->hovered = true;
+    source->carrier->connecting = false;
+    target->connection = source;
+}
+
 inline static void disconnect(sector* restrict o) {
     auto target = o->connection;
 
@@ -587,46 +608,11 @@ static void release_socket(sector* restrict o, int x, int y) {
     auto target = &carrier->at[target_id];
 
     if((o->flags & OUTPUT) && (target->flags & INPUT)) {
-        if(target->connected) {
-            if(target->has_data) {
-                memset(o->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
-            }
-            if(target->connection->has_data) {
-                memset(o->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
-                target->connection->has_data = false;
-                target->connection->connected = false;
-            }
-        }
-
-        drag_socket(o, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
-        o->connected = true;
-        target->connected = true;
-        o->connection = target;
-        o->hovered = false;
-        target->hovered = true;
-        o->carrier->connecting = false;
-        target->connection = o;
+        connect(o, target);
         return;
     }
     else if((o->flags & INPUT) && (target->flags & OUTPUT)) {
-        if(target->connected) {
-            if(target->has_data) {
-                memset(o->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
-            }
-            if(target->connection->has_data) {
-                memset(o->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
-                target->connection->has_data = false;
-                target->connection->connected = false;
-            }
-        }
-        drag_socket(o, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
-        o->connected = true;
-        target->connected = true;
-        o->connection = target;
-        o->hovered = false;
-        target->hovered = true;
-        o->carrier->connecting = false;
-        target->connection = o;
+        connect(o, target);
         return;
     }
     
