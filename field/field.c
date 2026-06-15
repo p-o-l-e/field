@@ -544,16 +544,19 @@ static void drag_socket(sector* restrict s, int x, int y)
     d.x = xe;
     d.y = ye;
 
-    int iterations = 32;
-    const float inc = 1.0f / (float)(iterations - 1) ;
+    const float inc = 1.0f / (float)(SPLINE_SEGMENTS - 1) ;
     float t = 0.0;
 
-    for(int i = 0, j = 0; i < iterations; i++) {
-        point p = interpolate_bezier(a, b, c, d, t);
-        point uv = screen_to_uv(p.x, p.y, o->width, o->height);
+    auto uva = screen_to_uv(a.x, a.y, o->width, o->height);
+    auto uvb = screen_to_uv(b.x, b.y, o->width, o->height);
+    auto uvc = screen_to_uv(c.x, c.y, o->width, o->height);
+    auto uvd = screen_to_uv(d.x, d.y, o->width, o->height);
 
-        ((float*)s->data)[j++] = uv.x;
-        ((float*)s->data)[j++] = uv.y;
+    for(uint32_t i = 0, j = 0; i < SPLINE_SEGMENTS; i++) {
+        point uvp = interpolate_bezier(uva, uvb, uvc, uvd, t);
+
+        ((float*)s->data)[j++] = uvp.x;
+        ((float*)s->data)[j++] = uvp.y;
 
         t += inc;
     }
