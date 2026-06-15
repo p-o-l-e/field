@@ -3,6 +3,7 @@
 #include "field/colours.h"
 #include "field/primitives.h"
 #include <GLFW/glfw3.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -126,8 +127,6 @@ static void key_callback(GLFWwindow* /*window*/, int key, int/* scancode*/, int 
 void window_pos_callback(GLFWwindow* window, int, int)
 {
     field* context = (field*)glfwGetWindowUserPointer(window);
-
-    context->refresh = true;
 }
 
 static GLuint get_buffer(frame* o) 
@@ -238,12 +237,16 @@ void* draw_field(void* arg)
     GLuint ng = get_buffer(context->layer[NG]);
     GLuint fg = get_buffer(context->layer[FG]);
     GLuint st = get_buffer(context->layer[ST]);
+    constexpr uint32_t CORD_NORMAL = GRAY;
+    constexpr uint32_t CORD_SELECT = GREEN;
 
     while (_window_on)
     {
         pthread_mutex_lock(&_screen_lock);
         pthread_cond_wait(&_repaint_condition, &_screen_lock);
         pthread_mutex_unlock(&_screen_lock);
+
+        bool swap = false;
 
         if(context->repaint)
         {
@@ -257,6 +260,8 @@ void* draw_field(void* arg)
 
             if(context->staging)
                 update_buffer(context->layer[ST], st);
+
+            swap = true;
         }
 
         if(context->connecting)
@@ -266,20 +271,43 @@ void* draw_field(void* arg)
             glVertexPointer(2, GL_FLOAT, 0, context->pressed->data);
 
             glColor4ub(
-                extract_byte(ORANGE, 3),
-                extract_byte(ORANGE, 2),
-                extract_byte(ORANGE, 1),
-                extract_byte(ORANGE, 0)
+                extract_byte(CORD_SELECT, 3),
+                extract_byte(CORD_SELECT, 2),
+                extract_byte(CORD_SELECT, 1),
+                extract_byte(CORD_SELECT, 0)
             );
 
-            glDrawArrays(GL_LINE_STRIP, 0, 32);
+            glDrawArrays(GL_LINE_STRIP, 0, SPLINE_SEGMENTS);
             glDisableClientState(GL_VERTEX_ARRAY);
             printf("Connecting : %d\n", context->pressed->type);
+
+            swap = true;
         }
 
-        if(context->refresh)
+        if(swap)
         {
-            context->refresh = false;
+            for(uint32_t i = 0; i < context->sectors; ++i) {
+                auto node = &context->at[i];
+                if(node->connected && node->has_data) {
+                   
+                    auto colour = node->hovered || node->connection->hovered ? CORD_SELECT : CORD_NORMAL;
+
+                    glLineWidth(2.0f); 
+                    glEnableClientState(GL_VERTEX_ARRAY);
+                    glVertexPointer(2, GL_FLOAT, 0, context->at[i].data);
+
+                    glColor4ub(
+                        extract_byte(colour, 3),
+                        extract_byte(colour, 2),
+                        extract_byte(colour, 1),
+                        extract_byte(colour, 0)
+                    );
+
+                    glDrawArrays(GL_LINE_STRIP, 0, SPLINE_SEGMENTS);
+                    glDisableClientState(GL_VERTEX_ARRAY);
+                }
+            }
+
             glfwSwapBuffers(window);  
         }          
     }

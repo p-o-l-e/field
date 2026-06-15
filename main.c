@@ -12,8 +12,8 @@ static field context;
 static sprite button;
 
 #define TARGET_FPS 60.0
-#define WIDTH  800
-#define HEIGHT 600
+#define WIDTH  1280
+#define HEIGHT 720
 
 double last_time = 0;
 
@@ -69,12 +69,14 @@ int main(int, char**)
 
     
     /*****************************************************************************************************************************/
-    initField (&context, 0, 0, WIDTH, HEIGHT, 26, ROOT);
-    auto node = createSector(&context, nullptr, ST_NODE    , 0,  0, 300, 200, MOVEABLE);
+    initField (&context, 0, 0, WIDTH, HEIGHT, 36, ROOT);
+    auto node = createSector(&context, nullptr, ST_NODE    , 0,  0, 299, 199, MOVEABLE);
     
     auto slider = createSector(&context, node, ST_SLIDER, 20, 40, 20, 80, MOVEABLE | VERTICAL);
-    slider->range[0] = -2.0f;
-    slider->range[1] = 2.0f;
+    slider->step[CP_COARSE] = 1.3f;
+    slider->step[CP_FINE] = 0.013f;
+    slider->range[0] = -5.0f;
+    slider->range[1] = 5.0f;
 
     auto vs_slider = createSector(&context, node, ST_SLIDER, 50, 40, 20, 80, MOVEABLE | VERTICAL);
 
@@ -87,15 +89,23 @@ int main(int, char**)
 
     createSector(&context, node, ST_CHECKBOX, 50, 140, 10, 10, 0);
     createSector(&context, node, ST_CHECKBOX, 70, 140, 10, 10, 0);
-    createSector(&context, node, ST_SOCKET  , 280, 100, 10, 10, MOVEABLE | INTERCON);
-    createSector(&context, node, ST_SOCKET  , 280, 120, 10, 10, MOVEABLE | INTERCON);
-    createSector(&context, node, ST_SOCKET  , 280, 140, 10, 10, MOVEABLE | INTERCON);
+    createSector(&context, node, ST_SOCKET  , 280, 100, 10, 10, MOVEABLE | INTERCON | OUTPUT);
+    createSector(&context, node, ST_SOCKET  , 280, 120, 10, 10, MOVEABLE | INTERCON | OUTPUT);
+    createSector(&context, node, ST_SOCKET  , 280, 140, 10, 10, MOVEABLE | INTERCON | OUTPUT);
     auto tbox = createSector(&context, node, ST_TEXTBOX, 15, 15, 60, 10, 0);
 
     add_mod_link(slider, tbox, CT_VALUE, slider_call);
 
     
     auto cbox = createSector(&context, node, ST_SPRITE_BUTTON, 280, 4, 16, 16, 0);
+
+
+
+    auto node2 = createSector(&context, nullptr, ST_NODE    , 325,  25, 199, 199, MOVEABLE);
+    createSector(&context, node2, ST_SOCKET  , 330, 80, 10, 10, MOVEABLE | INTERCON | INPUT);
+    createSector(&context, node2, ST_SOCKET  , 330, 100, 10, 10, MOVEABLE | INTERCON | INPUT);
+    createSector(&context, node2, ST_SOCKET  , 330, 120, 10, 10, MOVEABLE | INTERCON | INPUT);
+    createSector(&context, node2, ST_BUTTON, 330, 160, 20, 20, 0);
 
 
     sprite_init(&button, 16, 16, 2);

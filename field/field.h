@@ -6,10 +6,12 @@
 #include "primitives.h"
 #include "colours.h"
 
+constexpr uint_fast32_t SPLINE_SEGMENTS = 32;
+
 typedef enum {
     ST_SLIDER, 
     ST_PROGRESS_BAR, 
-    ST_SPRITE_SLIDER,
+    ST_ROTARY,
     ST_SPRITE_INF_SLIDER,
     ST_SOCKET,
     ST_CHECKBOX, 
@@ -72,6 +74,8 @@ typedef enum: uint32_t {
     VERTICAL    = 1 << 0,
     MOVEABLE    = 1 << 1,
     INTERCON    = 1 << 2,
+    INPUT       = 1 << 3,
+    OUTPUT      = 1 << 4,
 
 } SectorFlags;
 
@@ -99,12 +103,15 @@ struct sector {
     bool        hovered;
     bool        repaint;
     bool        staging;
-    bool        on;       
+    bool        on;
+    bool        connected;
+    bool        has_data;
     uint32_t    flags;
     uint32_t    nodes;
     uint32_t    capacity;
     void        (*callback[CT_LIMIT])(sector*, sector*);
     sector*     target[CT_LIMIT];
+    sector*     connection;
     field*      carrier;
     sector*     root;
     sector**    node;
@@ -123,11 +130,10 @@ struct field {
     uint32_t    current;            // HitTest return
     uint32_t    prior;              // Last HitTest
     bool        repaint;            // Repaint flag
-    bool        refresh;            // Swap buffer flag
     bool        drag;               // Sector drag flag
     bool        move;               // Window drag flag
     bool        staging;            // Draw staging layer
-    bool        connecting;
+    bool        connecting;         // Connection pending
     uint32_t    sectors;
     uint32_t    capacity;
     uint32_t    flags;
@@ -135,32 +141,33 @@ struct field {
 };
 
 void fuse_link(sector*, sector*);
-void draw_scene(field* o);
+void draw_scene(field* restrict o);
 
 void add_mod_link(sector*, sector*, CallbackType, void (*)(sector*, sector*));
 void link_sector(sector*, sector*);
-void move_sector(sector*, ltrb32u*);
-void erase_sector(sector*);
+void move_sector(sector* restrict, ltrb32u* restrict);
+void erase_sector(sector* restrict);
 
 /*****************************************************************************************************************************/
 
-sector* createSector(field*, sector*, SectorType, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-void initField   (field*, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-void destroyField(field*);
+sector* createSector(field* restrict, sector* restrict, SectorType, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+void initField   (field* restrict, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+void destroyField(field* restrict);
 
 /*****************************************************************************************************************************/
 
-void hit_test_down(field*, int, int, MouseButton);
-void hit_test_drag(field*, int, int);
-void hit_test_up  (field*, int, int, MouseButton);
-void hit_test     (field*, int, int);
+void hit_test_down(field* restrict, int, int, MouseButton);
+void hit_test_drag(field* restrict, int, int);
+void hit_test_up  (field* restrict, int, int, MouseButton);
+void hit_test     (field* restrict, int, int);
 
 /*****************************************************************************************************************************/
 
-extern void (*init_sector[])(sector*);
-extern void (*set_sector[])(sector*, int, int);
-extern void (*draw_sector[])(sector*);
-extern void (*drag_sector[])(sector*, int, int);
-extern void (*scroll_sector[])(sector*, int, int);
-extern void (*leave_sector[])(sector*, int, int);
-extern void (*release_sector[])(sector*, int, int);
+extern void (*init_sector[])(sector* restrict);
+extern void (*set_sector[])(sector* restrict, int, int);
+extern void (*draw_sector[])(sector* restrict);
+extern void (*drag_sector[])(sector* restrict, int, int);
+extern void (*scroll_sector[])(sector* restrict, int, int);
+extern void (*enter_sector[])(sector* restrict, int, int);
+extern void (*leave_sector[])(sector* restrict, int, int);
+extern void (*release_sector[])(sector* restrict, int, int);
