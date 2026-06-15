@@ -567,14 +567,18 @@ inline static void disconnect(sector* restrict o) {
     if(o->has_data) {
         memset(o->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
     }
-    if(o->connection->has_data) {
-        memset(o->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
-    }
-
     o->connected = false;
     o->has_data = false;
-    target->connected = false;
-    target->has_data = false;
+   
+    if(target) {
+        if(target->has_data) {
+            memset(o->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+        }
+
+        target->connected = false;
+        target->has_data = false;
+        target = nullptr;
+    }
 }
 
 static void release_socket(sector* restrict o, int x, int y) {
