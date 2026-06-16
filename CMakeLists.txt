@@ -13,17 +13,13 @@ include_directories( ${OPENGL_INCLUDE_DIRS} )
 set( GLFW_BUILD_DOCS OFF CACHE BOOL  "GLFW lib only" )
 set( GLFW_INSTALL OFF CACHE BOOL  "GLFW lib only" )
 
-# ADD_LIBRARY(field_glfw field_glfw.c)
-
 add_subdirectory( glfw build/glfw)
-add_subdirectory( field build/field )
-add_subdirectory( cell build/cell )
 
 set(FIELD main.c)
 
 add_executable(loom	main.c)
 
-target_link_libraries(loom ${OPENGL_LIBRARIES} glfw field cell)
+target_link_libraries(loom ${OPENGL_LIBRARIES} glfw)
 
 target_compile_options(loom PRIVATE
     -Wall

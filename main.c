@@ -1,21 +1,24 @@
-#include "field/colours.h"
-#include "field/field.h"
-#include "field_glfw.h"
-#include "field/image_load.h"
+#include "field/field_glfw.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <time.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <unistd.h>
 
-static field context;
-static sprite button;
-
 #define TARGET_FPS 60.0
 #define WIDTH  1280
 #define HEIGHT 720
 
 double last_time = 0;
+
+const uint8_t image_rk16f[] = {
+    #embed "assets/rk16f.qoi"
+};
+
+const uint8_t image_rk16y[] = {
+    #embed "assets/rk16y.qoi"
+};
 
 static void slider_call(sector* slider, sector* tbox)
 {
@@ -32,6 +35,49 @@ void timer_callback(union sigval)
 {
     pthread_cond_signal(&_repaint_condition);
     //printf("\n[TIMER EXPIRED] 3 seconds passed in the background!\n");
+}
+
+frame load_qoi_to_frame(const uint8_t *image_data, int size)
+{
+    frame f = { NULL, 0, 0 };
+
+    qoi_desc desc;
+    void *pixels = qoi_decode(image_data, size, &desc, 4);
+
+    if (!pixels) {
+        return f;
+    }
+
+    f.width = desc.width;
+    f.height = desc.height;
+
+    uint32_t *out = (uint32_t *)malloc(f.width * f.height * sizeof(uint32_t));
+    if (!out) {
+        free(pixels);
+        return f;
+    }
+    f.data = out;
+
+    const uint8_t *in = (const uint8_t *)pixels;
+    size_t num_pixels = (size_t)f.width * f.height;
+
+    for (size_t i = 0; i < num_pixels; ++i) {
+        uint8_t a = in[i * 4 + 0];
+        uint8_t b = in[i * 4 + 1];
+        uint8_t g = in[i * 4 + 2];
+        uint8_t r = in[i * 4 + 3];
+
+        uint32_t px =
+            ((uint32_t)r) |
+            ((uint32_t)g << 8) |
+            ((uint32_t)b << 16) |
+            ((uint32_t)a << 24);
+
+        out[i] = px;
+    }
+
+    free(pixels);
+    return f;
 }
 
 int main(int, char**)
@@ -69,7 +115,12 @@ int main(int, char**)
 
     
     /*****************************************************************************************************************************/
+    field context;
+    sprite button;
+    
     initField (&context, 0, 0, WIDTH, HEIGHT, 36, ROOT);
+    printf("[MAIN] initField\n");
+
     auto node = createSector(&context, nullptr, ST_NODE    , 0,  0, 299, 199, MOVEABLE);
     
     auto slider = createSector(&context, node, ST_SLIDER, 20, 40, 20, 80, MOVEABLE | VERTICAL);
@@ -107,44 +158,24 @@ int main(int, char**)
     createSector(&context, node2, ST_SOCKET  , 330, 120, 10, 10, MOVEABLE | INTERCON | INPUT);
     createSector(&context, node2, ST_BUTTON, 330, 160, 20, 20, 0);
 
+    qoi_desc desc;
+    // size as int per qoi_decode's signature
+    void *pixels = qoi_decode(image_rk16f, (int)sizeof(image_rk16f), &desc, 4);
+    if(!pixels) printf("Image load failed!\n");
 
-    sprite_init(&button, 16, 16, 2);
-    load_png_rgba("resin_knob_16_y.png", &button.data[1]);
-    load_png_rgba("resin_knob_16_off.png", &button.data[0]);
+    auto b_off = load_qoi_to_frame(image_rk16f, (int)sizeof(image_rk16f));
+    auto b_y   = load_qoi_to_frame(image_rk16y, (int)sizeof(image_rk16y));
+    button.data[0] = b_off;
+    button.data[1] = b_y;
+    
+    // load_png_rgba("resin_knob_16_y.png", &button.data[1]);
+    // load_png_rgba("resin_knob_16_off.png", &button.data[0]);
 
     cbox->data = &button;
     /*****************************************************************************************************************************/
 
-    pthread_mutex_init(&_screen_lock, NULL);
-    pthread_mutex_init(&_main_lock, NULL);
-
-    pthread_barrier_init(&_init_barrier, NULL, 2);
-
-    pthread_create(&field_thread, NULL, draw_field, &context);
-    pthread_create(&event_thread, NULL, events_process, NULL);
-
-    pthread_barrier_destroy(&_init_barrier);
-   
-
-    frame_fill(context.layer[BG], BACKGROUND);
-
-    while (_switch_on)
-    {   
-        pthread_mutex_lock(&_main_lock);
-        pthread_cond_wait(&_escape_condition, &_main_lock);
-        pthread_mutex_unlock(&_main_lock);
-    }
-
-    pthread_barrier_init(&_exit_barrier, NULL, 3);
-    pthread_barrier_wait(&_exit_barrier);
-    pthread_barrier_destroy(&_exit_barrier);
-
-    printf("Main Terminated...\n");
-    pthread_mutex_destroy(&_screen_lock);
-    pthread_mutex_destroy(&_main_lock);
+    field_loop(&context);
 
     timer_delete(timer_id);
-
-    exit(EXIT_SUCCESS);
     return 0;
 }

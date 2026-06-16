@@ -1,7 +1,5 @@
 #pragma once
 
-#include "field/colours.h"
-#include "field/primitives.h"
 #include <GLFW/glfw3.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -10,7 +8,7 @@
 #define _MULTI_THREADED
 #include <pthread.h>
 
-#include "field/field.h"
+#include "field.h"
 #define FIELD_TRANSPARENCY 1
 
 GLFWwindow* window;
@@ -170,6 +168,7 @@ static void update_buffer(frame* o, GLuint texture)
 void* events_process(void*)
 {
     pthread_barrier_wait(&_init_barrier);
+    printf("[INIT BARRIER]: event process passed");
 
     while(_handle_events)
     {
@@ -332,4 +331,34 @@ void* draw_field(void* arg)
     pthread_barrier_wait(&_exit_barrier);
 
     return nullptr;
+}
+
+static void field_loop(field* restrict context) {
+    pthread_mutex_init(&_screen_lock, NULL);
+    pthread_mutex_init(&_main_lock, NULL);
+
+    pthread_barrier_init(&_init_barrier, NULL, 2);
+    printf("Creating threads\n");
+
+    pthread_create(&field_thread, NULL, draw_field, context);
+    pthread_create(&event_thread, NULL, events_process, NULL);
+
+    pthread_barrier_destroy(&_init_barrier);
+
+    while (_switch_on)
+    {   
+        pthread_mutex_lock(&_main_lock);
+        pthread_cond_wait(&_escape_condition, &_main_lock);
+        pthread_mutex_unlock(&_main_lock);
+    }
+
+    pthread_barrier_init(&_exit_barrier, NULL, 3);
+    pthread_barrier_wait(&_exit_barrier);
+    pthread_barrier_destroy(&_exit_barrier);
+
+    printf("Main Terminated...\n");
+    pthread_mutex_destroy(&_screen_lock);
+    pthread_mutex_destroy(&_main_lock);
+
+    exit(EXIT_SUCCESS);
 }
