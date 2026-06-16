@@ -792,14 +792,23 @@ void hit_test(field* restrict o, int x, int y) {
 
     if(o->current != uid) {
         #ifdef DEBUG_OVERLAY
+            constexpr uint32_t col = 0xFF'FF'FF'90;
             frame_fill(o->layer[DO], 0);
-            draw_text_label(o->layer[DO], gtFont, "#", 10, 10, 100, 10, 0xFFFFFFFF);
-            char buffer[128];
-            snprintf(buffer, 128, "CONTROL ID : %d", o->at[uid].id);
-            draw_text_label(o->layer[DO], gtFont, buffer, 10, 22, 100, 10, 0xFFFFFFFF);
+            draw_text_label(o->layer[DO], gtFont,    "#", 10, 10, 100, 10, col);
 
+            char buffer[128];
+            snprintf(buffer, 128, "CONTROL ID   : %d", o->at[uid].id);
+            draw_text_label(o->layer[DO], gtFont, buffer, 10, 22, 100, 10, col);
             snprintf(buffer, 128, "IS CONNECTED : %d", o->at[uid].connected);
-            draw_text_label(o->layer[DO], gtFont, buffer, 10, 34, 100, 10, 0xFFFFFFFF);
+            draw_text_label(o->layer[DO], gtFont, buffer, 10, 34, 100, 10, col);
+            snprintf(buffer, 128, "CONNECTION   : %p", (void*)o->at[uid].connection);
+            draw_text_label(o->layer[DO], gtFont, buffer, 10, 46, 100, 10, col);
+            snprintf(buffer, 128, "HAS DATA     : %d", o->at[uid].has_data);
+            draw_text_label(o->layer[DO], gtFont, buffer, 10, 58, 100, 10, col);
+            snprintf(buffer, 128, "VALUE COARSE : %f", o->at[uid].value[0]);
+            draw_text_label(o->layer[DO], gtFont, buffer, 10, 70, 100, 10, col);
+            snprintf(buffer, 128, "VALUE FINE   : %f", o->at[uid].value[1]);
+            draw_text_label(o->layer[DO], gtFont, buffer, 10, 82, 100, 10, col);
             atomic_store_explicit(&force_repaint, true, memory_order_release);
         #endif
 
@@ -1318,7 +1327,8 @@ inline static void disconnect(sector* restrict o) {
 
         target->connected = false;
         target->has_data = false;
-        target = nullptr;
+        o->connection->connection = nullptr;
+        o->connection = nullptr;
     }
 }
 
@@ -1326,6 +1336,8 @@ static void release_socket(sector* restrict o, int x, int y) {
     auto carrier = o->carrier;
     auto target_id = frame_get(carrier->layer[SC], x, y);
     auto target = &carrier->at[target_id];
+    
+    if(target->connected) disconnect(target);
 
     if((o->flags & OUTPUT) && (target->flags & INPUT)) {
         connect(o, target);
