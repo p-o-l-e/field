@@ -1,6 +1,7 @@
 #pragma once
 
 #include <GLFW/glfw3.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -116,8 +117,7 @@ static void error_callback(int error, const char* description)
 
 static void key_callback(GLFWwindow* /*window*/, int key, int/* scancode*/, int action, int/* mods*/)
 {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) 
-    {
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
         _window_on = false;
     }
 }
@@ -239,6 +239,10 @@ void* draw_field(void* arg)
     constexpr uint32_t CORD_NORMAL = GRAY;
     constexpr uint32_t CORD_SELECT = GREEN;
 
+    #ifdef DEBUG_OVERLAY
+        GLuint debug_layer = get_buffer(context->layer[DO]);
+    #endif
+
     while (_window_on)
     {
         pthread_mutex_lock(&_screen_lock);
@@ -247,7 +251,7 @@ void* draw_field(void* arg)
 
         bool swap = false;
 
-        if(context->repaint)
+        if(context->repaint || atomic_load(&force_repaint))
         {
             glClear(GL_COLOR_BUFFER_BIT);
             glColor3f(1.0f, 1.0f, 1.0f);
@@ -257,8 +261,16 @@ void* draw_field(void* arg)
             update_buffer(context->layer[NG], ng);
             update_buffer(context->layer[FG], fg);
 
-            if(context->staging)
+            if(context->staging) {
                 update_buffer(context->layer[ST], st);
+            }
+
+            #ifdef DEBUG_OVERLAY
+                if(atomic_load_explicit(&force_repaint, memory_order_acquire)) {
+                    atomic_store_explicit(&force_repaint, false, memory_order_release);
+                }
+                update_buffer(context->layer[DO], debug_layer);
+            #endif
 
             swap = true;
         }

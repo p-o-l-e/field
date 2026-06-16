@@ -8,9 +8,13 @@
 #include <math.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <stdatomic.h>
 #define QOI_IMPLEMENTATION
 #include "qoi.h"
-
+#define DEBUG_OVERLAY
+#ifdef DEBUG_OVERLAY
+atomic_bool force_repaint = false;
+#endif
 constexpr uint_fast32_t SPLINE_SEGMENTS = 32;
 
 typedef enum {
@@ -71,6 +75,9 @@ typedef enum: uint32_t {
     SC,                         // controls stencil
     SN,                         // nodes stencil
     ST,                         // staging
+    #ifdef DEBUG_OVERLAY
+        DO,
+    #endif
     CC,                         // controls count
 
 } FieldLayer;
@@ -784,6 +791,18 @@ void hit_test(field* restrict o, int x, int y) {
     auto uid = frame_get(o->layer[SC], x, y);
 
     if(o->current != uid) {
+        #ifdef DEBUG_OVERLAY
+            frame_fill(o->layer[DO], 0);
+            draw_text_label(o->layer[DO], gtFont, "#", 10, 10, 100, 10, 0xFFFFFFFF);
+            char buffer[128];
+            snprintf(buffer, 128, "CONTROL ID : %d", o->at[uid].id);
+            draw_text_label(o->layer[DO], gtFont, buffer, 10, 22, 100, 10, 0xFFFFFFFF);
+
+            snprintf(buffer, 128, "IS CONNECTED : %d", o->at[uid].connected);
+            draw_text_label(o->layer[DO], gtFont, buffer, 10, 34, 100, 10, 0xFFFFFFFF);
+            atomic_store_explicit(&force_repaint, true, memory_order_release);
+        #endif
+
         o->prior = o->current;
         o->current = uid;
        
@@ -813,6 +832,10 @@ void hit_test_up(field* restrict o, int x, int y, MouseButton button) {
     if(o->pressed) {
         release_sector[o->pressed->type](o->pressed, x, y);
         o->pressed = nullptr;
+    }
+    else {
+        auto s = &o->at[o->current];
+        release_sector[s->type](s, x, y);
     }
 
     o->drag    = false;
@@ -1111,7 +1134,83 @@ static inline point interpolate_bezier(point a, point b, point c, point d, float
     return o;
 }
 
-static void drag_socket(sector* restrict s, int x, int y)
+static void drag_socket(sector* s, int x, int y)
+{
+    printf("Drag socket : %d\n", s->type);
+
+    if(s->connected) {
+        s->carrier->pressed = s->connection;
+        s = s->connection;
+        s->carrier->current = s->id;
+
+        if(s->has_data) {
+            memset(s->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float)); 
+            s->connection->has_data = false;
+        }
+        if(s->connection->has_data) {
+            memset(s->connection->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+            s->connection->has_data = false;
+        }
+        s->connection->connected = false;
+        s->connected = false;
+
+    }
+
+    auto o = s->carrier;
+
+    float xe = (float)x;
+    float ye = (float)y;
+
+    if(xe > o->width) xe = (float)o->width;
+    else if(xe < 0.0f) xe = 0.0f;
+
+    if(ye > o->height) ye = (float)o->height;
+    else if(ye < 0.0f) ye = 0.0f;
+
+    point a, b, c, d;
+
+    float xo = (float)s->bounds.l + 0.5f * (float)s->width;
+    float yo = (float)s->bounds.t + 0.5f * (float)s->height;
+
+    a.x = xo;
+    a.y = yo;
+
+    b.x = (xe - xo) * (1.0f/3.0f) + xo;
+    c.x = (xe - xo) * (2.0f/3.0f) + xo;
+
+    if(ye < yo) {
+        b.y = fabs(yo - ye) * (1.0f - 1.0E-6f) + ye;
+        c.y = fabs(yo - ye) * (1.0E-6f) + ye;
+    }
+    else {
+        b.y = fabs(yo - ye) * (1.0E-6f) + yo;
+        c.y = fabs(yo - ye) * (1.0f - 1.0E-6f) + yo;
+    }
+
+    d.x = xe;
+    d.y = ye;
+
+    const float inc = 1.0f / (float)(SPLINE_SEGMENTS - 1) ;
+    float t = 0.0;
+
+    auto uva = screen_to_uv(a.x, a.y, o->width, o->height);
+    auto uvb = screen_to_uv(b.x, b.y, o->width, o->height);
+    auto uvc = screen_to_uv(c.x, c.y, o->width, o->height);
+    auto uvd = screen_to_uv(d.x, d.y, o->width, o->height);
+
+    for(uint32_t i = 0, j = 0; i < SPLINE_SEGMENTS; i++) {
+        point uvp = interpolate_bezier(uva, uvb, uvc, uvd, t);
+
+        ((float*)s->data)[j++] = uvp.x;
+        ((float*)s->data)[j++] = uvp.y;
+
+        t += inc;
+    }
+
+    s->has_data = true;
+}
+
+static void drag_cord(sector* restrict s, int x, int y)
 {
     printf("Drag socket : %d\n", s->type);
 
@@ -1183,7 +1282,9 @@ static void drag_socket(sector* restrict s, int x, int y)
 inline static void connect(sector* restrict source, sector* restrict target) {
     if(target->connected) {
         if(target->has_data) {
-            memset(source->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+            memset(target->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+            target->has_data = false;
+            target->connected = false;
         }
         if(target->connection->has_data) {
             memset(source->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
@@ -1191,14 +1292,14 @@ inline static void connect(sector* restrict source, sector* restrict target) {
             target->connection->connected = false;
         }
     }
-    drag_socket(source, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
+    drag_cord(source, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
     source->connected = true;
     target->connected = true;
     source->connection = target;
+    target->connection = source;
     source->hovered = false;
     target->hovered = true;
     source->carrier->connecting = false;
-    target->connection = source;
 }
 
 inline static void disconnect(sector* restrict o) {
@@ -1206,10 +1307,10 @@ inline static void disconnect(sector* restrict o) {
 
     if(o->has_data) {
         memset(o->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+        o->has_data = false;
     }
     o->connected = false;
-    o->has_data = false;
-   
+
     if(target) {
         if(target->has_data) {
             memset(o->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
@@ -1363,10 +1464,10 @@ static void release_node(sector* restrict s, int, int)
             if(node->connected) {
                 auto target = node->connection;
                 if(node->has_data) {
-                    drag_socket(node, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
+                    drag_cord(node, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
                 }
                 else if(target->has_data) {
-                    drag_socket(target, node->bounds.l + node->width / 2, node->bounds.t + node->height / 2);
+                    drag_cord(target, node->bounds.l + node->width / 2, node->bounds.t + node->height / 2);
                 }
 
             }
