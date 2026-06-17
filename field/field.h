@@ -24,7 +24,7 @@ typedef enum {
     ST_SPRITE_INF_SLIDER,
     ST_SOCKET,
     ST_CHECKBOX, 
-    ST_BUTTON, 
+    ST_MOMENTARY, 
     ST_SPRITE_CHECKBOX, 
     ST_SPRITE_BUTTON, 
     ST_CANVAS,
@@ -176,6 +176,8 @@ struct sector {
     bool        on;
     bool        connected;
     bool        has_data;
+    bool        radio;
+    uint32_t    radio_id;
     uint32_t    flags;
     uint32_t    nodes;
     uint32_t    capacity;
@@ -322,26 +324,29 @@ typedef enum {
 
 extern const uint8_t gtFont[];
 
-static void draw_glyph     (frame*, const uint8_t*, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_text_label(frame*, const uint8_t* , const char*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_rectangle (frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_rect_f    (frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_line_v    (frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_line_h    (frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_circle_f  (frame*, uint32_t, uint32_t, uint32_t, uint32_t);
-static void draw_circle_o  (frame*, uint32_t, uint32_t, uint32_t, uint32_t);
-static void draw_ltrb_o    (frame*, ltrb32u*, const uint32_t);
-static void draw_ltrb_f    (frame*, ltrb32u*, const uint32_t);
-static uint32_t frame_get  (frame*, uint32_t, uint32_t);
-static void frame_set      (frame*, uint32_t, uint32_t, uint32_t);
-static void frame_fill     (frame*, uint32_t);
-static void frame_clr      (frame*);
-static void frame_init     (frame*, uint32_t, uint32_t);
-static void frame_flush    (frame*);
-static void frame_copy     (frame*, frame*);
-static void frame_copy_at  (frame*, frame*, uint32_t, uint32_t);
+static void draw_glyph      (frame*, const uint8_t*, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void draw_text_label (frame*, const uint8_t* , const char*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void draw_rectangle  (frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void draw_rect_f     (frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void draw_line_v     (frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void draw_line_h     (frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void draw_circle_f   (frame*, uint32_t, uint32_t, uint32_t, uint32_t);
+static void draw_circle_o   (frame*, uint32_t, uint32_t, uint32_t, uint32_t);
+static void draw_ltrb_o     (frame*, ltrb32u*, const uint32_t);
+static void draw_ltrb_f     (frame*, ltrb32u*, const uint32_t);
+static uint32_t frame_get   (frame*, uint32_t, uint32_t);
+static void frame_set       (frame*, uint32_t, uint32_t, uint32_t);
+static void frame_fill      (frame*, uint32_t);
+static void frame_clr       (frame*);
+static void frame_init      (frame*, uint32_t, uint32_t);
+static void frame_flush     (frame*);
+static void frame_copy      (frame*, frame*);
+static void frame_copy_at   (frame*, frame*, uint32_t, uint32_t);
+static void sprite_init     (sprite*, uint32_t, uint32_t, uint32_t);
+static void sprite_flush    (sprite*);
+static void sprite_load_stripe(sprite*, frame*);
 
-static inline void frame_set(frame* o, uint32_t x, uint32_t y, uint32_t value)
+static inline void frame_set(frame*o, uint32_t x, uint32_t y, uint32_t value)
 {
     if(x < o->width && y < o->height)
     o->data[x + y * o->width] = value;
@@ -375,32 +380,26 @@ static inline void frame_flush(frame* o)
     free(o->data);
 }
 
-static inline void frame_copy (frame* target, frame* source)
-{
+static inline void frame_copy(frame* target, frame* source) {
     for(uint32_t i = 0; i < target->height * target->width; i++) target->data[i] = source->data[i];
 }
 
-void frame_copy_at(frame* target, frame* source, uint32_t xo, uint32_t yo)
-{
-    for(uint32_t y = 0; y < source->height; y++)
-    {
-        for(uint32_t x = 0; x < source->width; x++)
-        {
+static inline void frame_copy_at(frame* target, frame* source, uint32_t xo, uint32_t yo) {
+    for(uint32_t y = 0; y < source->height; y++) {
+        for(uint32_t x = 0; x < source->width; x++) {
             frame_set(target, x + xo, y + yo, frame_get(source, x, y));
         }
     }
 }
 
-static inline void draw_rectangle(frame* canvas, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour)
+static inline void draw_rectangle(frame* restrict canvas, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour)
 {
-    for(uint32_t i = l; i <= r; i++)
-    {
+    for(uint32_t i = l; i <= r; i++) {
         frame_set(canvas, i, t, colour);
         frame_set(canvas, i, b, colour);
     }
 
-    for(uint32_t i = t; i <= b; i++)
-    {
+    for(uint32_t i = t; i <= b; i++) {
         frame_set(canvas, l, i, colour);
         frame_set(canvas, r, i, colour);
     }
@@ -425,8 +424,7 @@ static inline void draw_line_h(frame* o, uint32_t y, uint32_t xo, uint32_t xe, c
         frame_set(o, x, y, value);
 }
 
-void draw_circle_f(frame* o, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value)
-{
+void draw_circle_f(frame* o, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
     int x = 0;
     int y = r;
     int p = 1 - r;
@@ -450,8 +448,7 @@ void draw_circle_f(frame* o, uint32_t xc, uint32_t yc, uint32_t r, uint32_t valu
     draw_line_h(o, yc, xc - r, xc + r, value);
 }
 
-static inline void draw_circle_o(frame* o, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value)
-{
+static inline void draw_circle_o(frame* o, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
     int x = 0;
     int y = r;
     int p = 1 - r;
@@ -483,36 +480,28 @@ static inline void draw_circle_o(frame* o, uint32_t xc, uint32_t yc, uint32_t r,
     frame_set(o, xc - r, yc, value);
 }
 
-static inline void draw_glyph(frame* canvas, const uint8_t* font, uint32_t id, uint32_t l, uint32_t t, const uint32_t colour)
-{
+static inline void draw_glyph(frame* canvas, const uint8_t* font, uint32_t id, uint32_t l, uint32_t t, const uint32_t colour) {
     uint32_t pos = id * 7;
     u_int8_t stencil = 0b1;
 
-    for(uint32_t y = 0; y < 8; y++)
-    {
-        for(uint32_t x = 0; x < 7; x++)
-        {
+    for(uint32_t y = 0; y < 8; y++) {
+        for(uint32_t x = 0; x < 7; x++) {
             if(font[pos + x] & stencil) frame_set(canvas, x + l, y + t, colour);
-
         }
         stencil<<=1;
     }
 }
 
-static inline void draw_text_label(frame* canvas, const uint8_t* font, const char* text, uint32_t l, uint32_t t, uint32_t, uint32_t, const uint32_t colour)
-{
+static inline void draw_text_label(frame* canvas, const uint8_t* font, const char* text, uint32_t l, uint32_t t, uint32_t, uint32_t, const uint32_t colour) {
     uint32_t n = strlen(text);
-
-    for(uint32_t i = 0; i < n; i++)
-    {
+    for(uint32_t i = 0; i < n; i++) {
         draw_glyph(canvas, font, text[i] - 32, l + i * 8, t, colour);
     }
 }
 
 /******************************************************************************************************************************/
 
-void sprite_init(sprite* o, uint32_t w, uint32_t h, uint32_t nframes)
-{
+static inline void sprite_init(sprite* o, uint32_t w, uint32_t h, uint32_t nframes) {
     frame temp;
     frame_init(&temp, w, h);
 
@@ -523,36 +512,29 @@ void sprite_init(sprite* o, uint32_t w, uint32_t h, uint32_t nframes)
 
     frame_flush(&temp);
     
-    for(uint32_t i = 0; i < o->nframes; i++)
-    {
+    for(uint32_t i = 0; i < o->nframes; i++) {
         frame_init(&o->data[i], w, h);
     }
 }
 
-void sprite_flush(sprite* o)
-{
-    for(uint32_t i = 0; i < o->nframes; i++)
-    {
+static inline void sprite_flush(sprite* restrict o) {
+    for(uint32_t i = 0; i < o->nframes; i++) {
         frame_flush(&o->data[i]);
     }
-
     free(o->data);
 }
 
-void sprite_load_stripe(sprite* o, frame* f)
-{
-    for(uint32_t i = 0; i < o->nframes; i++)
-    {
-        for(uint32_t y = 0; y < o->height; y++)
-        {
-            for(uint32_t x = 0; x < o->width; x++)
-            {
+static inline void sprite_load_stripe(sprite* restrict o, frame* restrict f) {
+    for(uint32_t i = 0; i < o->nframes; i++) {
+        for(uint32_t y = 0; y < o->height; y++) {
+            for(uint32_t x = 0; x < o->width; x++) {
                 frame_set(&o->data[i], x, y, frame_get(f, x, y + (i * o->height)));
             }
         }
     }
 }
-void draw_ltrb_o(frame* canvas, ltrb32u* r, const uint32_t colour) {
+
+static inline void draw_ltrb_o(frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour) {
     for(uint32_t i = r->l; i <= r->r; ++i) {
         frame_set(canvas, i, r->t, colour);
         frame_set(canvas, i, r->b, colour);
@@ -563,7 +545,7 @@ void draw_ltrb_o(frame* canvas, ltrb32u* r, const uint32_t colour) {
     }
 }
 
-void draw_ltrb_f(frame* canvas, ltrb32u* r, const uint32_t colour)
+static inline void draw_ltrb_f(frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour)
 {
     for(uint32_t y = r->t; y <= r->b; ++y) {
         for(uint32_t x = r->l; x <= r->r; ++x) {
@@ -574,9 +556,7 @@ void draw_ltrb_f(frame* canvas, ltrb32u* r, const uint32_t colour)
 
 /******************************************************************************************************************************/
 
-void sprite_init (sprite*, uint32_t, uint32_t, uint32_t);
-void sprite_flush(sprite*);
-void sprite_load_stripe(sprite*, frame*);
+
 
 void fuse_link(sector*, sector*);
 void draw_scene(field* restrict o);
@@ -631,6 +611,8 @@ sector* createSector(field* restrict o, sector* restrict node, SectorType type, 
     o->at[pos].repaint                  = true;
     o->at[pos].flags                    = flags;
     o->at[pos].carrier                  = o;
+    o->at[pos].radio                    = false;
+    o->at[pos].radio_id                 = 0;
 
     for(uint32_t i = 0; i < CT_LIMIT; ++i) {
         o->at[pos].callback[i] = &fuse_link;
@@ -710,13 +692,9 @@ void destroyField(field* restrict o) {
     free(o->at);
 }
 
-void empty(){
-    printf("Empty callback\n");
-}
+void empty() {}
 
-void fuse_link(sector*, sector*) {
-    printf("Fuse callback\n");
-}
+void fuse_link(sector*, sector*) {}
 
 void link_sector(sector* parent, sector* child) {
     assert(parent != child);
@@ -787,29 +765,35 @@ void hit_test_down(field* restrict o, int x, int y, MouseButton button) {
     p->callback[CT_PRESS](p, p->target[CT_PRESS]);
 }
 
+#ifdef DEBUG_OVERLAY
+static inline void draw_debug_overlay(field* restrict o, sector* restrict s) {
+    constexpr uint32_t colour = 0xFF'FF'FF'90;
+    frame_fill(o->layer[DO], 0);
+    draw_text_label(o->layer[DO], gtFont,    "#", 10, 10, 100, 10, colour);
+
+    char buffer[128];
+    snprintf(buffer, 128, "CONTROL ID   : %d", s->id);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, 22, 100, 10, colour);
+    snprintf(buffer, 128, "IS CONNECTED : %d", s->connected);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, 34, 100, 10, colour);
+    snprintf(buffer, 128, "CONNECTION   : %p", (void*)s->connection);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, 46, 100, 10, colour);
+    snprintf(buffer, 128, "HAS DATA     : %d", s->has_data);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, 58, 100, 10, colour);
+    snprintf(buffer, 128, "VALUE COARSE : %f", s->value[0]);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, 70, 100, 10, colour);
+    snprintf(buffer, 128, "VALUE FINE   : %f", s->value[1]);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, 82, 100, 10, colour);
+    atomic_store_explicit(&force_repaint, true, memory_order_release);
+}
+#endif
+
 void hit_test(field* restrict o, int x, int y) {
     auto uid = frame_get(o->layer[SC], x, y);
 
     if(o->current != uid) {
         #ifdef DEBUG_OVERLAY
-            constexpr uint32_t col = 0xFF'FF'FF'90;
-            frame_fill(o->layer[DO], 0);
-            draw_text_label(o->layer[DO], gtFont,    "#", 10, 10, 100, 10, col);
-
-            char buffer[128];
-            snprintf(buffer, 128, "CONTROL ID   : %d", o->at[uid].id);
-            draw_text_label(o->layer[DO], gtFont, buffer, 10, 22, 100, 10, col);
-            snprintf(buffer, 128, "IS CONNECTED : %d", o->at[uid].connected);
-            draw_text_label(o->layer[DO], gtFont, buffer, 10, 34, 100, 10, col);
-            snprintf(buffer, 128, "CONNECTION   : %p", (void*)o->at[uid].connection);
-            draw_text_label(o->layer[DO], gtFont, buffer, 10, 46, 100, 10, col);
-            snprintf(buffer, 128, "HAS DATA     : %d", o->at[uid].has_data);
-            draw_text_label(o->layer[DO], gtFont, buffer, 10, 58, 100, 10, col);
-            snprintf(buffer, 128, "VALUE COARSE : %f", o->at[uid].value[0]);
-            draw_text_label(o->layer[DO], gtFont, buffer, 10, 70, 100, 10, col);
-            snprintf(buffer, 128, "VALUE FINE   : %f", o->at[uid].value[1]);
-            draw_text_label(o->layer[DO], gtFont, buffer, 10, 82, 100, 10, col);
-            atomic_store_explicit(&force_repaint, true, memory_order_release);
+            draw_debug_overlay(o, &o->at[uid]);
         #endif
 
         o->prior = o->current;
@@ -832,7 +816,6 @@ void hit_test(field* restrict o, int x, int y) {
 void hit_test_drag(field* restrict o, int x, int y) {
     drag_sector[o->pressed->type](o->pressed, x, y);
     o->repaint = true;
-    //printf("Hit Test Drag : %d\n", o->pressed->type);
 }
 
 void hit_test_up(field* restrict o, int x, int y, MouseButton button) {
@@ -876,27 +859,40 @@ static void draw_checkbox(sector* restrict c) {
 }
 
 void draw_scene(field* restrict o) {
-    // printf("Draw scene:\n");
     for(uint32_t i = 0; i <= o->sectors; ++i) {
         auto s = &o->at[i];
         if(s->repaint) {
             draw_sector[s->type](s);
-            // printf("-- Repaint: %d\n", i);
         }
     }
-    
     o->repaint = false;
 }
 
 /*****************************************************************************************************************************/
 
-static void set_checkbox(sector* restrict o, int x, int y) {
+static void set_checkbox(sector* restrict o, int, int) {
     auto coarse = &o->value[CP_COARSE];
-    if (*coarse < 0.5f) *coarse = 1.0f;
-    else *coarse = 0.0f;
+    if(o->radio) {
+        auto id = o->radio_id;
+        if(*coarse > 0.5f) return;
+        else {
+            *coarse = 1.0f;
+            o->repaint = true;
+            auto f = o->carrier;
+            for(uint32_t i = 0; i < f->sectors; ++i) {
+                auto r = &f->at[i];
+                if(r->radio && r->radio_id == id && r != o) {
+                    r->value[CP_COARSE] = 0.0f;
+                    r->repaint = true;
+                }
+            }
+        }
+    }
+    else {
+        if (*coarse < 0.5f) *coarse = 1.0f;
+        else *coarse = 0.0f;
+    }
     o->repaint = true;
-
-    if(false) printf("[%d : %d]", x, y);
 }
 
 
@@ -904,7 +900,6 @@ static void set_slider(sector* restrict o, int x, int y) {
     const float v = 0.1f;
     const auto coarse = &o->value[CP_COARSE];
     const auto fine = &o->value[CP_FINE];
-    printf("coarse initial : %f\n", *coarse);
 
     float value = {};
 
@@ -912,13 +907,11 @@ static void set_slider(sector* restrict o, int x, int y) {
         const int dy = o->carrier->memory[SP_CURSOR_PRIOR].y - y;
         const auto step = o->step[CP_COARSE]; 
         value = step * roundf((float)dy * v / step) + o->memory[CP_COARSE];
-        printf("coarse : %f - dy : %d\n", *coarse, dy);
     }
     else {
         const int dx = o->carrier->memory[SP_CURSOR_PRIOR].x - x;
         const auto step = o->step[CP_COARSE]; 
         value = - step * roundf((float)dx * v / step) - o->memory[CP_COARSE];
-        printf("coarse : %f - value : %f\n", *coarse, value);
     }
 
     if(value < o->range[0]) {
@@ -972,8 +965,6 @@ static void scroll_slider(sector* restrict o, int, int y) {
     };
 
     o->repaint = true;
-    
-    printf("fine : %f - coarse : %f\n", *fine, *coarse);
     o->callback[CT_VALUE](o, o->target[CT_VALUE]);
 }
 
@@ -1145,8 +1136,6 @@ static inline point interpolate_bezier(point a, point b, point c, point d, float
 
 static void drag_socket(sector* s, int x, int y)
 {
-    printf("Drag socket : %d\n", s->type);
-
     if(s->connected) {
         s->carrier->pressed = s->connection;
         s = s->connection;
@@ -1221,8 +1210,6 @@ static void drag_socket(sector* s, int x, int y)
 
 static void drag_cord(sector* restrict s, int x, int y)
 {
-    printf("Drag socket : %d\n", s->type);
-
     if(s->connected) {
         if(s->has_data) {
             memset(s->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
@@ -1425,8 +1412,6 @@ static void drag_node(sector* restrict o, int x, int y)
         o->repaint = true;
         f->repaint = true;
     }
-    
-    printf("Drag node\n");
 }
 
 static void release_node(sector* restrict s, int, int) 
@@ -1493,8 +1478,6 @@ static void release_node(sector* restrict s, int, int)
     s->staging = false;
     s->repaint = true;
     s->carrier->repaint = true;
-
-    printf("-- Node Released ");
 }
 
 /*****************************************************************************************************************************/
@@ -1524,7 +1507,6 @@ static void draw_textbox(sector* restrict c) {
     );
 
     c->repaint = false;
-    //printf("-- Draw TEXTBOX\n");
 }
 
 /*****************************************************************************************************************************/
@@ -1566,7 +1548,7 @@ void (*init_sector[])(sector* restrict)  = {
     [ST_SPRITE_INF_SLIDER]      = init_none,  
     [ST_SOCKET]                 = init_socket,
     [ST_CHECKBOX]               = init_none,  
-    [ST_BUTTON]                 = init_none,  
+    [ST_MOMENTARY]              = init_none,  
     [ST_SPRITE_CHECKBOX]        = init_none,  
     [ST_SPRITE_BUTTON]          = init_none,  
     [ST_CANVAS]                 = init_none,  
@@ -1583,7 +1565,7 @@ void (*set_sector[])(sector* restrict, int, int) = {
     [ST_SPRITE_INF_SLIDER]      = set_sprite_inf_slider, 
     [ST_SOCKET]                 = set_socket,            
     [ST_CHECKBOX]               = set_checkbox,          
-    [ST_BUTTON]                 = set_button,            
+    [ST_MOMENTARY]              = set_button,            
     [ST_SPRITE_CHECKBOX]        = set_checkbox,          
     [ST_SPRITE_BUTTON]          = set_button,            
     [ST_CANVAS]                 = set_none,              
@@ -1598,7 +1580,7 @@ void (*draw_sector[])(sector* restrict) = {
     [ST_SPRITE_INF_SLIDER]      = draw_rotary, 
     [ST_SOCKET]                 = draw_socket,        
     [ST_CHECKBOX]               = draw_checkbox,      
-    [ST_BUTTON]                 = draw_button,        
+    [ST_MOMENTARY]              = draw_button,        
     [ST_SPRITE_CHECKBOX]        = draw_sprite_button, 
     [ST_SPRITE_BUTTON]          = draw_sprite_button, 
     [ST_CANVAS]                 = draw_canvas,        
@@ -1615,7 +1597,7 @@ void (*drag_sector[])(sector* restrict, int, int) = {
     [ST_SPRITE_INF_SLIDER]      = set_sprite_inf_slider,
     [ST_SOCKET]                 = drag_socket,          
     [ST_CHECKBOX]               = drag_none,             
-    [ST_BUTTON]                 = drag_none,             
+    [ST_MOMENTARY]              = drag_none,             
     [ST_SPRITE_CHECKBOX]        = drag_none,             
     [ST_SPRITE_BUTTON]          = drag_none,             
     [ST_CANVAS]                 = drag_none,             
@@ -1632,7 +1614,7 @@ void (*scroll_sector[])(sector* restrict, int, int) = {
     [ST_SPRITE_INF_SLIDER]      = scroll_slider,     
     [ST_SOCKET]                 = scroll_none,          
     [ST_CHECKBOX]               = scroll_none,          
-    [ST_BUTTON]                 = scroll_none,          
+    [ST_MOMENTARY]              = scroll_none,          
     [ST_SPRITE_CHECKBOX]        = scroll_none,          
     [ST_SPRITE_BUTTON]          = scroll_none,          
     [ST_CANVAS]                 = scroll_none,          
@@ -1649,7 +1631,7 @@ void (*enter_sector[])(sector* restrict, int, int) = {
     [ST_SPRITE_INF_SLIDER]      = enter_none,         
     [ST_SOCKET]                 = enter_none,         
     [ST_CHECKBOX]               = enter_none,         
-    [ST_BUTTON]                 = enter_none,   
+    [ST_MOMENTARY]              = enter_none,   
     [ST_SPRITE_CHECKBOX]        = enter_none,         
     [ST_SPRITE_BUTTON]          = enter_none,   
     [ST_CANVAS]                 = enter_none,         
@@ -1665,7 +1647,7 @@ void (*leave_sector[])(sector* restrict, int, int) = {
     [ST_SPRITE_INF_SLIDER]      = leave_none,         
     [ST_SOCKET]                 = leave_none,         
     [ST_CHECKBOX]               = leave_none,         
-    [ST_BUTTON]                 = leave_none,   
+    [ST_MOMENTARY]              = leave_none,   
     [ST_SPRITE_CHECKBOX]        = leave_none,         
     [ST_SPRITE_BUTTON]          = leave_none,   
     [ST_CANVAS]                 = leave_none,         
@@ -1682,7 +1664,7 @@ void (*release_sector[])(sector* restrict, int, int) = {
     [ST_SPRITE_INF_SLIDER]      = release_none,
     [ST_SOCKET]                 = release_socket,
     [ST_CHECKBOX]               = release_none,
-    [ST_BUTTON]                 = release_button,
+    [ST_MOMENTARY]              = release_button,
     [ST_SPRITE_CHECKBOX]        = release_none,
     [ST_SPRITE_BUTTON]          = release_button,
     [ST_CANVAS]                 = release_none,

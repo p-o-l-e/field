@@ -1,3 +1,4 @@
+#include "field/field.h"
 #include "field/field_glfw.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -135,13 +136,26 @@ int main(int, char**)
 
     auto hs_slider = createSector(&context, node, ST_SLIDER, 80, 60, 180, 10, MOVEABLE);
     
-    createSector(&context, node, ST_BUTTON, 20, 160, 20, 20, 0);
+    createSector(&context, node, ST_MOMENTARY, 20, 160, 20, 20, 0);
 
-    createSector(&context, node, ST_CHECKBOX, 50, 140, 10, 10, 0);
-    createSector(&context, node, ST_CHECKBOX, 70, 140, 10, 10, 0);
-    createSector(&context, node, ST_SOCKET  , 280, 100, 10, 10, MOVEABLE | INTERCON | OUTPUT);
-    createSector(&context, node, ST_SOCKET  , 280, 120, 10, 10, MOVEABLE | INTERCON | OUTPUT);
-    createSector(&context, node, ST_SOCKET  , 280, 140, 10, 10, MOVEABLE | INTERCON | OUTPUT);
+
+    auto R1 = createSector(&context, node, ST_CHECKBOX,  50, 140, 10, 10, 0);
+    R1->radio = true;
+    R1->radio_id = 1;
+    auto R2 = createSector(&context, node, ST_CHECKBOX,  70, 140, 10, 10, 0);
+    R2->radio = true;
+    R2->radio_id = 1;
+    auto R3 = createSector(&context, node, ST_CHECKBOX,  90, 140, 10, 10, 0);
+    R3->radio = true;
+    R3->radio_id = 1;
+    auto R4 = createSector(&context, node, ST_CHECKBOX, 110, 140, 10, 10, 0);
+    R4->radio = true;
+    R4->radio_id = 1;
+   
+
+    createSector(&context, node, ST_SOCKET  , 280, 100, 15, 15, MOVEABLE | INTERCON | OUTPUT);
+    createSector(&context, node, ST_SOCKET  , 280, 120, 15, 15, MOVEABLE | INTERCON | OUTPUT);
+    createSector(&context, node, ST_SOCKET  , 280, 140, 15, 15, MOVEABLE | INTERCON | OUTPUT);
     auto tbox = createSector(&context, node, ST_TEXTBOX, 15, 15, 60, 10, 0);
 
     add_mod_link(slider, tbox, CT_VALUE, slider_call);
@@ -151,11 +165,12 @@ int main(int, char**)
 
 
 
-    auto node2 = createSector(&context, nullptr, ST_NODE    , 325,  25, 199, 199, MOVEABLE);
-    createSector(&context, node2, ST_SOCKET  , 330, 80, 10, 10, MOVEABLE | INTERCON | INPUT);
-    createSector(&context, node2, ST_SOCKET  , 330, 100, 10, 10, MOVEABLE | INTERCON | INPUT);
-    createSector(&context, node2, ST_SOCKET  , 330, 120, 10, 10, MOVEABLE | INTERCON | INPUT);
-    createSector(&context, node2, ST_BUTTON, 330, 160, 20, 20, 0);
+    auto node2 = createSector(&context, nullptr, ST_NODE    , 325,  25, 299, 199, MOVEABLE);
+    createSector(&context, node2, ST_SOCKET  , 330, 80, 15, 15, MOVEABLE | INTERCON | INPUT);
+    createSector(&context, node2, ST_SOCKET  , 330, 100, 15, 15, MOVEABLE | INTERCON | INPUT);
+    createSector(&context, node2, ST_SOCKET  , 330, 120, 15, 15, MOVEABLE | INTERCON | INPUT);
+    createSector(&context, node2, ST_MOMENTARY, 330, 30, 20, 20, 0);
+    createSector(&context, node2, ST_PROGRESS_BAR, 370, 30, 200, 20, 0);
 
     qoi_desc desc;
     // size as int per qoi_decode's signature
@@ -164,11 +179,11 @@ int main(int, char**)
 
     auto b_off = load_qoi_to_frame(image_rk16f, (int)sizeof(image_rk16f));
     auto b_y   = load_qoi_to_frame(image_rk16y, (int)sizeof(image_rk16y));
+
+    sprite_init(&button, 16, 16, 2);
     button.data[0] = b_off;
-    button.data[1] = b_y;
+    button.data[1] = b_y; // main()
     
-    // load_png_rgba("resin_knob_16_y.png", &button.data[1]);
-    // load_png_rgba("resin_knob_16_off.png", &button.data[0]);
 
     cbox->data = &button;
     /*****************************************************************************************************************************/

@@ -249,9 +249,13 @@ void* draw_field(void* arg)
         pthread_cond_wait(&_repaint_condition, &_screen_lock);
         pthread_mutex_unlock(&_screen_lock);
 
+        #ifdef DEBUG_OVERLAY
+            if(atomic_load(&force_repaint)) context->repaint = true;
+        #endif
+        
         bool swap = false;
-
-        if(context->repaint || atomic_load(&force_repaint))
+        
+        if(context->repaint)
         {
             glClear(GL_COLOR_BUFFER_BIT);
             glColor3f(1.0f, 1.0f, 1.0f);
@@ -290,8 +294,6 @@ void* draw_field(void* arg)
 
             glDrawArrays(GL_LINE_STRIP, 0, SPLINE_SEGMENTS);
             glDisableClientState(GL_VERTEX_ARRAY);
-            printf("Connecting : %d\n", context->pressed->type);
-
             swap = true;
         }
 
