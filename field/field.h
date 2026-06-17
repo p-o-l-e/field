@@ -36,6 +36,14 @@ typedef enum {
 } SectorType;
 
 typedef enum {
+    SS_A, 
+    SS_B,
+
+    SS_LIMIT
+
+} SubType;
+
+typedef enum {
     CT_PRESS,
     CT_RELEASE,
     CT_VALUE,
@@ -163,7 +171,8 @@ struct sector {
     ltrb32u     bounds;
     uint32_t    width;
     uint32_t    height;
-    SectorType  type;                   
+    SectorType  type;
+    SubType     subtype;
     void*       data;                   // Type dependent data
     float       value[CP_LIMIT];
     float       memory[CP_LIMIT];
@@ -596,6 +605,7 @@ sector* createSector(field* restrict o, sector* restrict node, SectorType type, 
     auto pos = ++o->sectors;
 
     o->at[pos].type                     = type;
+    o->at[pos].subtype                  = SS_A;
     o->at[pos].bounds.l                 = x;
     o->at[pos].bounds.t                 = y;
     o->at[pos].bounds.r                 = x + w;
@@ -911,7 +921,7 @@ static void set_slider(sector* restrict o, int x, int y) {
     else {
         const int dx = o->carrier->memory[SP_CURSOR_PRIOR].x - x;
         const auto step = o->step[CP_COARSE]; 
-        value = - step * roundf((float)dx * v / step) - o->memory[CP_COARSE];
+        value = - step * roundf((float)dx * v / step) + o->memory[CP_COARSE];
     }
 
     if(value < o->range[0]) {
@@ -936,15 +946,36 @@ static void draw_slider(sector* restrict c) {
     draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
     draw_ltrb_o(o->layer[FG], &c->bounds, BORDER);
 
-    if(c->flags & VERTICAL) {
-        int w   = c->bounds.b - c->bounds.t - GRIP * 2 - GAP * 2;
-        int pos = (int)((c->range[1] - *coarse - *fine)/range * (float)w) + c->bounds.t + GRIP + GAP;
-        draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, SELECTIONBACKGROUND);
-    }
-    else {
-        int h   = c->bounds.r - c->bounds.l - GRIP * 2 - GAP * 2;
-        int pos = (int)((c->range[0] + *coarse + *fine)/range * (float)h) + c->bounds.r - GRIP - GAP;
-        draw_rect_f(o->layer[FG], pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+    switch (c->subtype) {
+        case SS_A:
+            if(c->flags & VERTICAL) {
+                int h   = c->bounds.b - c->bounds.t - GRIP * 2 - GAP * 2;
+                int pos = (int)((c->range[1] - *coarse - *fine)/range * (float)h) + c->bounds.t + GRIP + GAP;
+                draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, SELECTIONBACKGROUND);
+            }
+            else {
+                int w   = c->bounds.r - c->bounds.l - GRIP * 2 - GAP * 2;
+                int pos = (int)((c->range[0] + *coarse + *fine)/range * (float)w) + c->bounds.r - GRIP - GAP;
+                draw_rect_f(o->layer[FG], pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+            }
+        break;
+
+        case SS_B:
+            if(c->flags & VERTICAL) {
+                int h   = c->bounds.b - c->bounds.t - GAP * 2;
+                int pos = (int)((c->range[1] - *coarse - *fine)/range * (float)h) + c->bounds.t + GAP;
+                draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+            }
+            else {
+                int w   = c->bounds.r - c->bounds.l - GAP * 2;
+                int pos = (int)((c->range[0] + *coarse + *fine)/range * (float)w) + c->bounds.r - GAP;
+                draw_rect_f(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, pos, c->bounds.b - GAP, SELECTIONBACKGROUND);
+            }
+        break;
+
+        default:
+        break;
+
     }
 
     c->repaint = false;

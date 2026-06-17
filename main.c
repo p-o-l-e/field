@@ -170,8 +170,10 @@ int main(int, char**)
     createSector(&context, node2, ST_SOCKET  , 330, 100, 15, 15, MOVEABLE | INTERCON | INPUT);
     createSector(&context, node2, ST_SOCKET  , 330, 120, 15, 15, MOVEABLE | INTERCON | INPUT);
     createSector(&context, node2, ST_MOMENTARY, 330, 30, 20, 20, 0);
-    createSector(&context, node2, ST_PROGRESS_BAR, 370, 30, 200, 20, 0);
-
+    auto ribbon = createSector(&context, node2, ST_SLIDER, 370, 30, 200, 20, MOVEABLE);
+    ribbon->subtype = SS_B;
+    auto vribbon = createSector(&context, node2, ST_SLIDER, 370, 70, 20, 70, MOVEABLE | VERTICAL);
+    vribbon->subtype = SS_B;
     qoi_desc desc;
     // size as int per qoi_decode's signature
     void *pixels = qoi_decode(image_rk16f, (int)sizeof(image_rk16f), &desc, 4);
