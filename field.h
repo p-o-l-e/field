@@ -100,6 +100,7 @@ typedef enum: uint32_t {
     INPUT       = 1 << 3,
     OUTPUT      = 1 << 4,
     TRANSPARENT = 1 << 5,
+    RADIO       = 1 << 6,
 
 } SectorFlags;
 
@@ -187,6 +188,7 @@ struct sector {
     SectorType  type;
     SubType     subtype;
     void*       data;                   // Type dependent data
+    float       default_value;
     float       value[CP_LIMIT];
     float       memory[CP_LIMIT];
     float       range[2];
@@ -198,7 +200,6 @@ struct sector {
     bool        on;
     bool        connected;
     bool        has_data;
-    bool        radio;
     uint32_t    radio_id;
     uint32_t    flags;
     uint32_t    nodes;
@@ -210,6 +211,8 @@ struct sector {
     sector*     root;
     sector**    node;
 };
+
+
 
 /*****************************************************************************************************************************/
 
@@ -634,8 +637,8 @@ sector* createSector(field* restrict o, sector* restrict node, SectorType type, 
     o->at[pos].repaint                  = true;
     o->at[pos].flags                    = flags;
     o->at[pos].carrier                  = o;
-    o->at[pos].radio                    = false;
     o->at[pos].radio_id                 = 0;
+    o->at[pos].default_value            = 0.0f;
 
     for(uint32_t i = 0; i < CT_LIMIT; ++i) {
         o->at[pos].callback[i] = &fuse_link;
@@ -901,7 +904,7 @@ void draw_scene(field* restrict o) {
 
 static void set_checkbox(sector* restrict o, int, int) {
     auto coarse = &o->value[CP_COARSE];
-    if(o->radio) {
+    if(o->flags & RADIO) {
         auto id = o->radio_id;
         if(*coarse > 0.5f) return;
         else {
@@ -910,7 +913,7 @@ static void set_checkbox(sector* restrict o, int, int) {
             auto f = o->carrier;
             for(uint32_t i = 0; i < f->sectors; ++i) {
                 auto r = &f->at[i];
-                if(r->radio && r->radio_id == id && r != o) {
+                if((r->flags & RADIO) && r->radio_id == id && r != o) {
                     r->value[CP_COARSE] = 0.0f;
                     r->repaint = true;
                 }
