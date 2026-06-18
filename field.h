@@ -9,8 +9,7 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <stdatomic.h>
-#define QOI_IMPLEMENTATION
-#include "qoi.h"
+
 #define DEBUG_OVERLAY
 #ifdef DEBUG_OVERLAY
 atomic_bool force_repaint = false;

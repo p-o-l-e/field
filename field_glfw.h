@@ -282,7 +282,7 @@ void* draw_field(void* arg)
 
         if(context->connecting)
         {
-            glLineWidth(1.5f); 
+            glLineWidth(2.0f); 
             glEnableClientState(GL_VERTEX_ARRAY);
             glVertexPointer(2, GL_FLOAT, 0, context->pressed->data);
 
@@ -306,7 +306,7 @@ void* draw_field(void* arg)
                    
                     auto colour = node->hovered || node->connection->hovered ? CORD_SELECT : CORD_NORMAL;
 
-                    glLineWidth(1.5f); 
+                    glLineWidth(2.0f); 
                     glEnableClientState(GL_VERTEX_ARRAY);
                     glVertexPointer(2, GL_FLOAT, 0, context->at[i].data);
 
