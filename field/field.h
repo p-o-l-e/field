@@ -16,10 +16,10 @@
 atomic_bool force_repaint = false;
 #endif
 constexpr uint_fast32_t SPLINE_SEGMENTS = 32;
+constexpr uint_fast32_t TEXTBOX_SIZE = 32;
 
 typedef enum {
     ST_SLIDER, 
-    ST_PROGRESS_BAR, 
     ST_ROTARY,
     ST_SPRITE_INF_SLIDER,
     ST_SOCKET,
@@ -52,12 +52,16 @@ typedef enum {
 
 } CallbackType;
             
-typedef enum { 
-    LMB,
-    MMB,
-    RMB
+typedef enum: uint32_t { 
+    LMB     = 1 << 0,
+    MMB     = 1 << 1,
+    RMB     = 1 << 2,
+    LCTRL   = 1 << 3,
+    RCTRL   = 1 << 4,
+    LSHIFT  = 1 << 5,
+    RSHIFT  = 1 << 6,
 
-} MouseButton;
+} ControlModifier;
 
 typedef enum { 
     CP_COARSE,
@@ -96,6 +100,7 @@ typedef enum: uint32_t {
     INTERCON    = 1 << 2,
     INPUT       = 1 << 3,
     OUTPUT      = 1 << 4,
+    TRANSPARENT = 1 << 5,
 
 } SectorFlags;
 
@@ -144,6 +149,15 @@ typedef struct
     uint32_t b;
 
 } ltrb32u;
+
+typedef struct 
+{
+    uint32_t l;
+    uint32_t t;
+    uint32_t w;
+    uint32_t h;
+
+} ltwh32u;
 
 typedef struct
 {
@@ -564,7 +578,7 @@ static inline void draw_ltrb_f(frame* restrict canvas, ltrb32u* restrict r, cons
 }
 
 /******************************************************************************************************************************/
-
+void set_text_data(sector* restrict, const char* restrict); 
 
 
 void fuse_link(sector*, sector*);
@@ -583,9 +597,9 @@ void destroyField(field* restrict);
 
 /*****************************************************************************************************************************/
 
-void hit_test_down(field* restrict, int, int, MouseButton);
+void hit_test_down(field* restrict, int, int, uint32_t);
 void hit_test_drag(field* restrict, int, int);
-void hit_test_up  (field* restrict, int, int, MouseButton);
+void hit_test_up  (field* restrict, int, int, uint32_t);
 void hit_test     (field* restrict, int, int);
 
 /*****************************************************************************************************************************/
@@ -628,11 +642,13 @@ sector* createSector(field* restrict o, sector* restrict node, SectorType type, 
         o->at[pos].callback[i] = &fuse_link;
     }
 
-    draw_ltrb_f (
-        o->layer[SC],
-        &o->at[pos].bounds,
-        o->at[pos].id
-    );
+    if(!(flags & TRANSPARENT)) {
+        draw_ltrb_f (
+            o->layer[SC],
+            &o->at[pos].bounds,
+            o->at[pos].id
+        );
+    }
 
     init_sector[type](&o->at[pos]);
 
@@ -668,8 +684,7 @@ void initField(field* restrict o, uint32_t x, uint32_t y, uint32_t w, uint32_t h
     o->current      = 0;
     o->pressed      = nullptr;
 
-    if(true)
-    {
+    if(true) {
         for(uint32_t i = 0; i < CC; ++i) {
             o->layer[i] = malloc(sizeof(frame));
             frame_init(o->layer[i],  w, h);
@@ -719,10 +734,10 @@ void link_sector(sector* parent, sector* child) {
 
 void move_sector(sector* restrict s, ltrb32u* restrict bounds) {
     draw_ltrb_f(s->carrier->layer[FG], &s->bounds, 0x0);
-    draw_ltrb_f(s->carrier->layer[SC], &s->bounds, 0x0);
-    
-    draw_ltrb_f(s->carrier->layer[SC], bounds, s->id);
-
+    if(!(s->flags & TRANSPARENT)) {
+        draw_ltrb_f(s->carrier->layer[SC], &s->bounds, 0x0);
+        draw_ltrb_f(s->carrier->layer[SC], bounds, s->id);
+    }
     s->bounds = *bounds;
 }
 
@@ -731,9 +746,14 @@ void add_mod_link(sector* source, sector* target, CallbackType type, void (*fn)(
     source->target[type] = target;
 }
 
+void set_text_data(sector* restrict o, const char* restrict text) {
+    strncpy(o->data, text, TEXTBOX_SIZE);
+    o->repaint = true;
+}
+
 /*****************************************************************************************************************************/
 
-void hit_test_down(field* restrict o, int x, int y, MouseButton button) {
+void hit_test_down(field* restrict o, int x, int y, uint32_t button) {
     o->current = frame_get(o->layer[SC], x, y);
     auto p = &o->at[o->current];
 
@@ -828,7 +848,7 @@ void hit_test_drag(field* restrict o, int x, int y) {
     o->repaint = true;
 }
 
-void hit_test_up(field* restrict o, int x, int y, MouseButton button) {
+void hit_test_up(field* restrict o, int x, int y, uint32_t button) {
     o->current = frame_get(o->layer[SC], x, y);
 
     if(o->pressed) {
@@ -840,8 +860,8 @@ void hit_test_up(field* restrict o, int x, int y, MouseButton button) {
         release_sector[s->type](s, x, y);
     }
 
-    o->drag    = false;
-    o->move    = false;
+    o->drag = false;
+    o->move = false;
     o->connecting = false;
     o->repaint = true;
 
@@ -946,17 +966,17 @@ static void draw_slider(sector* restrict c) {
     draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
     draw_ltrb_o(o->layer[FG], &c->bounds, BORDER);
 
-    switch (c->subtype) {
+    switch(c->subtype) {
         case SS_A:
             if(c->flags & VERTICAL) {
                 int h   = c->bounds.b - c->bounds.t - GRIP * 2 - GAP * 2;
                 int pos = (int)((c->range[1] - *coarse - *fine)/range * (float)h) + c->bounds.t + GRIP + GAP;
-                draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, SELECTIONBACKGROUND);
+                draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, HIGHLIGHT);
             }
             else {
                 int w   = c->bounds.r - c->bounds.l - GRIP * 2 - GAP * 2;
                 int pos = (int)((c->range[0] + *coarse + *fine)/range * (float)w) + c->bounds.r - GRIP - GAP;
-                draw_rect_f(o->layer[FG], pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+                draw_rect_f(o->layer[FG], pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, HIGHLIGHT);
             }
         break;
 
@@ -964,12 +984,12 @@ static void draw_slider(sector* restrict c) {
             if(c->flags & VERTICAL) {
                 int h   = c->bounds.b - c->bounds.t - GAP * 2;
                 int pos = (int)((c->range[1] - *coarse - *fine)/range * (float)h) + c->bounds.t + GAP;
-                draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
+                draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos, c->bounds.r - GAP, c->bounds.b - GAP, HIGHLIGHT);
             }
             else {
                 int w   = c->bounds.r - c->bounds.l - GAP * 2;
                 int pos = (int)((c->range[0] + *coarse + *fine)/range * (float)w) + c->bounds.r - GAP;
-                draw_rect_f(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, pos, c->bounds.b - GAP, SELECTIONBACKGROUND);
+                draw_rect_f(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, pos, c->bounds.b - GAP, HIGHLIGHT);
             }
         break;
 
@@ -997,26 +1017,6 @@ static void scroll_slider(sector* restrict o, int, int y) {
 
     o->repaint = true;
     o->callback[CT_VALUE](o, o->target[CT_VALUE]);
-}
-
-static void draw_progress_bar(sector* restrict c) {
-    auto o = c->carrier;
-    auto range = c->range[1] - c->range[0];
-    draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
-    draw_rectangle(o->layer[FG], c->bounds.l, c->bounds.t, c->bounds.r, c->bounds.b, SECONDBACKGROUND);
-
-    if(o->at[o->current].flags & VERTICAL) {
-        int w   = c->bounds.b - c->bounds.t - GAP;
-        int pos = (int)((range - c->value[CP_COARSE])/range * (float)w) + c->bounds.t + GAP;
-        draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
-    }
-    else {
-        int w   = c->bounds.r - c->bounds.l - GAP;
-        int pos = (int)((range - c->value[CP_COARSE])/range * (float)w) + c->bounds.l;
-        draw_rect_f(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, pos, c->bounds.b - GAP, SELECTIONBACKGROUND);
-    }
-
-    c->repaint = false;
 }
 
 static void draw_button(sector* restrict c) {
@@ -1514,7 +1514,7 @@ static void release_node(sector* restrict s, int, int)
 /*****************************************************************************************************************************/
 
 static void init_textbox(sector* restrict s) {
-    s->data = (char*)calloc(64, sizeof(char)); 
+    s->data = (char*)calloc(TEXTBOX_SIZE, sizeof(char)); 
 }
 
 static void set_textbox(sector* restrict o, int, int) {
@@ -1574,7 +1574,6 @@ static inline void init_none(sector* restrict) {}
 
 void (*init_sector[])(sector* restrict)  = {
     [ST_SLIDER]                 = init_none,  
-    [ST_PROGRESS_BAR]           = init_none,  
     [ST_ROTARY]                 = init_none,  
     [ST_SPRITE_INF_SLIDER]      = init_none,  
     [ST_SOCKET]                 = init_socket,
@@ -1591,7 +1590,6 @@ static inline void set_none(sector* restrict, int, int) {}
 
 void (*set_sector[])(sector* restrict, int, int) = {
     [ST_SLIDER]                 = set_slider,            
-    [ST_PROGRESS_BAR]           = set_slider,            
     [ST_ROTARY]                 = set_rotary,     
     [ST_SPRITE_INF_SLIDER]      = set_sprite_inf_slider, 
     [ST_SOCKET]                 = set_socket,            
@@ -1606,7 +1604,6 @@ void (*set_sector[])(sector* restrict, int, int) = {
 
 void (*draw_sector[])(sector* restrict) = {
     [ST_SLIDER]                 = draw_slider,        
-    [ST_PROGRESS_BAR]           = draw_progress_bar,  
     [ST_ROTARY]                 = draw_rotary, 
     [ST_SPRITE_INF_SLIDER]      = draw_rotary, 
     [ST_SOCKET]                 = draw_socket,        
@@ -1623,7 +1620,6 @@ static inline void drag_none(sector* restrict, int, int) {}
 
 void (*drag_sector[])(sector* restrict, int, int) = {
     [ST_SLIDER]                 = set_slider,           
-    [ST_PROGRESS_BAR]           = set_slider,           
     [ST_ROTARY]                 = set_rotary,    
     [ST_SPRITE_INF_SLIDER]      = set_sprite_inf_slider,
     [ST_SOCKET]                 = drag_socket,          
@@ -1640,7 +1636,6 @@ static inline void scroll_none(sector* restrict, int, int) {}
 
 void (*scroll_sector[])(sector* restrict, int, int) = {
     [ST_SLIDER]                 = scroll_slider,     
-    [ST_PROGRESS_BAR]           = scroll_slider,     
     [ST_ROTARY]                 = scroll_slider,     
     [ST_SPRITE_INF_SLIDER]      = scroll_slider,     
     [ST_SOCKET]                 = scroll_none,          
@@ -1657,7 +1652,6 @@ static inline void enter_none(sector* restrict, int, int) {}
 
 void (*enter_sector[])(sector* restrict, int, int) = {
     [ST_SLIDER]                 = enter_none,         
-    [ST_PROGRESS_BAR]           = enter_none,         
     [ST_ROTARY]                 = enter_none,         
     [ST_SPRITE_INF_SLIDER]      = enter_none,         
     [ST_SOCKET]                 = enter_none,         
@@ -1673,7 +1667,6 @@ static inline void leave_none(sector* restrict, int, int) {}
 
 void (*leave_sector[])(sector* restrict, int, int) = {
     [ST_SLIDER]                 = leave_none,         
-    [ST_PROGRESS_BAR]           = leave_none,         
     [ST_ROTARY]                 = leave_none,         
     [ST_SPRITE_INF_SLIDER]      = leave_none,         
     [ST_SOCKET]                 = leave_none,         
@@ -1690,7 +1683,6 @@ static inline void release_none(sector* restrict, int, int) {}
 
 void (*release_sector[])(sector* restrict, int, int) = {
     [ST_SLIDER]                 = release_none,
-    [ST_PROGRESS_BAR]           = release_none,
     [ST_ROTARY]                 = release_none,
     [ST_SPRITE_INF_SLIDER]      = release_none,
     [ST_SOCKET]                 = release_socket,

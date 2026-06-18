@@ -64,8 +64,7 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mod
     {
         case GLFW_MOUSE_BUTTON_LEFT:
         {
-            if(action == GLFW_PRESS)
-            {
+            if(action == GLFW_PRESS) {
                 double x, y;
                 glfwGetCursorPos(window, &x, &y);
 
@@ -75,8 +74,7 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mod
                     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
 
             }
-            else if(action == GLFW_RELEASE)
-            {
+            else if(action == GLFW_RELEASE) {
                 double x, y;
 
                 glfwGetCursorPos(window, &x, &y);
@@ -90,8 +88,11 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mod
 
         case GLFW_MOUSE_BUTTON_RIGHT:
         {
-            if(action == GLFW_PRESS)
-                printf("RMB Pressed\n");
+            if(action == GLFW_PRESS) {
+                double x, y;
+                glfwGetCursorPos(window, &x, &y);
+                hit_test_down(context, (int)x, (int)y, RMB);
+            }
             else if(action == GLFW_RELEASE)
                 printf("RMB Released\n");
         }
@@ -281,7 +282,7 @@ void* draw_field(void* arg)
 
         if(context->connecting)
         {
-            glLineWidth(2.0f); 
+            glLineWidth(1.5f); 
             glEnableClientState(GL_VERTEX_ARRAY);
             glVertexPointer(2, GL_FLOAT, 0, context->pressed->data);
 
@@ -305,7 +306,7 @@ void* draw_field(void* arg)
                    
                     auto colour = node->hovered || node->connection->hovered ? CORD_SELECT : CORD_NORMAL;
 
-                    glLineWidth(2.0f); 
+                    glLineWidth(1.5f); 
                     glEnableClientState(GL_VERTEX_ARRAY);
                     glVertexPointer(2, GL_FLOAT, 0, context->at[i].data);
 

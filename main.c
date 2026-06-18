@@ -123,6 +123,9 @@ int main(int, char**)
 
     auto node = createSector(&context, nullptr, ST_NODE    , 0,  0, 299, 199, MOVEABLE);
     
+    auto mname = createSector(&context, node, ST_TEXTBOX, 10, 10, 60, 10, TRANSPARENT);
+    set_text_data(mname, "VCO");
+
     auto slider = createSector(&context, node, ST_SLIDER, 20, 40, 20, 80, MOVEABLE | VERTICAL);
     slider->step[CP_COARSE] = 1.3f;
     slider->step[CP_FINE] = 0.013f;
@@ -156,17 +159,14 @@ int main(int, char**)
     createSector(&context, node, ST_SOCKET  , 280, 100, 15, 15, MOVEABLE | INTERCON | OUTPUT);
     createSector(&context, node, ST_SOCKET  , 280, 120, 15, 15, MOVEABLE | INTERCON | OUTPUT);
     createSector(&context, node, ST_SOCKET  , 280, 140, 15, 15, MOVEABLE | INTERCON | OUTPUT);
-    auto tbox = createSector(&context, node, ST_TEXTBOX, 15, 15, 60, 10, 0);
+    auto tbox = createSector(&context, node, ST_TEXTBOX, 50, 10, 60, 10, 0);
 
     add_mod_link(slider, tbox, CT_VALUE, slider_call);
 
-    
     auto cbox = createSector(&context, node, ST_SPRITE_BUTTON, 280, 4, 16, 16, 0);
 
-
-
     auto node2 = createSector(&context, nullptr, ST_NODE    , 325,  25, 299, 199, MOVEABLE);
-    createSector(&context, node2, ST_SOCKET  , 330, 80, 15, 15, MOVEABLE | INTERCON | INPUT);
+    createSector(&context, node2, ST_SOCKET  , 330,  80, 15, 15, MOVEABLE | INTERCON | INPUT);
     createSector(&context, node2, ST_SOCKET  , 330, 100, 15, 15, MOVEABLE | INTERCON | INPUT);
     createSector(&context, node2, ST_SOCKET  , 330, 120, 15, 15, MOVEABLE | INTERCON | INPUT);
     createSector(&context, node2, ST_MOMENTARY, 330, 30, 20, 20, 0);
@@ -184,9 +184,8 @@ int main(int, char**)
 
     sprite_init(&button, 16, 16, 2);
     button.data[0] = b_off;
-    button.data[1] = b_y; // main()
+    button.data[1] = b_y;
     
-
     cbox->data = &button;
     /*****************************************************************************************************************************/
 
