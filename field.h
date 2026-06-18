@@ -1032,12 +1032,14 @@ static void draw_button(sector* restrict c) {
     c->repaint = false;
 }
 
+/******************************************************************************************************************************/
+
 static void draw_rotary(sector* restrict c) {
     auto o = c->carrier;
     auto range = c->range[1] - c->range[0];
-    sprite* temp = (sprite*)c->data;
-    int f = (c->value[CP_COARSE] / range) * temp->nframes;
-    frame_copy_at(o->layer[FG], &temp->data[f], c->bounds.l, c->bounds.t);
+    sprite* spr = (sprite*)c->data;
+    int f = ((c->value[CP_COARSE] - c->range[0]) / range) * spr->nframes;
+    frame_copy_at(o->layer[FG], &spr->data[f], c->bounds.l, c->bounds.t);
 
     c->repaint = false;
 }
@@ -1057,6 +1059,8 @@ static void set_rotary(sector* restrict o, int x, int y) {
     f->memory[SP_CURSOR_PRIOR].x = (float)x;
     f->memory[SP_CURSOR_PRIOR].y = (float)y;
 }
+
+/******************************************************************************************************************************/
 
 static void set_sprite_inf_slider(sector* restrict o, int x, int y) {
     auto f = o->carrier;

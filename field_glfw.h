@@ -169,7 +169,6 @@ static void update_buffer(frame* o, GLuint texture)
 void* events_process(void*)
 {
     pthread_barrier_wait(&_init_barrier);
-    printf("[INIT BARRIER]: event process passed");
 
     while(_handle_events)
     {
