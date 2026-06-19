@@ -968,36 +968,36 @@ static void draw_slider(sector* restrict c) {
     draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
     draw_ltrb_o(o->layer[FG], &c->bounds, BORDER);
 
+    float frac = (*coarse - c->range[0]) / (c->range[1] - c->range[0]);
+
     switch(c->subtype) {
         case SS_A:
             if(c->flags & VERTICAL) {
                 int h   = c->bounds.b - c->bounds.t - GRIP * 2 - GAP * 2;
-                int pos = (int)((c->range[1] - *coarse - *fine)/range * (float)h) + c->bounds.t + GRIP + GAP;
-                draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos - GRIP, c->bounds.r - GAP, pos + GRIP, HIGHLIGHT);
-            }
-            else {
+                int pos = (int)((1.0f - frac) * (float)h) + c->bounds.t + GRIP + GAP;
+                draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos - GRIP,
+                            c->bounds.r - GAP, pos + GRIP, HIGHLIGHT);
+            } else {
                 int w   = c->bounds.r - c->bounds.l - GRIP * 2 - GAP * 2;
-                int pos = (int)((c->range[0] + *coarse + *fine)/range * (float)w) + c->bounds.r - GRIP - GAP;
-                draw_rect_f(o->layer[FG], pos - GRIP, c->bounds.t + GAP, pos + GRIP, c->bounds.b - GAP, HIGHLIGHT);
+                int pos = (int)(frac * (float)w) + c->bounds.l + GRIP + GAP;
+                draw_rect_f(o->layer[FG], pos - GRIP, c->bounds.t + GAP,
+                            pos + GRIP, c->bounds.b - GAP, HIGHLIGHT);
             }
-        break;
+            break;
 
         case SS_B:
             if(c->flags & VERTICAL) {
                 int h   = c->bounds.b - c->bounds.t - GAP * 2;
-                int pos = (int)((c->range[1] - *coarse - *fine)/range * (float)h) + c->bounds.t + GAP;
-                draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos, c->bounds.r - GAP, c->bounds.b - GAP, HIGHLIGHT);
-            }
-            else {
+                int pos = (int)((1.0f - frac) * (float)h) + c->bounds.t + GAP;
+                draw_rect_f(o->layer[FG], c->bounds.l + GAP, pos,
+                            c->bounds.r - GAP, c->bounds.b - GAP, HIGHLIGHT);
+            } else {
                 int w   = c->bounds.r - c->bounds.l - GAP * 2;
-                int pos = (int)((c->range[0] + *coarse + *fine)/range * (float)w) + c->bounds.r - GAP;
-                draw_rect_f(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, pos, c->bounds.b - GAP, HIGHLIGHT);
+                int pos = (int)(frac * (float)w) + c->bounds.l + GAP;
+                draw_rect_f(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP,
+                            pos, c->bounds.b - GAP, HIGHLIGHT);
             }
-        break;
-
-        default:
-        break;
-
+            break;
     }
 
     c->repaint = false;
