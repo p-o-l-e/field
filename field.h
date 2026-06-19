@@ -580,11 +580,11 @@ static inline void draw_ltrb_f(frame* restrict canvas, ltrb32u* restrict r, cons
 }
 
 /******************************************************************************************************************************/
-void set_text_data(sector* restrict, const char* restrict); 
-
+void set_text_data(sector*, const char*); 
+static void value_to_textbox(sector*, sector*);
 
 void fuse_link(sector*, sector*);
-void draw_scene(field* restrict o);
+void draw_scene(field* restrict);
 
 void add_mod_link(sector*, sector*, CallbackType, void (*)(sector*, sector*));
 void link_sector(sector*, sector*);
@@ -753,6 +753,14 @@ void set_text_data(sector* restrict o, const char* restrict text) {
     o->repaint = true;
 }
 
+static inline void value_to_textbox(sector* slider, sector* tbox) {
+    int precision = 2;
+    char *text = tbox->data;
+    float val = slider->value[CP_COARSE] + slider->value[CP_FINE];
+    snprintf(text, TEXTBOX_SIZE, "%.*f", precision, val);
+    tbox->repaint = true;
+}
+
 /*****************************************************************************************************************************/
 
 void hit_test_down(field* restrict o, int x, int y, uint32_t button) {
@@ -816,6 +824,8 @@ static inline void draw_debug_overlay(field* restrict o, sector* restrict s) {
     draw_text_label(o->layer[DO], gtFont, buffer, 10, 70, 100, 10, colour);
     snprintf(buffer, 128, "VALUE FINE   : %f", s->value[1]);
     draw_text_label(o->layer[DO], gtFont, buffer, 10, 82, 100, 10, colour);
+    snprintf(buffer, 128, "FLAGS        : %b", s->flags);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, 94, 100, 10, colour);
     atomic_store_explicit(&force_repaint, true, memory_order_release);
 }
 #endif
@@ -911,11 +921,12 @@ static void set_checkbox(sector* restrict o, int, int) {
             *coarse = 1.0f;
             o->repaint = true;
             auto f = o->carrier;
-            for(uint32_t i = 0; i < f->sectors; ++i) {
+            for(uint32_t i = 0; i <= f->sectors; ++i) {
                 auto r = &f->at[i];
                 if((r->flags & RADIO) && r->radio_id == id && r != o) {
                     r->value[CP_COARSE] = 0.0f;
                     r->repaint = true;
+                    printf("Turned off : %d\n", r->id);
                 }
             }
         }
@@ -999,7 +1010,6 @@ static void draw_slider(sector* restrict c) {
             }
             break;
     }
-
     c->repaint = false;
 }
 
