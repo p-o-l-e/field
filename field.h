@@ -179,6 +179,11 @@ typedef struct
 /*****************************************************************************************************************************/
 typedef struct field field;
 typedef struct sector sector;
+typedef struct checkbox checkbox;
+typedef struct slider slider;
+typedef struct momentary momentary;
+typedef struct rotary rotary;
+typedef struct socket socket;
 
 struct sector {
     uint32_t    id;
@@ -186,13 +191,11 @@ struct sector {
     uint32_t    width;
     uint32_t    height;
     SectorType  type;
-    SubType     subtype;
     void*       data;                   // Type dependent data
-    float       default_value;
+    void*       extension;
     float       value[CP_LIMIT];
     float       memory[CP_LIMIT];
     float       range[2];
-    float       step[CP_LIMIT];
     bool        visible;
     bool        hovered;
     bool        repaint;
@@ -200,7 +203,6 @@ struct sector {
     bool        on;
     bool        connected;
     bool        has_data;
-    uint32_t    radio_id;
     uint32_t    flags;
     uint32_t    nodes;
     uint32_t    capacity;
@@ -212,7 +214,29 @@ struct sector {
     sector**    node;
 };
 
+struct checkbox {
+    uint32_t radio_id;  
+};
 
+struct slider {
+    SubType type;
+    float default_value;
+    float step[CP_LIMIT];
+};
+
+struct rotary {
+    float default_value;
+    float step[CP_LIMIT];
+};
+
+struct socket {
+
+};
+
+
+struct momentary {
+
+};
 
 /*****************************************************************************************************************************/
 
@@ -621,7 +645,7 @@ sector* createSector(field* restrict o, sector* restrict node, SectorType type, 
     auto pos = ++o->sectors;
 
     o->at[pos].type                     = type;
-    o->at[pos].subtype                  = SS_A;
+ //   o->at[pos].subtype                  = SS_A;
     o->at[pos].bounds.l                 = x;
     o->at[pos].bounds.t                 = y;
     o->at[pos].bounds.r                 = x + w;
@@ -632,13 +656,13 @@ sector* createSector(field* restrict o, sector* restrict node, SectorType type, 
     o->at[pos].value[CP_FINE]           = 0.0f;
     o->at[pos].range[0]                 = -8.0f;
     o->at[pos].range[1]                 = +8.0f;
-    o->at[pos].step[CP_COARSE]          = 1.0f;
-    o->at[pos].step[CP_FINE]            = 0.1f;
+//    o->at[pos].step[CP_COARSE]          = 1.0f;
+ //   o->at[pos].step[CP_FINE]            = 0.1f;
     o->at[pos].repaint                  = true;
     o->at[pos].flags                    = flags;
     o->at[pos].carrier                  = o;
-    o->at[pos].radio_id                 = 0;
-    o->at[pos].default_value            = 0.0f;
+//    o->at[pos].radio_id                 = 0;
+//    o->at[pos].default_value            = 0.0f;
 
     for(uint32_t i = 0; i < CT_LIMIT; ++i) {
         o->at[pos].callback[i] = &fuse_link;
@@ -809,23 +833,27 @@ void hit_test_down(field* restrict o, int x, int y, uint32_t button) {
 static inline void draw_debug_overlay(field* restrict o, sector* restrict s) {
     constexpr uint32_t colour = 0xFF'FF'FF'90;
     frame_fill(o->layer[DO], 0);
-    draw_text_label(o->layer[DO], gtFont,    "#", 10, 10, 100, 10, colour);
+    uint32_t voffset = 10;
+    uint32_t vstep = 12;
+    uint32_t row = 0;
+
+    draw_text_label(o->layer[DO], gtFont,    "#", 10, voffset + vstep * row++, 100, 10, colour);
 
     char buffer[128];
     snprintf(buffer, 128, "CONTROL ID   : %d", s->id);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, 22, 100, 10, colour);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "IS CONNECTED : %d", s->connected);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, 34, 100, 10, colour);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "CONNECTION   : %p", (void*)s->connection);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, 46, 100, 10, colour);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "HAS DATA     : %d", s->has_data);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, 58, 100, 10, colour);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "VALUE COARSE : %f", s->value[0]);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, 70, 100, 10, colour);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "VALUE FINE   : %f", s->value[1]);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, 82, 100, 10, colour);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "FLAGS        : %b", s->flags);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, 94, 100, 10, colour);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     atomic_store_explicit(&force_repaint, true, memory_order_release);
 }
 #endif
@@ -914,8 +942,9 @@ void draw_scene(field* restrict o) {
 
 static void set_checkbox(sector* restrict o, int, int) {
     auto coarse = &o->value[CP_COARSE];
+    auto ext = (checkbox*)o->extension;
     if(o->flags & RADIO) {
-        auto id = o->radio_id;
+        auto id = ext->radio_id;
         if(*coarse > 0.5f) return;
         else {
             *coarse = 1.0f;
@@ -923,7 +952,7 @@ static void set_checkbox(sector* restrict o, int, int) {
             auto f = o->carrier;
             for(uint32_t i = 0; i <= f->sectors; ++i) {
                 auto r = &f->at[i];
-                if((r->flags & RADIO) && r->radio_id == id && r != o) {
+                if((r->flags & RADIO) && ext->radio_id == id && r != o) {
                     r->value[CP_COARSE] = 0.0f;
                     r->repaint = true;
                     printf("Turned off : %d\n", r->id);
@@ -943,17 +972,18 @@ static void set_slider(sector* restrict o, int x, int y) {
     const float v = 0.1f;
     const auto coarse = &o->value[CP_COARSE];
     const auto fine = &o->value[CP_FINE];
+    auto ext = (slider*)o->extension;
 
     float value = {};
 
     if(o->flags & VERTICAL) {
         const int dy = o->carrier->memory[SP_CURSOR_PRIOR].y - y;
-        const auto step = o->step[CP_COARSE]; 
+        const auto step = ext->step[CP_COARSE]; 
         value = step * roundf((float)dy * v / step) + o->memory[CP_COARSE];
     }
     else {
         const int dx = o->carrier->memory[SP_CURSOR_PRIOR].x - x;
-        const auto step = o->step[CP_COARSE]; 
+        const auto step = ext->step[CP_COARSE]; 
         value = - step * roundf((float)dx * v / step) + o->memory[CP_COARSE];
     }
 
@@ -973,7 +1003,7 @@ static void set_slider(sector* restrict o, int x, int y) {
 
 static void draw_slider(sector* restrict c) {
     auto o = c->carrier;
-    auto range = c->range[1] - c->range[0];
+    auto ext = (slider*)c->extension;
     auto coarse = &c->value[CP_COARSE];
     auto fine = &c->value[CP_FINE];
     draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
@@ -981,7 +1011,7 @@ static void draw_slider(sector* restrict c) {
 
     float frac = (*coarse - c->range[0]) / (c->range[1] - c->range[0]);
 
-    switch(c->subtype) {
+    switch(ext->type) {
         case SS_A:
             if(c->flags & VERTICAL) {
                 int h   = c->bounds.b - c->bounds.t - GRIP * 2 - GAP * 2;
@@ -1009,6 +1039,10 @@ static void draw_slider(sector* restrict c) {
                             pos, c->bounds.b - GAP, HIGHLIGHT);
             }
             break;
+
+        case SS_LIMIT:
+        default:
+            break;
     }
     c->repaint = false;
 }
@@ -1016,7 +1050,8 @@ static void draw_slider(sector* restrict c) {
 static void scroll_slider(sector* restrict o, int, int y) {
     auto fine = &o->value[CP_FINE];
     auto coarse = &o->value[CP_COARSE];
-    auto df = (float)y * o->step[CP_FINE];
+    auto ext = (slider*)o->extension;
+    auto df = (float)y * ext->step[CP_FINE];
 
     if((*coarse + df < o->range[1]) && (*coarse + df > o->range[0])) {
         *fine += df;
@@ -1060,8 +1095,9 @@ static void draw_rotary(sector* restrict c) {
 static void set_rotary(sector* restrict o, int x, int y) {
     auto f = o->carrier;
     auto coarse = &o->value[CP_COARSE];
-    int dy = roundf((f->memory[SP_CURSOR_PRIOR].y - y)/o->step[CP_COARSE]);
-    int dx = roundf((x - f->memory[SP_CURSOR_PRIOR].x)/o->step[CP_COARSE]);
+    auto ext = (rotary*)o->extension;
+    int dy = roundf((f->memory[SP_CURSOR_PRIOR].y - y)/ext->step[CP_COARSE]);
+    int dx = roundf((x - f->memory[SP_CURSOR_PRIOR].x)/ext->step[CP_COARSE]);
 
     *coarse += (dy + dx);
 
@@ -1078,8 +1114,9 @@ static void set_rotary(sector* restrict o, int x, int y) {
 static void set_sprite_inf_slider(sector* restrict o, int x, int y) {
     auto f = o->carrier;
     auto coarse = &o->value[CP_COARSE];
-    int dy = roundf((y - f->memory[SP_CURSOR_PRIOR].y)/o->step[CP_COARSE]);
-    int dx = roundf((f->memory[SP_CURSOR_PRIOR].x - x)/o->step[CP_COARSE]);
+    auto ext = (rotary*)o->extension;
+    int dy = roundf((y - f->memory[SP_CURSOR_PRIOR].y)/ext->step[CP_COARSE]);
+    int dx = roundf((f->memory[SP_CURSOR_PRIOR].x - x)/ext->step[CP_COARSE]);
 
     *coarse += (dy + dx);
 
