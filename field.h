@@ -362,6 +362,8 @@ typedef enum
     ATTRIBUTES          = 0xFFCB6BFF,
     NUMBERS             = 0xF78C6CFF,
     PARAMETERS          = 0xF78C6CFF,
+    SOCKET_IN           = 0x006658FF,
+    SOCKET_OUT          = 0x905158FF,
 
 } Palette;
 
@@ -843,7 +845,9 @@ static inline void draw_debug_overlay(field* o, sector* s) {
     if(!s) return;
 
     char buffer[128];
-    snprintf(buffer, 128, "CONTROL Index: %u", s->index);
+    snprintf(buffer, 128, "CONTROL INDEX: %u", s->index);
+    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    snprintf(buffer, 128, "CONTROL UID  : 0x%X", s->uid);
     draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "IS CONNECTED : %d", s->connected);
     draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
@@ -972,23 +976,19 @@ static void set_checkbox(sector* restrict o, int, int) {
 
 
 static void set_slider(sector* restrict o, int x, int y) {
-    const float v = 0.1f;
     const auto coarse = &o->value[CP_COARSE];
     const auto fine = &o->value[CP_FINE];
     auto ext = (slider*)o->extension;
 
-    float value = {};
+    const float step = ext->step[CP_COARSE];
+    const float sensivity = 0.2f;
 
-    if(o->flags & VERTICAL) {
-        const int dy = o->carrier->memory[SP_CURSOR_PRIOR].y - y;
-        const auto step = ext->step[CP_COARSE]; 
-        value = step * roundf((float)dy * v / step) + o->memory[CP_COARSE];
-    }
-    else {
-        const int dx = o->carrier->memory[SP_CURSOR_PRIOR].x - x;
-        const auto step = ext->step[CP_COARSE]; 
-        value = - step * roundf((float)dx * v / step) + o->memory[CP_COARSE];
-    }
+    auto dx = o->carrier->memory[SP_CURSOR_PRIOR].x - x;
+    auto dy = o->carrier->memory[SP_CURSOR_PRIOR].y - y;
+
+    auto delta = (o->flags & VERTICAL ? dy : -dx);
+    int ds = (int)roundf((float)delta * sensivity);
+    float value = o->memory[CP_COARSE] + ds * step;
 
     if(value < o->range[0]) {
         *coarse = o->range[0];
@@ -1191,7 +1191,7 @@ static void draw_socket(sector* restrict c) {
         .x = c->bounds.l + r,
         .y = c->bounds.t + r
     };
-    auto color = c->flags & OUTPUT ? RED : PURPLE;
+    auto color = c->flags & OUTPUT ? SOCKET_OUT : SOCKET_IN;
 
     draw_circle_f(o->layer[FG], center.x, center.y, r, color);
     r = c->width / 4;
