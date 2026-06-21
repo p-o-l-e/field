@@ -186,7 +186,8 @@ typedef struct rotary rotary;
 typedef struct socket socket;
 
 struct sector {
-    uint32_t    id;
+    uint32_t    index;
+    uint32_t    uid;
     ltrb32u     bounds;
     uint32_t    width;
     uint32_t    height;
@@ -672,7 +673,7 @@ sector* createSector(field* restrict o, sector* restrict node, SectorType type, 
         draw_ltrb_f (
             o->layer[SC],
             &o->at[pos].bounds,
-            o->at[pos].id
+            o->at[pos].index
         );
     }
 
@@ -722,7 +723,7 @@ void initField(field* restrict o, uint32_t x, uint32_t y, uint32_t w, uint32_t h
     }
 
     o->at = malloc(o->capacity * sizeof(sector));
-    for(uint32_t i = 0; i < o->capacity; i++) o->at[i].id = i;
+    for(uint32_t i = 0; i < o->capacity; i++) o->at[i].index = i;
 
     auto canvas = &o->at[0];
 
@@ -762,7 +763,7 @@ void move_sector(sector* restrict s, ltrb32u* restrict bounds) {
     draw_ltrb_f(s->carrier->layer[FG], &s->bounds, 0x0);
     if(!(s->flags & TRANSPARENT)) {
         draw_ltrb_f(s->carrier->layer[SC], &s->bounds, 0x0);
-        draw_ltrb_f(s->carrier->layer[SC], bounds, s->id);
+        draw_ltrb_f(s->carrier->layer[SC], bounds, s->index);
     }
     s->bounds = *bounds;
 }
@@ -830,7 +831,7 @@ void hit_test_down(field* restrict o, int x, int y, uint32_t button) {
 }
 
 #ifdef DEBUG_OVERLAY
-static inline void draw_debug_overlay(field* restrict o, sector* restrict s) {
+static inline void draw_debug_overlay(field* o, sector* s) {
     constexpr uint32_t colour = 0xFF'FF'FF'90;
     frame_fill(o->layer[DO], 0);
     uint32_t voffset = 10;
@@ -839,8 +840,10 @@ static inline void draw_debug_overlay(field* restrict o, sector* restrict s) {
 
     draw_text_label(o->layer[DO], gtFont,    "#", 10, voffset + vstep * row++, 100, 10, colour);
 
+    if(!s) return;
+
     char buffer[128];
-    snprintf(buffer, 128, "CONTROL ID   : %d", s->id);
+    snprintf(buffer, 128, "CONTROL Index: %u", s->index);
     draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "IS CONNECTED : %d", s->connected);
     draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
@@ -955,7 +958,7 @@ static void set_checkbox(sector* restrict o, int, int) {
                 if((r->flags & RADIO) && ext->radio_id == id && r != o) {
                     r->value[CP_COARSE] = 0.0f;
                     r->repaint = true;
-                    printf("Turned off : %d\n", r->id);
+                    printf("Turned off : %d\n", r->index);
                 }
             }
         }
@@ -1188,14 +1191,11 @@ static void draw_socket(sector* restrict c) {
         .x = c->bounds.l + r,
         .y = c->bounds.t + r
     };
+    auto color = c->flags & OUTPUT ? RED : PURPLE;
 
-    draw_circle_f(o->layer[FG], center.x, center.y, r, BORDER);
-
+    draw_circle_f(o->layer[FG], center.x, center.y, r, color);
     r = c->width / 4;
-
     draw_circle_f(o->layer[FG], center.x, center.y, r, BUTTONS);
-    if(c->value[CP_COARSE] > 0.5f)
-        draw_rect_f(o->layer[FG], c->bounds.l + GAP, c->bounds.t + GAP, c->bounds.r - GAP, c->bounds.b - GAP, SELECTIONBACKGROUND);
     c->repaint = false;
 }
 
@@ -1223,7 +1223,7 @@ static void drag_socket(sector* s, int x, int y)
     if(s->connected) {
         s->carrier->pressed = s->connection;
         s = s->connection;
-        s->carrier->current = s->id;
+        s->carrier->current = s->index;
 
         if(s->has_data) {
             memset(s->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float)); 
@@ -1427,7 +1427,7 @@ static void release_socket(sector* restrict o, int x, int y) {
 static void init_node(sector* restrict s) {
     s->data = (frame*)calloc(1, sizeof(frame));
     frame_init((frame*)s->data, s->width, s->height);
-    draw_ltrb_f(s->carrier->layer[SN], &s->bounds, s->id);
+    draw_ltrb_f(s->carrier->layer[SN], &s->bounds, s->index);
 }
 
 static void set_node(sector* restrict o, int, int) {
@@ -1441,7 +1441,7 @@ static inline bool has_overlap(const sector* restrict c) {
     for(uint32_t y = c->bounds.t; y < c->bounds.b; ++y) {
         for(uint32_t x = c->bounds.l; x < c->bounds.r; ++x) {
             auto v = frame_get(l, x, y);
-            if(v && v != c->id)
+            if(v && v != c->index)
                 return true;
         }
     }
@@ -1511,8 +1511,8 @@ static void release_node(sector* restrict s, int, int)
 
     if(overlap) { 
         s->bounds = ir;
-        draw_ltrb_f(s->carrier->layer[SC], &ir, s->id);
-        draw_ltrb_f(s->carrier->layer[SN], &ir, s->id);
+        draw_ltrb_f(s->carrier->layer[SC], &ir, s->index);
+        draw_ltrb_f(s->carrier->layer[SN], &ir, s->index);
         draw_ltrb_f(s->carrier->layer[NG], &ir, 0x0);
 
         for(uint32_t i = 0; i < s->nodes; ++i) {
@@ -1522,8 +1522,8 @@ static void release_node(sector* restrict s, int, int)
     else {
         draw_ltrb_f(s->carrier->layer[SC], &ir, 0x0);
         draw_ltrb_f(s->carrier->layer[SN], &ir, 0x0);
-        draw_ltrb_f(s->carrier->layer[SC], &s->bounds, s->id);
-        draw_ltrb_f(s->carrier->layer[SN], &s->bounds, s->id);
+        draw_ltrb_f(s->carrier->layer[SC], &s->bounds, s->index);
+        draw_ltrb_f(s->carrier->layer[SN], &s->bounds, s->index);
 
         draw_ltrb_f(s->carrier->layer[NG], &ir, 0x0);
 
@@ -1578,13 +1578,16 @@ static void draw_textbox(sector* restrict c) {
     auto o = c->carrier;
     draw_ltrb_f(o->layer[FG], &c->bounds, SECONDBACKGROUND);
     char *text = c->data;
+    //auto len = strlen(text);
+    //auto offset_x = (c->width - 10 * len) / 2;
+    auto offset_y = (c->height - 8) / 2;
 
     draw_text_label(
         o->layer[FG],
         gtFont,
         text,
         c->bounds.l,
-        c->bounds.t,
+        c->bounds.t + offset_y,
         0,
         0,
         TEXT
