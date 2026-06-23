@@ -1,5 +1,6 @@
 #pragma  once
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <assert.h>
 #include <stdint.h>
@@ -111,6 +112,61 @@ typedef enum {
 
 typedef enum { PP = 0, PT = 8, MP = 16, MT = 24 } shift;
 
+/** Primitives ***************************************************************************************************************/
+
+typedef enum
+{
+    BACKGROUND          = 0x263238FF,
+    MINOR               = 0x232935FF,
+    MAJOR               = 0x162228FF,
+    FOREGROUND          = 0xB0BEC5FF,
+    TEXT                = 0x607D8BFF,
+    SELECTIONBACKGROUND = 0x546E7AFF,
+    SELECTIONFOREGROUND = 0xFFFFFFFF,
+    BUTTONS             = 0x2E3C43FF,
+    SECONDBACKGROUND    = 0x32424AFF,
+    DISABLED            = 0x415967FF,
+    CONTRAST            = 0x1E272CFF,
+    ACTIVE              = 0x314549FF,
+    BORDER              = 0x2A373EFF,
+    HIGHLIGHT           = 0x425B67FF,
+    NOTIFICATIONS       = 0x1E272CFF,
+    ACCENT              = 0x009688FF,
+    EXCLUDED            = 0x2E3C43FF,
+    GREEN               = 0xC3E88DFF,
+    YELLOW              = 0xFFCB6BFF,
+    BLUE                = 0x82AAFFFF,
+    RED                 = 0xF07178FF,
+    PURPLE              = 0xC792EAFF,
+    ORANGE              = 0xF78C6CFF,
+    CYAN                = 0x89DDFFFF,
+    GRAY                = 0x546E7AFF,
+    ERROR               = 0xFF5370FF,
+    COMMENTS            = 0x546E7AFF,
+    VARIABLES           = 0xEEFFFFFF,
+    LINKS               = 0x80CBC4FF,
+    FUNCTIONS           = 0x82AAFFFF,
+    KEYWORDS            = 0xC792EAFF,
+    TAGS                = 0xF07178FF,
+    STRINGS             = 0xC3E88DFF,
+    OPERATORS           = 0x89DDFFFF,
+    ATTRIBUTES          = 0xFFCB6BFF,
+    NUMBERS             = 0xF78C6CFF,
+    PARAMETERS          = 0xF78C6CFF,
+
+} Palette;
+
+typedef enum {
+    GRIP    = 3,
+    GAP     = 2,
+    SOCKET_BORDER = 2,
+
+} Constrain;
+
+
+
+/** Primitives ***************************************************************************************************************/
+
 typedef struct 
 {
     uint32_t mt: 8;
@@ -165,27 +221,45 @@ typedef struct
     uint32_t width;
     uint32_t height;             
 
-} frame;
+} Frame;
 
 typedef struct
 {
-    frame*   data;
+    Frame*   data;
     uint32_t width;
     uint32_t height;  
     uint32_t nframes;           
 
-} sprite;
+} Sprite;
 
 /*****************************************************************************************************************************/
-typedef struct field field;
-typedef struct sector sector;
-typedef struct checkbox checkbox;
-typedef struct slider slider;
-typedef struct momentary momentary;
-typedef struct rotary rotary;
-typedef struct socket socket;
 
-struct sector {
+typedef struct Field Field;
+typedef struct Entity Entity;
+typedef struct Checkbox Checkbox;
+typedef struct Slider Slider;
+typedef struct Momentary Momentary;
+typedef struct rotary rotary;
+typedef struct Socket Socket;
+typedef struct Carrier Carrier;
+typedef struct SectorDescriptor SectorDescriptor;
+
+struct SectorDescriptor {
+    uint32_t    id;
+    uint32_t    node_id;
+    ltwh32u     bounds;
+    SectorType  type;
+    SubType     subtype;
+    float       default_value;
+    float       range[2];
+    float       step[CP_LIMIT];
+    uint32_t    radio_id;
+    char*       label;
+    uint32_t    flags;
+    uint32_t    output;
+};
+
+struct Entity {
     uint32_t    index;
     uint32_t    uid;
     ltrb32u     bounds;
@@ -207,19 +281,19 @@ struct sector {
     uint32_t    flags;
     uint32_t    nodes;
     uint32_t    capacity;
-    void        (*callback[CT_LIMIT])(sector*, sector*);
-    sector*     target[CT_LIMIT];
-    sector*     connection;
-    field*      carrier;
-    sector*     root;
-    sector**    node;
+    void        (*callback[CT_LIMIT])(Entity*, Entity*);
+    Entity*     target[CT_LIMIT];
+    Entity*     connection;
+    Field*      parent;
+    Entity*     root;
+    Entity**    node;
 };
 
-struct checkbox {
+struct Checkbox {
     uint32_t radio_id;  
 };
 
-struct slider {
+struct Slider {
     SubType type;
     float default_value;
     float step[CP_LIMIT];
@@ -230,25 +304,37 @@ struct rotary {
     float step[CP_LIMIT];
 };
 
-struct socket {
+struct Socket {
 
 };
 
 
-struct momentary {
+struct Momentary {
 
 };
 
 /*****************************************************************************************************************************/
 
-struct field {
+struct Carrier {
+    uint32_t uid;
+    uint32_t width;
+    uint32_t height;
+    uint32_t entities;
+    uint32_t capacity;
+    Entity*  at; 
+};
+
+
+
+struct Field {
     ltrb32u     bounds;
     uint32_t    width;
     uint32_t    height;
     point32s    memory[SP_LIMIT];   // Saved cursor position
-    frame*      layer[CC];      
-    sector*     at;                 // Controls array
-    sector*     pressed;
+    Frame*      layer[CC];
+    Carrier*    node;
+    Entity*     at;                 // Controls array TODO: Move to Carrier
+    Entity*     pressed;
     uint32_t    current;            // HitTest return
     uint32_t    prior;              // Last HitTest
     bool        repaint;            // Repaint flag
@@ -256,11 +342,13 @@ struct field {
     bool        move;               // Window drag flag
     bool        staging;            // Draw staging layer
     bool        connecting;         // Connection pending
-    uint32_t    sectors;
+    uint32_t    entities;           // TODO: will be renamed to nodes and mean Carriers count
+    uint32_t    nodes;
     uint32_t    capacity;
     uint32_t    flags;
     uint32_t    step;
 };
+
 
 /******************************************************************************************************************************
  * Helpers
@@ -320,123 +408,71 @@ uid32 decode_uid(uint32_t data)
 
     return uid;
 }
-/******************************************************************************************************************************
- * Primitives
- *****************************************************************************************************************************/ 
-typedef enum
-{
-    BACKGROUND          = 0x263238FF,
-    MINOR               = 0x232935FF,
-    MAJOR               = 0x162228FF,
-    FOREGROUND          = 0xB0BEC5FF,
-    TEXT                = 0x607D8BFF,
-    SELECTIONBACKGROUND = 0x546E7AFF,
-    SELECTIONFOREGROUND = 0xFFFFFFFF,
-    BUTTONS             = 0x2E3C43FF,
-    SECONDBACKGROUND    = 0x32424AFF,
-    DISABLED            = 0x415967FF,
-    CONTRAST            = 0x1E272CFF,
-    ACTIVE              = 0x314549FF,
-    BORDER              = 0x2A373EFF,
-    HIGHLIGHT           = 0x425B67FF,
-    NOTIFICATIONS       = 0x1E272CFF,
-    ACCENT              = 0x009688FF,
-    EXCLUDED            = 0x2E3C43FF,
-    GREEN               = 0xC3E88DFF,
-    YELLOW              = 0xFFCB6BFF,
-    BLUE                = 0x82AAFFFF,
-    RED                 = 0xF07178FF,
-    PURPLE              = 0xC792EAFF,
-    ORANGE              = 0xF78C6CFF,
-    CYAN                = 0x89DDFFFF,
-    GRAY                = 0x546E7AFF,
-    ERROR               = 0xFF5370FF,
-    COMMENTS            = 0x546E7AFF,
-    VARIABLES           = 0xEEFFFFFF,
-    LINKS               = 0x80CBC4FF,
-    FUNCTIONS           = 0x82AAFFFF,
-    KEYWORDS            = 0xC792EAFF,
-    TAGS                = 0xF07178FF,
-    STRINGS             = 0xC3E88DFF,
-    OPERATORS           = 0x89DDFFFF,
-    ATTRIBUTES          = 0xFFCB6BFF,
-    NUMBERS             = 0xF78C6CFF,
-    PARAMETERS          = 0xF78C6CFF,
-    SOCKET_IN           = 0x006658FF,
-    SOCKET_OUT          = 0x905158FF,
 
-} Palette;
-
-typedef enum {
-    GRIP    = 3,
-    GAP     = 2,
-    SOCKET_BORDER = 2,
-
-} Constrain;
 
 extern const uint8_t gtFont[];
 
-static void draw_glyph      (frame*, const uint8_t*, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_text_label (frame*, const uint8_t* , const char*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_rectangle  (frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_rect_f     (frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_line_v     (frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_line_h     (frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_circle_f   (frame*, uint32_t, uint32_t, uint32_t, uint32_t);
-static void draw_circle_o   (frame*, uint32_t, uint32_t, uint32_t, uint32_t);
-static void draw_ltrb_o     (frame*, ltrb32u*, const uint32_t);
-static void draw_ltrb_f     (frame*, ltrb32u*, const uint32_t);
-static uint32_t frame_get   (frame*, uint32_t, uint32_t);
-static void frame_set       (frame*, uint32_t, uint32_t, uint32_t);
-static void frame_fill      (frame*, uint32_t);
-static void frame_clr       (frame*);
-static void frame_init      (frame*, uint32_t, uint32_t);
-static void frame_flush     (frame*);
-static void frame_copy      (frame*, frame*);
-static void frame_copy_at   (frame*, frame*, uint32_t, uint32_t);
-static void sprite_init     (sprite*, uint32_t, uint32_t, uint32_t);
-static void sprite_flush    (sprite*);
-static void sprite_load_stripe(sprite*, frame*);
+static void draw_glyph      (Frame*, const uint8_t*, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void draw_text_label (Frame*, const uint8_t* , const char*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void draw_rect_o     (Frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void draw_rect_f     (Frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void draw_line_v     (Frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void draw_line_h     (Frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void draw_circle_f   (Frame*, uint32_t, uint32_t, uint32_t, uint32_t);
+static void draw_circle_o   (Frame*, uint32_t, uint32_t, uint32_t, uint32_t);
+static void draw_ltrb_o     (Frame*, ltrb32u*, const uint32_t);
+static void draw_ltrb_f     (Frame*, ltrb32u*, const uint32_t);
+static uint32_t frame_get   (Frame*, uint32_t, uint32_t);
+static void frame_set       (Frame*, uint32_t, uint32_t, uint32_t);
+static void frame_fill      (Frame*, uint32_t);
+static void frame_clr       (Frame*);
+static void frame_init      (Frame*, uint32_t, uint32_t);
+static void frame_flush     (Frame*);
+static void frame_copy      (Frame*, Frame*);
+static void frame_copy_at   (Frame*, Frame*, uint32_t, uint32_t);
+static void sprite_init     (Sprite*, uint32_t, uint32_t, uint32_t);
+static void sprite_flush    (Sprite*);
+static void sprite_load_stripe(Sprite*, Frame*);
 
-static inline void frame_set(frame*o, uint32_t x, uint32_t y, uint32_t value)
+static inline void frame_set(Frame*o, uint32_t x, uint32_t y, uint32_t value)
 {
     if(x < o->width && y < o->height)
     o->data[x + y * o->width] = value;
 }
 
-static inline uint32_t frame_get(frame* o, uint32_t x, uint32_t y)
+static inline uint32_t frame_get(Frame* o, uint32_t x, uint32_t y)
 {
     if(x < o->width && y < o->height) return o->data[x + y * o->width];
     return o->data[0];
 }
 
-static inline void frame_clr(frame* o)
+static inline void frame_clr(Frame* o)
 {
     memset(o->data, 0, o->height * o->width * sizeof(uint32_t));
 }
 
-static inline void frame_fill(frame* o, uint32_t value)
+static inline void frame_fill(Frame* o, uint32_t value)
 {
     for(uint32_t i = 0; i < (o->height * o->width); ++i) o->data[i] = value;
 }
 
-static inline void frame_init(frame* o, uint32_t x, uint32_t y)
+static inline void frame_init(Frame* o, uint32_t x, uint32_t y)
 {
     o->width  = x;
     o->height = y;
     o->data   = (uint32_t*)calloc(o->width * o->height , sizeof(uint32_t));
 }
 
-static inline void frame_flush(frame* o)
+static inline void frame_flush(Frame* o)
 {
     free(o->data);
 }
 
-static inline void frame_copy(frame* target, frame* source) {
+static inline void frame_copy(Frame* target, Frame* source) {
     for(uint32_t i = 0; i < target->height * target->width; i++) target->data[i] = source->data[i];
 }
 
-static inline void frame_copy_at(frame* target, frame* source, uint32_t xo, uint32_t yo) {
+static inline void frame_copy_at(Frame* target, Frame* source, uint32_t xo, uint32_t yo) {
     for(uint32_t y = 0; y < source->height; y++) {
         for(uint32_t x = 0; x < source->width; x++) {
             frame_set(target, x + xo, y + yo, frame_get(source, x, y));
@@ -444,39 +480,39 @@ static inline void frame_copy_at(frame* target, frame* source, uint32_t xo, uint
     }
 }
 
-static inline void draw_rectangle(frame* restrict canvas, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour)
+static inline void draw_rect_o(Frame* restrict frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour)
 {
     for(uint32_t i = l; i <= r; i++) {
-        frame_set(canvas, i, t, colour);
-        frame_set(canvas, i, b, colour);
+        frame_set(frame, i, t, colour);
+        frame_set(frame, i, b, colour);
     }
 
     for(uint32_t i = t; i <= b; i++) {
-        frame_set(canvas, l, i, colour);
-        frame_set(canvas, r, i, colour);
+        frame_set(frame, l, i, colour);
+        frame_set(frame, r, i, colour);
     }
 }
 
-static inline void draw_rect_f(frame* canvas, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour)
+static inline void draw_rect_f(Frame* frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour)
 {
     for(uint32_t y = t; y <= b; ++y) {
         for(uint32_t x = l; x <= r; ++x) {
-            frame_set(canvas, x, y, colour);
+            frame_set(frame, x, y, colour);
         }
     }
 }
 
-static inline void draw_line_v(frame* o, uint32_t x, uint32_t yo, uint32_t ye, const uint32_t value) {
+static inline void draw_line_v(Frame* frame, uint32_t x, uint32_t yo, uint32_t ye, const uint32_t value) {
     for(uint32_t y = yo; y <= ye; ++y)
-        frame_set(o, x, y, value);
+        frame_set(frame, x, y, value);
 }
 
-static inline void draw_line_h(frame* o, uint32_t y, uint32_t xo, uint32_t xe, const uint32_t value) {
+static inline void draw_line_h(Frame* frame, uint32_t y, uint32_t xo, uint32_t xe, const uint32_t value) {
     for(uint32_t x = xo; x <= xe; ++x)
-        frame_set(o, x, y, value);
+        frame_set(frame, x, y, value);
 }
 
-void draw_circle_f(frame* o, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
+void draw_circle_f(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
     int x = 0;
     int y = r;
     int p = 1 - r;
@@ -491,16 +527,16 @@ void draw_circle_f(frame* o, uint32_t xc, uint32_t yc, uint32_t r, uint32_t valu
             p = p + 2 * (x - y) + 1;
         }
 
-        draw_line_h(o, yc + x, xc - y, xc + y, value);
-        draw_line_h(o, yc - x, xc - y, xc + y, value);
-        draw_line_h(o, yc + y, xc - x, xc + x, value);
-        draw_line_h(o, yc - y, xc - x, xc + x, value);
+        draw_line_h(frame, yc + x, xc - y, xc + y, value);
+        draw_line_h(frame, yc - x, xc - y, xc + y, value);
+        draw_line_h(frame, yc + y, xc - x, xc + x, value);
+        draw_line_h(frame, yc - y, xc - x, xc + x, value);
     }
 
-    draw_line_h(o, yc, xc - r, xc + r, value);
+    draw_line_h(frame, yc, xc - r, xc + r, value);
 }
 
-static inline void draw_circle_o(frame* o, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
+static inline void draw_circle_o(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
     int x = 0;
     int y = r;
     int p = 1 - r;
@@ -515,78 +551,77 @@ static inline void draw_circle_o(frame* o, uint32_t xc, uint32_t yc, uint32_t r,
             p = p + 2 * (x - y) + 1;
         }
 
-        frame_set(o, xc + x, yc + y, value);
-        frame_set(o, xc - x, yc + y, value);
-        frame_set(o, xc + x, yc - y, value);
-        frame_set(o, xc - x, yc - y, value);
-        frame_set(o, xc + y, yc + x, value);
-        frame_set(o, xc - y, yc + x, value);
-        frame_set(o, xc + y, yc - x, value);
-        frame_set(o, xc - y, yc - x, value); 
-
+        frame_set(frame, xc + x, yc + y, value);
+        frame_set(frame, xc - x, yc + y, value);
+        frame_set(frame, xc + x, yc - y, value);
+        frame_set(frame, xc - x, yc - y, value);
+        frame_set(frame, xc + y, yc + x, value);
+        frame_set(frame, xc - y, yc + x, value);
+        frame_set(frame, xc + y, yc - x, value);
+        frame_set(frame, xc - y, yc - x, value); 
     }
 
-    frame_set(o, xc, yc - r, value);
-    frame_set(o, xc, yc + r, value);
-    frame_set(o, xc + r, yc, value);
-    frame_set(o, xc - r, yc, value);
+    frame_set(frame, xc, yc - r, value);
+    frame_set(frame, xc, yc + r, value);
+    frame_set(frame, xc + r, yc, value);
+    frame_set(frame, xc - r, yc, value);
 }
 
-static inline void draw_glyph(frame* canvas, const uint8_t* font, uint32_t id, uint32_t l, uint32_t t, const uint32_t colour) {
+static inline void draw_glyph(Frame* frame, const uint8_t* font, uint32_t id, uint32_t l, uint32_t t, const uint32_t colour) {
     uint32_t pos = id * 7;
     u_int8_t stencil = 0b1;
 
     for(uint32_t y = 0; y < 8; y++) {
         for(uint32_t x = 0; x < 7; x++) {
-            if(font[pos + x] & stencil) frame_set(canvas, x + l, y + t, colour);
+            if(font[pos + x] & stencil) frame_set(frame, x + l, y + t, colour);
         }
         stencil<<=1;
     }
 }
 
-static inline void draw_text_label(frame* canvas, const uint8_t* font, const char* text, uint32_t l, uint32_t t, uint32_t, uint32_t, const uint32_t colour) {
+static inline void drawTextLabel(Frame* frame, const uint8_t* font, const char* text, uint32_t l, uint32_t t, uint32_t, uint32_t, const uint32_t colour) {
     uint32_t n = strlen(text);
     for(uint32_t i = 0; i < n; i++) {
-        draw_glyph(canvas, font, text[i] - 32, l + i * 8, t, colour);
+        draw_glyph(frame, font, text[i] - 32, l + i * 8, t, colour);
     }
 }
 
 /******************************************************************************************************************************/
 
-static inline void sprite_init(sprite* o, uint32_t w, uint32_t h, uint32_t nframes) {
-    frame temp;
+static inline void sprite_init(Sprite* sprite, uint32_t w, uint32_t h, uint32_t nframes) {
+    Frame temp;
     frame_init(&temp, w, h);
 
-    o->data = (frame*)malloc(nframes * sizeof(temp));
-    o->width = w;
-    o->height = h;
-    o->nframes = nframes;
+    sprite->data = (Frame*)malloc(nframes * sizeof(temp));
+    sprite->width = w;
+    sprite->height = h;
+    sprite->nframes = nframes;
 
     frame_flush(&temp);
     
-    for(uint32_t i = 0; i < o->nframes; i++) {
-        frame_init(&o->data[i], w, h);
+    for(uint32_t i = 0; i < sprite->nframes; i++) {
+        frame_init(&sprite->data[i], w, h);
     }
 }
 
-static inline void sprite_flush(sprite* restrict o) {
-    for(uint32_t i = 0; i < o->nframes; i++) {
-        frame_flush(&o->data[i]);
+static inline void sprite_flush(Sprite* restrict sprite) {
+    for(uint32_t i = 0; i < sprite->nframes; i++) {
+        frame_flush(&sprite->data[i]);
     }
-    free(o->data);
+    free(sprite->data);
 }
 
-static inline void sprite_load_stripe(sprite* restrict o, frame* restrict f) {
-    for(uint32_t i = 0; i < o->nframes; i++) {
-        for(uint32_t y = 0; y < o->height; y++) {
-            for(uint32_t x = 0; x < o->width; x++) {
-                frame_set(&o->data[i], x, y, frame_get(f, x, y + (i * o->height)));
+static inline void sprite_load_stripe(Sprite* restrict sprite, Frame* restrict frame) {
+    for(uint32_t i = 0; i < sprite->nframes; i++) {
+        for(uint32_t y = 0; y < sprite->height; y++) {
+            for(uint32_t x = 0; x < sprite->width; x++) {
+                frame_set(&sprite->data[i], x, y, frame_get(frame, x, y + (i * sprite->height)));
             }
         }
     }
 }
 
-static inline void draw_ltrb_o(frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour) {
+static inline void draw_ltrb_o(Frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour) {
     for(uint32_t i = r->l; i <= r->r; ++i) {
         frame_set(canvas, i, r->t, colour);
         frame_set(canvas, i, r->b, colour);
@@ -597,7 +632,7 @@ static inline void draw_ltrb_o(frame* restrict canvas, ltrb32u* restrict r, cons
     }
 }
 
-static inline void draw_ltrb_f(frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour)
+static inline void draw_ltrb_f(Frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour)
 {
     for(uint32_t y = r->t; y <= r->b; ++y) {
         for(uint32_t x = r->l; x <= r->r; ++x) {
@@ -607,130 +642,181 @@ static inline void draw_ltrb_f(frame* restrict canvas, ltrb32u* restrict r, cons
 }
 
 /******************************************************************************************************************************/
-void set_text_data(sector*, const char*); 
-static void value_to_textbox(sector*, sector*);
+void set_text_data(Entity*, const char*); 
+static void value_to_textbox(Entity*, Entity*);
 
-void fuse_link(sector*, sector*);
-void draw_scene(field* restrict);
+void fuse_link(Entity*, Entity*);
+void draw_scene(Field* restrict);
 
-void add_mod_link(sector*, sector*, CallbackType, void (*)(sector*, sector*));
-void link_sector(sector*, sector*);
-void move_sector(sector* restrict, ltrb32u* restrict);
-void erase_sector(sector* restrict);
-
-/*****************************************************************************************************************************/
-
-sector* createSector(field* restrict, sector* restrict, SectorType, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-void initField   (field* restrict, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-void destroyField(field* restrict);
+void add_mod_link(Entity*, Entity*, CallbackType, void (*)(Entity*, Entity*));
+void link_sector(Entity*, Entity*);
+void move_sector(Entity* restrict, ltrb32u* restrict);
+void erase_sector(Entity* restrict);
 
 /*****************************************************************************************************************************/
 
-void hit_test_down(field* restrict, int, int, uint32_t);
-void hit_test_drag(field* restrict, int, int);
-void hit_test_up  (field* restrict, int, int, uint32_t);
-void hit_test     (field* restrict, int, int);
+Entity* createSector(Field* restrict, SectorDescriptor*);
+void initField   (Field* restrict, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+void destroyField(Field* restrict);
 
 /*****************************************************************************************************************************/
 
-extern void (*init_sector[])(sector* restrict);
-extern void (*set_sector[])(sector* restrict, int, int);
-extern void (*draw_sector[])(sector* restrict);
-extern void (*drag_sector[])(sector* restrict, int, int);
-extern void (*scroll_sector[])(sector* restrict, int, int);
-extern void (*enter_sector[])(sector* restrict, int, int);
-extern void (*leave_sector[])(sector* restrict, int, int);
-extern void (*release_sector[])(sector* restrict, int, int);
+void hit_test_down(Field* restrict, int, int, uint32_t);
+void hit_test_drag(Field* restrict, int, int);
+void hit_test_up  (Field* restrict, int, int, uint32_t);
+void hit_test     (Field* restrict, int, int);
 
 /*****************************************************************************************************************************/
 
-sector* createSector(field* restrict o, sector* restrict node, SectorType type, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t flags) {
-    auto pos = ++o->sectors;
+extern void (*init_sector[])(Entity* restrict);
+extern void (*set_sector[])(Entity* restrict, int, int);
+extern void (*draw_sector[])(Entity* restrict);
+extern void (*drag_sector[])(Entity* restrict, int, int);
+extern void (*scroll_sector[])(Entity* restrict, int, int);
+extern void (*enter_sector[])(Entity* restrict, int, int);
+extern void (*leave_sector[])(Entity* restrict, int, int);
+extern void (*release_sector[])(Entity* restrict, int, int);
 
-    o->at[pos].type                     = type;
- //   o->at[pos].subtype                  = SS_A;
-    o->at[pos].bounds.l                 = x;
-    o->at[pos].bounds.t                 = y;
-    o->at[pos].bounds.r                 = x + w;
-    o->at[pos].bounds.b                 = y + h;
-    o->at[pos].width                    = w;
-    o->at[pos].height                   = h;
-    o->at[pos].value[CP_COARSE]         = 0.0f;
-    o->at[pos].value[CP_FINE]           = 0.0f;
-    o->at[pos].range[0]                 = -8.0f;
-    o->at[pos].range[1]                 = +8.0f;
-//    o->at[pos].step[CP_COARSE]          = 1.0f;
- //   o->at[pos].step[CP_FINE]            = 0.1f;
-    o->at[pos].repaint                  = true;
-    o->at[pos].flags                    = flags;
-    o->at[pos].carrier                  = o;
-//    o->at[pos].radio_id                 = 0;
-//    o->at[pos].default_value            = 0.0f;
+/*****************************************************************************************************************************/
 
-    for(uint32_t i = 0; i < CT_LIMIT; ++i) {
-        o->at[pos].callback[i] = &fuse_link;
+Entity* find_sector_by_id(Field* restrict o, uint32_t id) {
+    if(!id) return nullptr;
+
+    for(uint32_t i = 0; i <= o->entities; ++i) {
+        if(o->at[i].uid == id) return &o->at[i];
+    }
+    return nullptr;
+}
+
+Entity* createSector(Field* restrict o, SectorDescriptor* d) {
+    auto pos = ++o->entities;
+    auto s = &o->at[pos];
+
+    s->uid                      = d->id;
+    s->type                     = d->type;
+    s->bounds.l                 = d->bounds.l;
+    s->bounds.t                 = d->bounds.t;
+    s->bounds.r                 = d->bounds.l + d->bounds.w;
+    s->bounds.b                 = d->bounds.t + d->bounds.h;
+    s->width                    = d->bounds.w;
+    s->height                   = d->bounds.h;
+    s->value[CP_COARSE]         = (float)(int)d->default_value;
+    s->value[CP_FINE]           = d->default_value - (float)(int)d->default_value;
+    s->range[0]                 = d->range[0];
+    s->range[1]                 = d->range[1];
+
+    s->repaint                  = true;
+    s->flags                    = d->flags;
+    s->parent                   = o;
+
+    printf("Created sector : %u\n", s->index);
+
+    switch (d->type) {
+        case ST_CHECKBOX: {
+            s->extension = (Checkbox*)malloc(sizeof(Checkbox));
+            auto ext = (Checkbox*)s->extension;
+            ext->radio_id = d->radio_id;
+        }
+        break;
+
+        case ST_SLIDER: {
+            s->extension = (Slider*)malloc(sizeof(Slider));
+            auto ext = (Slider*)s->extension;
+            ext->type = d->subtype;
+            ext->default_value = d->default_value; 
+            ext->step[CP_COARSE] = d->step[CP_COARSE];
+            ext->step[CP_FINE] = d->step[CP_FINE];
+        }
+        break;
+
+        case ST_SOCKET: {
+            s->extension = (Socket*)malloc(sizeof(Socket));
+        }
+        break;
+
+        default: 
+        break;
+    
     }
 
-    if(!(flags & TRANSPARENT)) {
+    for(uint32_t i = 0; i < CT_LIMIT; ++i) {
+        s->callback[i] = &fuse_link;
+    }
+
+    if(!(d->flags & TRANSPARENT)) {
         draw_ltrb_f (
             o->layer[SC],
-            &o->at[pos].bounds,
-            o->at[pos].index
+            &s->bounds,
+            s->index
         );
     }
 
-    init_sector[type](&o->at[pos]);
-
-    if(node)
-        link_sector(node, &o->at[pos]);
-
-    return &o->at[pos];
-}
-
-void initField(field* restrict o, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags) {
-    o->bounds.l     = x;
-    o->bounds.t     = y;
-    o->bounds.r     = x + w;
-    o->bounds.b     = y + h;
-
-    o->width        = w;
-    o->height       = h;
-
-    for(int i = 0; i < SP_LIMIT; ++i) {
-        o->memory[i] = (point32s) { .x = 0, .y = 0 };
+    init_sector[d->type](s);
+    if(d->type == ST_TEXTBOX) {
+        strncpy(s->data, d->label, TEXTBOX_SIZE);
     }
 
-    o->drag         = false;
-    o->move         = false;
-    o->capacity     = size + 1u;
-    o->repaint      = true;
-    o->sectors      = 0;
-    o->flags        = flags;
-    o->step         = 25;
-    o->staging      = false;
-    o->connecting   = false;
-    o->prior        = 0;
-    o->current      = 0;
-    o->pressed      = nullptr;
+    if(d->output) {
+        printf("---- Set output : %d\n", d->output);
+        auto target = find_sector_by_id(o, d->output);
+        if(target) {
+            add_mod_link(s, target, CT_VALUE, value_to_textbox);
+            printf("---- Target found...\n");
+        }
+        else
+            printf("---- NO Target found...\n");
+    }
+
+    auto node = find_sector_by_id(o, d->node_id);
+    if(node)
+        link_sector(node, s);
+
+    return s;
+}
+
+void initField(Field* restrict field, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags) {
+    field->bounds.l     = x;
+    field->bounds.t     = y;
+    field->bounds.r     = x + w;
+    field->bounds.b     = y + h;
+    field->width        = w;
+    field->height       = h;
+
+    for(int i = 0; i < SP_LIMIT; ++i) {
+        field->memory[i] = (point32s) { .x = 0, .y = 0 };
+    }
+
+    field->drag         = false;
+    field->move         = false;
+    field->capacity     = size + 1u;
+    field->repaint      = true;
+    field->entities      = 0;
+    field->flags        = flags;
+    field->step         = 25;
+    field->staging      = false;
+    field->connecting   = false;
+    field->prior        = 0;
+    field->current      = 0;
+    field->pressed      = nullptr;
 
     if(true) {
         for(uint32_t i = 0; i < CC; ++i) {
-            o->layer[i] = malloc(sizeof(frame));
-            frame_init(o->layer[i],  w, h);
+            field->layer[i] = malloc(sizeof(Frame));
+            frame_init(field->layer[i],  w, h);
         }
 
-        frame_clr(o->layer[SC]);
-        frame_clr(o->layer[SN]);
-        frame_fill(o->layer[BG], BACKGROUND);
+        frame_clr(field->layer[SC]);
+        frame_clr(field->layer[SN]);
+        frame_fill(field->layer[BG], BACKGROUND);
     }
 
-    o->at = malloc(o->capacity * sizeof(sector));
-    for(uint32_t i = 0; i < o->capacity; i++) o->at[i].index = i;
+    field->at = malloc(field->capacity * sizeof(Entity));
+    for(uint32_t i = 0; i < field->capacity; i++) field->at[i].index = i;
 
-    auto canvas = &o->at[0];
+    auto canvas = &field->at[0];
 
     canvas->type = ST_CANVAS;
-    canvas->carrier = o;
+    canvas->parent = field;
     canvas->repaint = true;
 
     for(uint32_t i = 0; i < CT_LIMIT; ++i) {
@@ -738,7 +824,7 @@ void initField(field* restrict o, uint32_t x, uint32_t y, uint32_t w, uint32_t h
     }
 }
 
-void destroyField(field* restrict o) {
+void destroyField(Field* restrict o) {
     for(uint32_t i = 0; i < CC; ++i) {
         frame_flush(o->layer[i]);
         free(o->layer[i]);
@@ -746,41 +832,63 @@ void destroyField(field* restrict o) {
     free(o->at);
 }
 
+static inline Carrier* createCarrier(Field* restrict, uint32_t, uint32_t, size_t);
+
+static inline Carrier* createCarrier(Field* restrict field, uint32_t w, uint32_t h, size_t size) {
+
+    auto index = field->nodes;
+
+    if (index >= field->capacity) {
+        field->capacity = field->capacity * 2 + 4;
+        field->node = realloc(field->node, field->capacity * sizeof(Carrier));
+    }
+
+    field->node[index].width = w;
+    field->node[index].height = h;
+    field->node[index].capacity = size;
+    
+    field->node[index].at = malloc(size * sizeof(Entity));
+    for(size_t i = 0; i < size; ++i) field->node[index].at[i].index = i;
+    
+    ++field->nodes;
+    return &field->node[index];
+}
+
 void empty() {}
 
-void fuse_link(sector*, sector*) {}
+void fuse_link(Entity*, Entity*) {}
 
-void link_sector(sector* parent, sector* child) {
+void link_sector(Entity* parent, Entity* child) {
     assert(parent != child);
     if (parent->nodes >= parent->capacity) {
         parent->capacity = parent->capacity * 2 + 4;
-        parent->node = realloc(parent->node, parent->capacity * sizeof(sector*));
+        parent->node = realloc(parent->node, parent->capacity * sizeof(Entity*));
     }
     parent->node[parent->nodes] = child;
     child->root = parent;
     ++parent->nodes;
 }
 
-void move_sector(sector* restrict s, ltrb32u* restrict bounds) {
-    draw_ltrb_f(s->carrier->layer[FG], &s->bounds, 0x0);
+void move_sector(Entity* restrict s, ltrb32u* restrict bounds) {
+    draw_ltrb_f(s->parent->layer[FG], &s->bounds, 0x0);
     if(!(s->flags & TRANSPARENT)) {
-        draw_ltrb_f(s->carrier->layer[SC], &s->bounds, 0x0);
-        draw_ltrb_f(s->carrier->layer[SC], bounds, s->index);
+        draw_ltrb_f(s->parent->layer[SC], &s->bounds, 0x0);
+        draw_ltrb_f(s->parent->layer[SC], bounds, s->index);
     }
     s->bounds = *bounds;
 }
 
-void add_mod_link(sector* source, sector* target, CallbackType type, void (*fn)(sector*, sector*)) {
+void add_mod_link(Entity* source, Entity* target, CallbackType type, void (*fn)(Entity*, Entity*)) {
     source->callback[type] = fn;
     source->target[type] = target;
 }
 
-void set_text_data(sector* restrict o, const char* restrict text) {
+void set_text_data(Entity* restrict o, const char* restrict text) {
     strncpy(o->data, text, TEXTBOX_SIZE);
     o->repaint = true;
 }
 
-static inline void value_to_textbox(sector* slider, sector* tbox) {
+static inline void value_to_textbox(Entity* slider, Entity* tbox) {
     int precision = 2;
     char *text = tbox->data;
     float val = slider->value[CP_COARSE] + slider->value[CP_FINE];
@@ -790,7 +898,7 @@ static inline void value_to_textbox(sector* slider, sector* tbox) {
 
 /*****************************************************************************************************************************/
 
-void hit_test_down(field* restrict o, int x, int y, uint32_t button) {
+void hit_test_down(Field* restrict o, int x, int y, uint32_t button) {
     o->current = frame_get(o->layer[SC], x, y);
     auto p = &o->at[o->current];
 
@@ -817,7 +925,7 @@ void hit_test_down(field* restrict o, int x, int y, uint32_t button) {
         p->staging = true;
 
         draw_ltrb_f(
-            p->carrier->layer[SN],
+            p->parent->layer[SN],
             &p->bounds, 
             0x0
         );
@@ -833,39 +941,39 @@ void hit_test_down(field* restrict o, int x, int y, uint32_t button) {
 }
 
 #ifdef DEBUG_OVERLAY
-static inline void draw_debug_overlay(field* o, sector* s) {
+static inline void draw_debug_overlay(Field* o, Entity* s) {
     constexpr uint32_t colour = 0xFF'FF'FF'90;
     frame_fill(o->layer[DO], 0);
     uint32_t voffset = 10;
     uint32_t vstep = 12;
     uint32_t row = 0;
 
-    draw_text_label(o->layer[DO], gtFont,    "#", 10, voffset + vstep * row++, 100, 10, colour);
+    drawTextLabel(o->layer[DO], gtFont,    "#", 10, voffset + vstep * row++, 100, 10, colour);
 
     if(!s) return;
 
     char buffer[128];
     snprintf(buffer, 128, "CONTROL INDEX: %u", s->index);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
-    snprintf(buffer, 128, "CONTROL UID  : 0x%X", s->uid);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    drawTextLabel(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    snprintf(buffer, 128, "CONTROL UID  : %u", s->uid);
+    drawTextLabel(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "IS CONNECTED : %d", s->connected);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    drawTextLabel(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "CONNECTION   : %p", (void*)s->connection);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    drawTextLabel(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "HAS DATA     : %d", s->has_data);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    drawTextLabel(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "VALUE COARSE : %f", s->value[0]);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    drawTextLabel(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "VALUE FINE   : %f", s->value[1]);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    drawTextLabel(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "FLAGS        : %b", s->flags);
-    draw_text_label(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    drawTextLabel(o->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     atomic_store_explicit(&force_repaint, true, memory_order_release);
 }
 #endif
 
-void hit_test(field* restrict o, int x, int y) {
+void hit_test(Field* restrict o, int x, int y) {
     auto uid = frame_get(o->layer[SC], x, y);
 
     if(o->current != uid) {
@@ -890,12 +998,12 @@ void hit_test(field* restrict o, int x, int y) {
     }
 }
 
-void hit_test_drag(field* restrict o, int x, int y) {
+void hit_test_drag(Field* restrict o, int x, int y) {
     drag_sector[o->pressed->type](o->pressed, x, y);
     o->repaint = true;
 }
 
-void hit_test_up(field* restrict o, int x, int y, uint32_t button) {
+void hit_test_up(Field* restrict o, int x, int y, uint32_t button) {
     o->current = frame_get(o->layer[SC], x, y);
 
     if(o->pressed) {
@@ -926,8 +1034,8 @@ void hit_test_up(field* restrict o, int x, int y, uint32_t button) {
 
 /*****************************************************************************************************************************/
 
-static void draw_checkbox(sector* restrict c) {
-    auto o = c->carrier;
+static void draw_checkbox(Entity* restrict c) {
+    auto o = c->parent;
     draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
     draw_ltrb_o(o->layer[FG], &c->bounds, BORDER);
     if(c->value[CP_COARSE] > 0.5f)
@@ -935,8 +1043,8 @@ static void draw_checkbox(sector* restrict c) {
     c->repaint = false;
 }
 
-void draw_scene(field* restrict o) {
-    for(uint32_t i = 0; i <= o->sectors; ++i) {
+void draw_scene(Field* restrict o) {
+    for(uint32_t i = 0; i <= o->entities; ++i) {
         auto s = &o->at[i];
         if(s->repaint) {
             draw_sector[s->type](s);
@@ -947,17 +1055,17 @@ void draw_scene(field* restrict o) {
 
 /*****************************************************************************************************************************/
 
-static void set_checkbox(sector* restrict o, int, int) {
+static void set_checkbox(Entity* restrict o, int, int) {
     auto coarse = &o->value[CP_COARSE];
-    auto ext = (checkbox*)o->extension;
+    auto ext = (Checkbox*)o->extension;
     if(o->flags & RADIO) {
         auto id = ext->radio_id;
         if(*coarse > 0.5f) return;
         else {
             *coarse = 1.0f;
             o->repaint = true;
-            auto f = o->carrier;
-            for(uint32_t i = 0; i <= f->sectors; ++i) {
+            auto f = o->parent;
+            for(uint32_t i = 0; i <= f->entities; ++i) {
                 auto r = &f->at[i];
                 if((r->flags & RADIO) && ext->radio_id == id && r != o) {
                     r->value[CP_COARSE] = 0.0f;
@@ -975,20 +1083,24 @@ static void set_checkbox(sector* restrict o, int, int) {
 }
 
 
-static void set_slider(sector* restrict o, int x, int y) {
+static void set_slider(Entity* restrict o, int x, int y) {
+    const float v = 0.1f;
     const auto coarse = &o->value[CP_COARSE];
     const auto fine = &o->value[CP_FINE];
-    auto ext = (slider*)o->extension;
+    auto ext = (Slider*)o->extension;
 
-    const float step = ext->step[CP_COARSE];
-    const float sensivity = 0.2f;
+    float value = {};
 
-    auto dx = o->carrier->memory[SP_CURSOR_PRIOR].x - x;
-    auto dy = o->carrier->memory[SP_CURSOR_PRIOR].y - y;
-
-    auto delta = (o->flags & VERTICAL ? dy : -dx);
-    int ds = (int)roundf((float)delta * sensivity);
-    float value = o->memory[CP_COARSE] + ds * step;
+    if(o->flags & VERTICAL) {
+        const int dy = o->parent->memory[SP_CURSOR_PRIOR].y - y;
+        const auto step = ext->step[CP_COARSE]; 
+        value = step * roundf((float)dy * v) + o->memory[CP_COARSE];
+    }
+    else {
+        const int dx = o->parent->memory[SP_CURSOR_PRIOR].x - x;
+        const auto step = ext->step[CP_COARSE]; 
+        value = - step * roundf((float)dx * v) + o->memory[CP_COARSE];
+    }
 
     if(value < o->range[0]) {
         *coarse = o->range[0];
@@ -1004,9 +1116,9 @@ static void set_slider(sector* restrict o, int x, int y) {
     o->callback[CT_VALUE](o, o->target[CT_VALUE]);
 }
 
-static void draw_slider(sector* restrict c) {
-    auto o = c->carrier;
-    auto ext = (slider*)c->extension;
+static void draw_slider(Entity* restrict c) {
+    auto o = c->parent;
+    auto ext = (Slider*)c->extension;
     auto coarse = &c->value[CP_COARSE];
     auto fine = &c->value[CP_FINE];
     draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
@@ -1050,10 +1162,10 @@ static void draw_slider(sector* restrict c) {
     c->repaint = false;
 }
 
-static void scroll_slider(sector* restrict o, int, int y) {
+static void scroll_slider(Entity* restrict o, int, int y) {
     auto fine = &o->value[CP_FINE];
     auto coarse = &o->value[CP_COARSE];
-    auto ext = (slider*)o->extension;
+    auto ext = (Slider*)o->extension;
     auto df = (float)y * ext->step[CP_FINE];
 
     if((*coarse + df < o->range[1]) && (*coarse + df > o->range[0])) {
@@ -1069,8 +1181,8 @@ static void scroll_slider(sector* restrict o, int, int y) {
     o->callback[CT_VALUE](o, o->target[CT_VALUE]);
 }
 
-static void draw_button(sector* restrict c) {
-    auto o = c->carrier;
+static void draw_button(Entity* restrict c) {
+    auto o = c->parent;
     draw_ltrb_f(o->layer[FG], &c->bounds, BUTTONS);
     draw_ltrb_o(o->layer[FG], &c->bounds, BORDER);
 
@@ -1085,18 +1197,18 @@ static void draw_button(sector* restrict c) {
 
 /******************************************************************************************************************************/
 
-static void draw_rotary(sector* restrict c) {
-    auto o = c->carrier;
+static void draw_rotary(Entity* restrict c) {
+    auto o = c->parent;
     auto range = c->range[1] - c->range[0];
-    sprite* spr = (sprite*)c->data;
+    Sprite* spr = (Sprite*)c->data;
     int f = ((c->value[CP_COARSE] - c->range[0]) / range) * spr->nframes;
     frame_copy_at(o->layer[FG], &spr->data[f], c->bounds.l, c->bounds.t);
 
     c->repaint = false;
 }
 
-static void set_rotary(sector* restrict o, int x, int y) {
-    auto f = o->carrier;
+static void set_rotary(Entity* restrict o, int x, int y) {
+    auto f = o->parent;
     auto coarse = &o->value[CP_COARSE];
     auto ext = (rotary*)o->extension;
     int dy = roundf((f->memory[SP_CURSOR_PRIOR].y - y)/ext->step[CP_COARSE]);
@@ -1114,8 +1226,8 @@ static void set_rotary(sector* restrict o, int x, int y) {
 
 /******************************************************************************************************************************/
 
-static void set_sprite_inf_slider(sector* restrict o, int x, int y) {
-    auto f = o->carrier;
+static void set_sprite_inf_slider(Entity* restrict o, int x, int y) {
+    auto f = o->parent;
     auto coarse = &o->value[CP_COARSE];
     auto ext = (rotary*)o->extension;
     int dy = roundf((y - f->memory[SP_CURSOR_PRIOR].y)/ext->step[CP_COARSE]);
@@ -1134,18 +1246,18 @@ static void set_sprite_inf_slider(sector* restrict o, int x, int y) {
     f->memory[SP_CURSOR_PRIOR].y = (float)y;
 }
 
-static void set_button(sector* restrict o, int, int) {
+static void set_button(Entity* restrict o, int, int) {
     auto coarse = &o->value[CP_COARSE];
     if(*coarse < 0.5f) *coarse = 1.0f;
     else *coarse = 0.0f;
     o->repaint = true;
 
-    auto f = o->carrier;
+    auto f = o->parent;
     f->prior = f->current;
 }
 
-static void release_button(sector* restrict o, int, int) {
-    auto p = o->carrier->pressed; 
+static void release_button(Entity* restrict o, int, int) {
+    auto p = o->parent->pressed; 
     auto coarse = &p->value[CP_COARSE];
     if(p) {
         if(p == o) {
@@ -1158,9 +1270,9 @@ static void release_button(sector* restrict o, int, int) {
     }
 }
 
-static void draw_sprite_button(sector* restrict c) {
-    auto o = c->carrier;
-    sprite* spr = (sprite*)c->data;
+static void draw_sprite_button(Entity* restrict c) {
+    auto o = c->parent;
+    Sprite* spr = (Sprite*)c->data;
 
     if(c->value[CP_COARSE] > 0.5f)
         frame_copy_at(o->layer[FG], &spr->data[1], c->bounds.l, c->bounds.t);
@@ -1170,28 +1282,28 @@ static void draw_sprite_button(sector* restrict c) {
     c->repaint = false;
 }
 
-static void init_socket(sector* restrict s) {
+static void init_socket(Entity* restrict s) {
     s->data = (float*)calloc(SPLINE_SEGMENTS * 2, sizeof(float));
 }
 
-static void set_socket(sector* restrict o, int, int) {
+static void set_socket(Entity* restrict o, int, int) {
     auto coarse = &o->value[CP_COARSE];
     if(*coarse < 0.5f) *coarse = 1.0f;
     else *coarse = 0.0f;
     o->repaint = true;
 
-    auto f = o->carrier;
+    auto f = o->parent;
     f->prior = f->current;
 }
 
-static void draw_socket(sector* restrict c) {
-    auto o = c->carrier;
+static void draw_socket(Entity* restrict c) {
+    auto o = c->parent;
     auto r = c->width / 2;
     point32u center = {
         .x = c->bounds.l + r,
         .y = c->bounds.t + r
     };
-    auto color = c->flags & OUTPUT ? SOCKET_OUT : SOCKET_IN;
+    auto color = c->flags & OUTPUT ? RED : PURPLE;
 
     draw_circle_f(o->layer[FG], center.x, center.y, r, color);
     r = c->width / 4;
@@ -1218,12 +1330,12 @@ static inline point interpolate_bezier(point a, point b, point c, point d, float
     return o;
 }
 
-static void drag_socket(sector* s, int x, int y)
+static void drag_socket(Entity* s, int x, int y)
 {
     if(s->connected) {
-        s->carrier->pressed = s->connection;
+        s->parent->pressed = s->connection;
         s = s->connection;
-        s->carrier->current = s->index;
+        s->parent->current = s->index;
 
         if(s->has_data) {
             memset(s->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float)); 
@@ -1238,7 +1350,7 @@ static void drag_socket(sector* s, int x, int y)
 
     }
 
-    auto o = s->carrier;
+    auto o = s->parent;
 
     float xe = (float)x;
     float ye = (float)y;
@@ -1292,7 +1404,7 @@ static void drag_socket(sector* s, int x, int y)
     s->has_data = true;
 }
 
-static void drag_cord(sector* restrict s, int x, int y)
+static void drag_cord(Entity* restrict s, int x, int y)
 {
     if(s->connected) {
         if(s->has_data) {
@@ -1305,7 +1417,7 @@ static void drag_cord(sector* restrict s, int x, int y)
         }
     }
 
-    auto o = s->carrier;
+    auto o = s->parent;
 
     float xe = (float)x;
     float ye = (float)y;
@@ -1359,7 +1471,7 @@ static void drag_cord(sector* restrict s, int x, int y)
     s->has_data = true;
 }
 
-inline static void connect(sector* restrict source, sector* restrict target) {
+inline static void connect(Entity* restrict source, Entity* restrict target) {
     if(target->connected) {
         if(target->has_data) {
             memset(target->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
@@ -1379,10 +1491,10 @@ inline static void connect(sector* restrict source, sector* restrict target) {
     target->connection = source;
     source->hovered = false;
     target->hovered = true;
-    source->carrier->connecting = false;
+    source->parent->connecting = false;
 }
 
-inline static void disconnect(sector* restrict o) {
+inline static void disconnect(Entity* restrict o) {
     auto target = o->connection;
 
     if(o->has_data) {
@@ -1403,10 +1515,10 @@ inline static void disconnect(sector* restrict o) {
     }
 }
 
-static void release_socket(sector* restrict o, int x, int y) {
-    auto carrier = o->carrier;
-    auto target_id = frame_get(carrier->layer[SC], x, y);
-    auto target = &carrier->at[target_id];
+static void release_socket(Entity* restrict o, int x, int y) {
+    auto parent = o->parent;
+    auto target_id = frame_get(parent->layer[SC], x, y);
+    auto target = &parent->at[target_id];
     
     if(target->connected) disconnect(target);
 
@@ -1424,20 +1536,20 @@ static void release_socket(sector* restrict o, int x, int y) {
 
 /*****************************************************************************************************************************/
 
-static void init_node(sector* restrict s) {
-    s->data = (frame*)calloc(1, sizeof(frame));
-    frame_init((frame*)s->data, s->width, s->height);
-    draw_ltrb_f(s->carrier->layer[SN], &s->bounds, s->index);
+static void init_node(Entity* restrict s) {
+    s->data = (Frame*)calloc(1, sizeof(Frame));
+    frame_init((Frame*)s->data, s->width, s->height);
+    draw_ltrb_f(s->parent->layer[SN], &s->bounds, s->index);
 }
 
-static void set_node(sector* restrict o, int, int) {
+static void set_node(Entity* restrict o, int, int) {
     o->repaint = true;
-    auto f = o->carrier;
+    auto f = o->parent;
     f->prior = f->current;
 }
 
-static inline bool has_overlap(const sector* restrict c) {
-    const auto l = c->carrier->layer[SN];
+static inline bool has_overlap(const Entity* restrict c) {
+    const auto l = c->parent->layer[SN];
     for(uint32_t y = c->bounds.t; y < c->bounds.b; ++y) {
         for(uint32_t x = c->bounds.l; x < c->bounds.r; ++x) {
             auto v = frame_get(l, x, y);
@@ -1448,8 +1560,8 @@ static inline bool has_overlap(const sector* restrict c) {
     return false;
 }
 
-static void draw_node(sector* restrict c) {
-    auto o = c->carrier;
+static void draw_node(Entity* restrict c) {
+    auto o = c->parent;
     auto l = c->staging ? ST : NG;
 
     if(l == ST) {
@@ -1463,9 +1575,9 @@ static void draw_node(sector* restrict c) {
     c->repaint = false;
 }
 
-static void drag_node(sector* restrict o, int x, int y)
+static void drag_node(Entity* restrict o, int x, int y)
 {
-    auto f = o->carrier;
+    auto f = o->parent;
     bool moved = false;
 
     int dx = ((x - f->memory[SP_CURSOR_PRIOR].x) / f->step) * f->step;
@@ -1498,37 +1610,37 @@ static void drag_node(sector* restrict o, int x, int y)
     }
 }
 
-static void release_node(sector* restrict s, int, int) 
+static void release_node(Entity* restrict s, int, int) 
 {
     auto overlap = has_overlap(s);
 
     ltrb32u ir = {
-        .l = s->carrier->memory[SP_LT_PRESS].x, 
-        .t = s->carrier->memory[SP_LT_PRESS].y, 
-        .r = s->carrier->memory[SP_LT_PRESS].x + s->width, 
-        .b = s->carrier->memory[SP_LT_PRESS].y + s->height
+        .l = s->parent->memory[SP_LT_PRESS].x, 
+        .t = s->parent->memory[SP_LT_PRESS].y, 
+        .r = s->parent->memory[SP_LT_PRESS].x + s->width, 
+        .b = s->parent->memory[SP_LT_PRESS].y + s->height
     };
 
     if(overlap) { 
         s->bounds = ir;
-        draw_ltrb_f(s->carrier->layer[SC], &ir, s->index);
-        draw_ltrb_f(s->carrier->layer[SN], &ir, s->index);
-        draw_ltrb_f(s->carrier->layer[NG], &ir, 0x0);
+        draw_ltrb_f(s->parent->layer[SC], &ir, s->index);
+        draw_ltrb_f(s->parent->layer[SN], &ir, s->index);
+        draw_ltrb_f(s->parent->layer[NG], &ir, 0x0);
 
         for(uint32_t i = 0; i < s->nodes; ++i) {
             s->node[i]->repaint = true;
         }
     }
     else {
-        draw_ltrb_f(s->carrier->layer[SC], &ir, 0x0);
-        draw_ltrb_f(s->carrier->layer[SN], &ir, 0x0);
-        draw_ltrb_f(s->carrier->layer[SC], &s->bounds, s->index);
-        draw_ltrb_f(s->carrier->layer[SN], &s->bounds, s->index);
+        draw_ltrb_f(s->parent->layer[SC], &ir, 0x0);
+        draw_ltrb_f(s->parent->layer[SN], &ir, 0x0);
+        draw_ltrb_f(s->parent->layer[SC], &s->bounds, s->index);
+        draw_ltrb_f(s->parent->layer[SN], &s->bounds, s->index);
 
-        draw_ltrb_f(s->carrier->layer[NG], &ir, 0x0);
+        draw_ltrb_f(s->parent->layer[NG], &ir, 0x0);
 
-        int dx = s->bounds.l - s->carrier->memory[SP_LT_PRESS].x;
-        int dy = s->bounds.t - s->carrier->memory[SP_LT_PRESS].y;
+        int dx = s->bounds.l - s->parent->memory[SP_LT_PRESS].x;
+        int dy = s->bounds.t - s->parent->memory[SP_LT_PRESS].y;
 
         for(uint32_t i = 0; i < s->nodes; ++i) {
             auto node = s->node[i];
@@ -1557,32 +1669,32 @@ static void release_node(sector* restrict s, int, int)
         }
     }
 
-    frame_clr(s->carrier->layer[ST]);
-    s->carrier->staging = false;
+    frame_clr(s->parent->layer[ST]);
+    s->parent->staging = false;
     s->staging = false;
     s->repaint = true;
-    s->carrier->repaint = true;
+    s->parent->repaint = true;
 }
 
 /*****************************************************************************************************************************/
 
-static void init_textbox(sector* restrict s) {
+static void init_textbox(Entity* restrict s) {
     s->data = (char*)calloc(TEXTBOX_SIZE, sizeof(char)); 
 }
 
-static void set_textbox(sector* restrict o, int, int) {
+static void set_textbox(Entity* restrict o, int, int) {
     o->repaint = true;
 }
 
-static void draw_textbox(sector* restrict c) {
-    auto o = c->carrier;
+static void draw_textbox(Entity* restrict c) {
+    auto o = c->parent;
     draw_ltrb_f(o->layer[FG], &c->bounds, SECONDBACKGROUND);
     char *text = c->data;
     //auto len = strlen(text);
     //auto offset_x = (c->width - 10 * len) / 2;
     auto offset_y = (c->height - 8) / 2;
 
-    draw_text_label(
+    drawTextLabel(
         o->layer[FG],
         gtFont,
         text,
@@ -1598,9 +1710,9 @@ static void draw_textbox(sector* restrict c) {
 
 /*****************************************************************************************************************************/
 
-static void draw_canvas(sector* restrict s) 
+static void draw_canvas(Entity* restrict s) 
 {
-    auto o = s->carrier;
+    auto o = s->parent;
     frame_fill(o->layer[BG], BACKGROUND);
     uint32_t major = 4;
     if(true) {
@@ -1626,9 +1738,9 @@ static void draw_canvas(sector* restrict s)
 
 /*****************************************************************************************************************************/
 
-static inline void init_none(sector* restrict) {}
+static inline void init_none(Entity* restrict) {}
 
-void (*init_sector[])(sector* restrict)  = {
+void (*init_sector[])(Entity* restrict)  = {
     [ST_SLIDER]                 = init_none,  
     [ST_ROTARY]                 = init_none,  
     [ST_SPRITE_INF_SLIDER]      = init_none,  
@@ -1642,9 +1754,9 @@ void (*init_sector[])(sector* restrict)  = {
     [ST_NODE]                   = init_node,  
 };
 
-static inline void set_none(sector* restrict, int, int) {}
+static inline void set_none(Entity* restrict, int, int) {}
 
-void (*set_sector[])(sector* restrict, int, int) = {
+void (*set_sector[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = set_slider,            
     [ST_ROTARY]                 = set_rotary,     
     [ST_SPRITE_INF_SLIDER]      = set_sprite_inf_slider, 
@@ -1658,7 +1770,7 @@ void (*set_sector[])(sector* restrict, int, int) = {
     [ST_NODE]                   = set_node               
 };
 
-void (*draw_sector[])(sector* restrict) = {
+void (*draw_sector[])(Entity* restrict) = {
     [ST_SLIDER]                 = draw_slider,        
     [ST_ROTARY]                 = draw_rotary, 
     [ST_SPRITE_INF_SLIDER]      = draw_rotary, 
@@ -1672,9 +1784,9 @@ void (*draw_sector[])(sector* restrict) = {
     [ST_NODE]                   = draw_node           
 };
 
-static inline void drag_none(sector* restrict, int, int) {}
+static inline void drag_none(Entity* restrict, int, int) {}
 
-void (*drag_sector[])(sector* restrict, int, int) = {
+void (*drag_sector[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = set_slider,           
     [ST_ROTARY]                 = set_rotary,    
     [ST_SPRITE_INF_SLIDER]      = set_sprite_inf_slider,
@@ -1688,9 +1800,9 @@ void (*drag_sector[])(sector* restrict, int, int) = {
     [ST_NODE]                   = drag_node             
 };
 
-static inline void scroll_none(sector* restrict, int, int) {}
+static inline void scroll_none(Entity* restrict, int, int) {}
 
-void (*scroll_sector[])(sector* restrict, int, int) = {
+void (*scroll_sector[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = scroll_slider,     
     [ST_ROTARY]                 = scroll_slider,     
     [ST_SPRITE_INF_SLIDER]      = scroll_slider,     
@@ -1704,9 +1816,9 @@ void (*scroll_sector[])(sector* restrict, int, int) = {
     [ST_NODE]                   = scroll_none 
 };
 
-static inline void enter_none(sector* restrict, int, int) {}
+static inline void enter_none(Entity* restrict, int, int) {}
 
-void (*enter_sector[])(sector* restrict, int, int) = {
+void (*enter_sector[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = enter_none,         
     [ST_ROTARY]                 = enter_none,         
     [ST_SPRITE_INF_SLIDER]      = enter_none,         
@@ -1719,9 +1831,9 @@ void (*enter_sector[])(sector* restrict, int, int) = {
     [ST_TEXTBOX]                = enter_none,  
     [ST_NODE]                   = enter_none 
 };
-static inline void leave_none(sector* restrict, int, int) {}
+static inline void leave_none(Entity* restrict, int, int) {}
 
-void (*leave_sector[])(sector* restrict, int, int) = {
+void (*leave_sector[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = leave_none,         
     [ST_ROTARY]                 = leave_none,         
     [ST_SPRITE_INF_SLIDER]      = leave_none,         
@@ -1735,9 +1847,9 @@ void (*leave_sector[])(sector* restrict, int, int) = {
     [ST_NODE]                   = leave_none          
 };
 
-static inline void release_none(sector* restrict, int, int) {}
+static inline void release_none(Entity* restrict, int, int) {}
 
-void (*release_sector[])(sector* restrict, int, int) = {
+void (*release_sector[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = release_none,
     [ST_ROTARY]                 = release_none,
     [ST_SPRITE_INF_SLIDER]      = release_none,

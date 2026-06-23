@@ -34,7 +34,7 @@ pthread_cond_t _escape_condition;
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
-    field* context = (field*)glfwGetWindowUserPointer(window);
+    Field* context = (Field*)glfwGetWindowUserPointer(window);
 
     double x, y;
     glfwGetCursorPos(window, &x, &y);
@@ -48,7 +48,7 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 
 static void cursor_position_callback(GLFWwindow* window, double x, double y)
 {
-    field* context = (field*)glfwGetWindowUserPointer(window);
+    Field* context = (Field*)glfwGetWindowUserPointer(window);
 
     if(context->drag)
         hit_test_drag(context, (int)x, (int)y);
@@ -58,7 +58,7 @@ static void cursor_position_callback(GLFWwindow* window, double x, double y)
 
 void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mods*/)
 {
-    field* context = (field*)glfwGetWindowUserPointer(window);
+    Field* context = (Field*)glfwGetWindowUserPointer(window);
 
     switch(button)
     {
@@ -125,10 +125,10 @@ static void key_callback(GLFWwindow* /*window*/, int key, int/* scancode*/, int 
 
 void window_pos_callback(GLFWwindow* window, int, int)
 {
-    field* context = (field*)glfwGetWindowUserPointer(window);
+    Field* context = (Field*)glfwGetWindowUserPointer(window);
 }
 
-static GLuint get_buffer(frame* o) 
+static GLuint get_buffer(Frame* o) 
 {
 	GLuint texture;
 
@@ -145,7 +145,7 @@ static GLuint get_buffer(frame* o)
 	return texture;
 }
 
-static void update_buffer(frame* o, GLuint texture) 
+static void update_buffer(Frame* o, GLuint texture) 
 {
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, o->width, o->height, GL_ABGR_EXT, GL_UNSIGNED_BYTE, o->data);
@@ -196,7 +196,7 @@ void* draw_field(void* arg)
     glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
     glfwWindowHint(GLFW_SAMPLES, 8); 
 
-    field* context = (field*)arg;
+    Field* context = (Field*)arg;
 
     window = glfwCreateWindow(context->layer[FG]->width, context->layer[FG]->height, "FIELD", NULL, NULL);
 
@@ -299,7 +299,7 @@ void* draw_field(void* arg)
 
         if(swap)
         {
-            for(uint32_t i = 0; i < context->sectors; ++i) {
+            for(uint32_t i = 0; i < context->entities; ++i) {
                 auto node = &context->at[i];
                 if(node->connected && node->has_data) {
                    
@@ -347,7 +347,7 @@ void* draw_field(void* arg)
     return nullptr;
 }
 
-static void field_loop(field* restrict context) {
+static void field_loop(Field* restrict context) {
     pthread_mutex_init(&_screen_lock, NULL);
     pthread_mutex_init(&_main_lock, NULL);
 
