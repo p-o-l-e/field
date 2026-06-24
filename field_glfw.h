@@ -299,25 +299,27 @@ void* draw_field(void* arg)
 
         if(swap)
         {
-            for(uint32_t i = 0; i < context->node->entities; ++i) {
-                auto node = &context->node->at[i];
-                if(node->connected && node->has_data) {
-                   
-                    auto colour = node->hovered || node->connection->hovered ? CORD_SELECT : CORD_NORMAL;
+            for(uint32_t n = 0; n < context->nodes; ++n) {
+                for(uint32_t i = 0; i < context->node[n].entities; ++i) {
+                    auto entity = &context->node[n].at[i];
+                    if(entity->connected && entity->has_data) {
+                       
+                        auto colour = entity->hovered || entity->connection->hovered ? CORD_SELECT : CORD_NORMAL;
 
-                    glLineWidth(2.0f); 
-                    glEnableClientState(GL_VERTEX_ARRAY);
-                    glVertexPointer(2, GL_FLOAT, 0, context->node->at[i].data);
+                        glLineWidth(2.0f); 
+                        glEnableClientState(GL_VERTEX_ARRAY);
+                        glVertexPointer(2, GL_FLOAT, 0, context->node[n].at[i].data);
 
-                    glColor4ub(
-                        extract_byte(colour, 3),
-                        extract_byte(colour, 2),
-                        extract_byte(colour, 1),
-                        extract_byte(colour, 0)
-                    );
+                        glColor4ub(
+                            extract_byte(colour, 3),
+                            extract_byte(colour, 2),
+                            extract_byte(colour, 1),
+                            extract_byte(colour, 0)
+                        );
 
-                    glDrawArrays(GL_LINE_STRIP, 0, SPLINE_SEGMENTS);
-                    glDisableClientState(GL_VERTEX_ARRAY);
+                        glDrawArrays(GL_LINE_STRIP, 0, SPLINE_SEGMENTS);
+                        glDisableClientState(GL_VERTEX_ARRAY);
+                    }
                 }
             }
 

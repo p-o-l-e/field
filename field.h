@@ -674,8 +674,10 @@ static inline void draw_ltrb_f(Frame* restrict canvas, ltrb32u* restrict r, cons
 Entity* find_sector_by_id(Field* restrict field, uint32_t id) {
     if(!id) return nullptr;
 
-    for(uint32_t i = 0; i <= field->node->entities; ++i) {
-        if(field->node->at[i].uid == id) return &field->node->at[i];
+    for(uint32_t n = 0; n < field->nodes; ++n) {
+        for(uint32_t i = 0; i <= field->node[n].entities; ++i) {
+            if(field->node[n].at[i].uid == id) return &field->node[n].at[i];
+        }
     }
     return nullptr;
 }
@@ -803,10 +805,12 @@ Field* createField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size
     }
 
     field->node = malloc(sizeof(Node));
+    field->nodes = 1;
     field->node->entities     = 0;
-    field->node->at = malloc(field->capacity * sizeof(Entity));
+    field->node->capacity = field->capacity;
+    field->node->at = malloc(field->node->capacity * sizeof(Entity));
     field->node->parent = field;
-    for(uint32_t i = 0; i < field->capacity; i++) field->node->at[i].index = i;
+    for(uint32_t i = 0; i < field->node->capacity; i++) field->node->at[i].index = i;
 
     auto canvas = &field->node->at[0];
 
@@ -1044,10 +1048,12 @@ static void draw_checkbox(Entity* restrict entity) {
 }
 
 void draw_scene(Field* restrict field) {
-    for(uint32_t i = 0; i <= field->node->entities; ++i) {
-        auto s = &field->node->at[i];
-        if(s->repaint) {
-            draw_sector[s->type](s);
+    for(uint32_t n = 0; n < field->nodes; ++n) {
+        for(uint32_t i = 0; i <= field->node[n].entities; ++i) {
+            auto s = &field->node[n].at[i];
+            if(s->repaint) {
+                draw_sector[s->type](s);
+            }
         }
     }
     field->repaint = false;
@@ -1065,12 +1071,14 @@ static void set_checkbox(Entity* restrict entity, int, int) {
             *coarse = 1.0f;
             entity->repaint = true;
             auto f = entity->parent;
-            for(uint32_t i = 0; i <= f->node->entities; ++i) {
-                auto r = &f->node->at[i];
-                if((r->flags & RADIO) && ext->radio_id == id && r != entity) {
-                    r->value[CP_COARSE] = 0.0f;
-                    r->repaint = true;
-                    printf("Turned off : %d\n", r->index);
+            for(uint32_t n = 0; n < f->nodes; ++n) {
+                for(uint32_t i = 0; i <= f->node[n].entities; ++i) {
+                    auto r = &f->node[n].at[i];
+                    if((r->flags & RADIO) && ext->radio_id == id && r != entity) {
+                        r->value[CP_COARSE] = 0.0f;
+                        r->repaint = true;
+                        printf("Turned off : %d\n", r->index);
+                    }
                 }
             }
         }
@@ -1081,7 +1089,6 @@ static void set_checkbox(Entity* restrict entity, int, int) {
     }
     entity->repaint = true;
 }
-
 
 static void set_slider(Entity* restrict entity, int x, int y) {
     const float v = 0.1f;
