@@ -41,7 +41,7 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
     hit_test(context, (int)x, (int)y);
     if(context->current != 0)
     {
-        scroll_sector[context->at[context->current].type](&context->at[context->current], (int)xoffset, (int)yoffset);
+        scroll_sector[context->node->at[context->current].type](&context->node->at[context->current], (int)xoffset, (int)yoffset);
     }
     context->current = 0;
 }
@@ -70,7 +70,7 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mod
 
                 hit_test_down(context, (int)x, (int)y, LMB);
 
-                if(context->at[context->current].flags & MOVEABLE)
+                if(context->node->at[context->current].flags & MOVEABLE)
                     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
 
             }
@@ -300,14 +300,14 @@ void* draw_field(void* arg)
         if(swap)
         {
             for(uint32_t i = 0; i < context->entities; ++i) {
-                auto node = &context->at[i];
+                auto node = &context->node->at[i];
                 if(node->connected && node->has_data) {
                    
                     auto colour = node->hovered || node->connection->hovered ? CORD_SELECT : CORD_NORMAL;
 
                     glLineWidth(2.0f); 
                     glEnableClientState(GL_VERTEX_ARRAY);
-                    glVertexPointer(2, GL_FLOAT, 0, context->at[i].data);
+                    glVertexPointer(2, GL_FLOAT, 0, context->node->at[i].data);
 
                     glColor4ub(
                         extract_byte(colour, 3),

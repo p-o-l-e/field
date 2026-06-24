@@ -244,8 +244,6 @@ typedef struct
 
 /******************************************************************************************************************************/
 
-
-
 struct SectorDescriptor {
     uint32_t    id;
     uint32_t    node_id;
@@ -334,8 +332,7 @@ struct Field {
     uint32_t    height;
     point32s    memory[SP_LIMIT];   // Saved cursor position
     Frame*      layer[CC];
-    Node*    node;
-    Entity*     at;                 // Controls array TODO: Move to Node
+    Node*       node;
     Entity*     pressed;
     uint32_t    current;            // HitTest return
     uint32_t    prior;              // Last HitTest
@@ -678,20 +675,18 @@ static inline void draw_ltrb_f(Frame* restrict canvas, ltrb32u* restrict r, cons
     }
 }
 
-
-
 Entity* find_sector_by_id(Field* restrict field, uint32_t id) {
     if(!id) return nullptr;
 
     for(uint32_t i = 0; i <= field->entities; ++i) {
-        if(field->at[i].uid == id) return &field->at[i];
+        if(field->node->at[i].uid == id) return &field->node->at[i];
     }
     return nullptr;
 }
 
 Entity* createEntity(Field* restrict field, SectorDescriptor* descriptor) {
     auto pos = ++field->entities;
-    auto entity = &field->at[pos];
+    auto entity = &field->node->at[pos];
 
     entity->uid                      = descriptor->id;
     entity->type                     = descriptor->type;
@@ -812,10 +807,11 @@ Field* createField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size
         frame_fill(field->layer[BG], BACKGROUND);
     }
 
-    field->at = malloc(field->capacity * sizeof(Entity));
-    for(uint32_t i = 0; i < field->capacity; i++) field->at[i].index = i;
+    field->node = malloc(sizeof(Node));
+    field->node->at = malloc(field->capacity * sizeof(Entity));
+    for(uint32_t i = 0; i < field->capacity; i++) field->node->at[i].index = i;
 
-    auto canvas = &field->at[0];
+    auto canvas = &field->node->at[0];
 
     canvas->type = ST_CANVAS;
     canvas->parent = field;
@@ -833,7 +829,8 @@ void destroyField(Field* restrict field) {
         frame_flush(field->layer[i]);
         free(field->layer[i]);
     }
-    free(field->at);
+    free(field->node->at);
+    free(field->node);
 }
 
 static inline Node* createNode(Field* restrict, uint32_t, uint32_t, size_t);
@@ -904,7 +901,7 @@ static inline void value_to_textbox(Entity* slider, Entity* tbox) {
 
 void hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
     field->current = frame_get(field->layer[SC], x, y);
-    auto p = &field->at[field->current];
+    auto p = &field->node->at[field->current];
 
     field->pressed = p;
     field->memory[SP_LT_PRESS].x = p->bounds.l;
@@ -982,18 +979,18 @@ void hit_test(Field* restrict field, int x, int y) {
 
     if(field->current != uid) {
         #ifdef DEBUG_OVERLAY
-            draw_debug_overlay(field, &field->at[uid]);
+            draw_debug_overlay(field, &field->node->at[uid]);
         #endif
 
         field->prior = field->current;
         field->current = uid;
        
-        auto prior = &field->at[field->prior];
+        auto prior = &field->node->at[field->prior];
         prior->hovered = false;
         prior->repaint = true;
         leave_sector[prior->type](prior, x, y);
         
-        auto current = &field->at[field->current];
+        auto current = &field->node->at[field->current];
         current->hovered = true;
         current->repaint = true;
         enter_sector[current->type](current, x, y);
@@ -1015,7 +1012,7 @@ void hit_test_up(Field* restrict field, int x, int y, uint32_t button) {
         field->pressed = nullptr;
     }
     else {
-        auto s = &field->at[field->current];
+        auto s = &field->node->at[field->current];
         release_sector[s->type](s, x, y);
     }
 
@@ -1049,7 +1046,7 @@ static void draw_checkbox(Entity* restrict entity) {
 
 void draw_scene(Field* restrict field) {
     for(uint32_t i = 0; i <= field->entities; ++i) {
-        auto s = &field->at[i];
+        auto s = &field->node->at[i];
         if(s->repaint) {
             draw_sector[s->type](s);
         }
@@ -1070,7 +1067,7 @@ static void set_checkbox(Entity* restrict entity, int, int) {
             entity->repaint = true;
             auto f = entity->parent;
             for(uint32_t i = 0; i <= f->entities; ++i) {
-                auto r = &f->at[i];
+                auto r = &f->node->at[i];
                 if((r->flags & RADIO) && ext->radio_id == id && r != entity) {
                     r->value[CP_COARSE] = 0.0f;
                     r->repaint = true;
@@ -1522,7 +1519,7 @@ inline static void disconnect(Entity* restrict entity) {
 static void release_socket(Entity* restrict entity, int x, int y) {
     auto parent = entity->parent;
     auto target_id = frame_get(parent->layer[SC], x, y);
-    auto target = &parent->at[target_id];
+    auto target = &parent->node->at[target_id];
     
     if(target->connected) disconnect(target);
 
@@ -1666,7 +1663,6 @@ static void release_node(Entity* restrict entity, int, int)
                 else if(target->has_data) {
                     drag_cord(target, node->bounds.l + node->width / 2, node->bounds.t + node->height / 2);
                 }
-
             }
 
             node->repaint = true;
@@ -1738,7 +1734,6 @@ static void draw_canvas(Entity* restrict entity)
         }
     }
 }
-
 
 /*****************************************************************************************************************************/
 
@@ -1835,6 +1830,7 @@ void (*enter_sector[])(Entity* restrict, int, int) = {
     [ST_TEXTBOX]                = enter_none,  
     [ST_NODE]                   = enter_none 
 };
+
 static inline void leave_none(Entity* restrict, int, int) {}
 
 void (*leave_sector[])(Entity* restrict, int, int) = {
