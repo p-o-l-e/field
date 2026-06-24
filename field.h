@@ -385,7 +385,7 @@ void erase_sector(Entity* restrict);
 
 /** Contructors ***************************************************************************************************************/
 
-Entity* createEntity(Field* restrict, SectorDescriptor*);
+Entity* createEntity(Node* restrict, SectorDescriptor*);
 Field* createField(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 void destroyField(Field* restrict);
 
@@ -680,9 +680,9 @@ Entity* find_sector_by_id(Field* restrict field, uint32_t id) {
     return nullptr;
 }
 
-Entity* createEntity(Field* restrict field, SectorDescriptor* descriptor) {
-    auto pos = ++field->node->entities;
-    auto entity = &field->node->at[pos];
+Entity* createEntity(Node* restrict node, SectorDescriptor* descriptor) {
+    auto pos = ++node->entities;
+    auto entity = &node->at[pos];
 
     entity->uid                      = descriptor->id;
     entity->type                     = descriptor->type;
@@ -698,7 +698,7 @@ Entity* createEntity(Field* restrict field, SectorDescriptor* descriptor) {
     entity->range[1]                 = descriptor->range[1];
     entity->repaint                  = true;
     entity->flags                    = descriptor->flags;
-    entity->parent                   = field;
+    entity->parent                   = node->parent;
 
     printf("Created sector : %u\n", entity->index);
 
@@ -736,7 +736,7 @@ Entity* createEntity(Field* restrict field, SectorDescriptor* descriptor) {
 
     if(!(descriptor->flags & TRANSPARENT)) {
         draw_ltrb_f (
-            field->layer[SC],
+            node->parent->layer[SC],
             &entity->bounds,
             entity->index
         );
@@ -749,7 +749,7 @@ Entity* createEntity(Field* restrict field, SectorDescriptor* descriptor) {
 
     if(descriptor->output) {
         printf("---- Set output : %d\n", descriptor->output);
-        auto target = find_sector_by_id(field, descriptor->output);
+        auto target = find_sector_by_id(node->parent, descriptor->output);
         if(target) {
             add_mod_link(entity, target, CT_VALUE, value_to_textbox);
             printf("---- Target found...\n");
@@ -758,9 +758,9 @@ Entity* createEntity(Field* restrict field, SectorDescriptor* descriptor) {
             printf("---- NO Target found...\n");
     }
 
-    auto node = find_sector_by_id(field, descriptor->node_id);
-    if(node)
-        link_sector(node, entity);
+    auto entity_node = find_sector_by_id(node->parent, descriptor->node_id);
+    if(entity_node)
+        link_sector(entity_node, entity);
 
     return entity;
 }
@@ -805,6 +805,7 @@ Field* createField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size
     field->node = malloc(sizeof(Node));
     field->node->entities     = 0;
     field->node->at = malloc(field->capacity * sizeof(Entity));
+    field->node->parent = field;
     for(uint32_t i = 0; i < field->capacity; i++) field->node->at[i].index = i;
 
     auto canvas = &field->node->at[0];
@@ -844,6 +845,7 @@ static inline Node* createNode(Field* restrict field, uint32_t w, uint32_t h, si
     field->node[index].height = h;
     field->node[index].capacity = size;
     field->node[index].entities = 0;
+    field->node[index].parent = field;
     
     field->node[index].at = malloc(size * sizeof(Entity));
     for(size_t i = 0; i < size; ++i) field->node[index].at[i].index = i;
