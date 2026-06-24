@@ -320,7 +320,7 @@ struct Node {
     uint32_t    uid;
     uint32_t    width;
     uint32_t    height;
-    uint32_t    entities;
+    uint32_t    entities;           // Entity count in this node
     uint32_t    capacity;
     Entity*     at;
     Field*      parent;
@@ -341,15 +341,11 @@ struct Field {
     bool        move;               // Window drag flag
     bool        staging;            // Draw staging layer
     bool        connecting;         // Connection pending
-    uint32_t    entities;           // TODO: will be renamed to nodes and mean Nodes count
     uint32_t    nodes;
     uint32_t    capacity;
     uint32_t    flags;
     uint32_t    step;
 };
-
-
-
 
 extern const uint8_t gtFont[];
 
@@ -678,14 +674,14 @@ static inline void draw_ltrb_f(Frame* restrict canvas, ltrb32u* restrict r, cons
 Entity* find_sector_by_id(Field* restrict field, uint32_t id) {
     if(!id) return nullptr;
 
-    for(uint32_t i = 0; i <= field->entities; ++i) {
+    for(uint32_t i = 0; i <= field->node->entities; ++i) {
         if(field->node->at[i].uid == id) return &field->node->at[i];
     }
     return nullptr;
 }
 
 Entity* createEntity(Field* restrict field, SectorDescriptor* descriptor) {
-    auto pos = ++field->entities;
+    auto pos = ++field->node->entities;
     auto entity = &field->node->at[pos];
 
     entity->uid                      = descriptor->id;
@@ -787,7 +783,6 @@ Field* createField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size
     field->move         = false;
     field->capacity     = size + 1u;
     field->repaint      = true;
-    field->entities     = 0;
     field->flags        = flags;
     field->step         = 25;
     field->staging      = false;
@@ -808,6 +803,7 @@ Field* createField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size
     }
 
     field->node = malloc(sizeof(Node));
+    field->node->entities     = 0;
     field->node->at = malloc(field->capacity * sizeof(Entity));
     for(uint32_t i = 0; i < field->capacity; i++) field->node->at[i].index = i;
 
@@ -847,6 +843,7 @@ static inline Node* createNode(Field* restrict field, uint32_t w, uint32_t h, si
     field->node[index].width = w;
     field->node[index].height = h;
     field->node[index].capacity = size;
+    field->node[index].entities = 0;
     
     field->node[index].at = malloc(size * sizeof(Entity));
     for(size_t i = 0; i < size; ++i) field->node[index].at[i].index = i;
@@ -1045,7 +1042,7 @@ static void draw_checkbox(Entity* restrict entity) {
 }
 
 void draw_scene(Field* restrict field) {
-    for(uint32_t i = 0; i <= field->entities; ++i) {
+    for(uint32_t i = 0; i <= field->node->entities; ++i) {
         auto s = &field->node->at[i];
         if(s->repaint) {
             draw_sector[s->type](s);
@@ -1066,7 +1063,7 @@ static void set_checkbox(Entity* restrict entity, int, int) {
             *coarse = 1.0f;
             entity->repaint = true;
             auto f = entity->parent;
-            for(uint32_t i = 0; i <= f->entities; ++i) {
+            for(uint32_t i = 0; i <= f->node->entities; ++i) {
                 auto r = &f->node->at[i];
                 if((r->flags & RADIO) && ext->radio_id == id && r != entity) {
                     r->value[CP_COARSE] = 0.0f;

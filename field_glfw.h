@@ -299,7 +299,7 @@ void* draw_field(void* arg)
 
         if(swap)
         {
-            for(uint32_t i = 0; i < context->entities; ++i) {
+            for(uint32_t i = 0; i < context->node->entities; ++i) {
                 auto node = &context->node->at[i];
                 if(node->connected && node->has_data) {
                    
