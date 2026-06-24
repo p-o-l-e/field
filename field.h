@@ -241,7 +241,7 @@ typedef struct Slider Slider;
 typedef struct Momentary Momentary;
 typedef struct rotary rotary;
 typedef struct Socket Socket;
-typedef struct Carrier Carrier;
+typedef struct Node Node;
 typedef struct SectorDescriptor SectorDescriptor;
 
 struct SectorDescriptor {
@@ -315,16 +315,16 @@ struct Momentary {
 
 /*****************************************************************************************************************************/
 
-struct Carrier {
-    uint32_t uid;
-    uint32_t width;
-    uint32_t height;
-    uint32_t entities;
-    uint32_t capacity;
-    Entity*  at; 
+struct Node {
+    uint32_t    index;
+    uint32_t    uid;
+    uint32_t    width;
+    uint32_t    height;
+    uint32_t    entities;
+    uint32_t    capacity;
+    Entity*     at;
+    Field*      parent;
 };
-
-
 
 struct Field {
     ltrb32u     bounds;
@@ -332,8 +332,8 @@ struct Field {
     uint32_t    height;
     point32s    memory[SP_LIMIT];   // Saved cursor position
     Frame*      layer[CC];
-    Carrier*    node;
-    Entity*     at;                 // Controls array TODO: Move to Carrier
+    Node*    node;
+    Entity*     at;                 // Controls array TODO: Move to Node
     Entity*     pressed;
     uint32_t    current;            // HitTest return
     uint32_t    prior;              // Last HitTest
@@ -342,7 +342,7 @@ struct Field {
     bool        move;               // Window drag flag
     bool        staging;            // Draw staging layer
     bool        connecting;         // Connection pending
-    uint32_t    entities;           // TODO: will be renamed to nodes and mean Carriers count
+    uint32_t    entities;           // TODO: will be renamed to nodes and mean Nodes count
     uint32_t    nodes;
     uint32_t    capacity;
     uint32_t    flags;
@@ -656,7 +656,7 @@ void erase_sector(Entity* restrict);
 /*****************************************************************************************************************************/
 
 Entity* createSector(Field* restrict, SectorDescriptor*);
-void initField   (Field* restrict, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+Field* createField(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 void destroyField(Field* restrict);
 
 /*****************************************************************************************************************************/
@@ -774,7 +774,9 @@ Entity* createSector(Field* restrict o, SectorDescriptor* d) {
     return s;
 }
 
-void initField(Field* restrict field, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags) {
+Field* createField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags) {
+    Field *field = malloc(sizeof(Field));
+
     field->bounds.l     = x;
     field->bounds.t     = y;
     field->bounds.r     = x + w;
@@ -790,7 +792,7 @@ void initField(Field* restrict field, uint32_t x, uint32_t y, uint32_t w, uint32
     field->move         = false;
     field->capacity     = size + 1u;
     field->repaint      = true;
-    field->entities      = 0;
+    field->entities     = 0;
     field->flags        = flags;
     field->step         = 25;
     field->staging      = false;
@@ -822,6 +824,8 @@ void initField(Field* restrict field, uint32_t x, uint32_t y, uint32_t w, uint32
     for(uint32_t i = 0; i < CT_LIMIT; ++i) {
         canvas->callback[i] = &fuse_link;
     }
+
+    return field;
 }
 
 void destroyField(Field* restrict o) {
@@ -832,15 +836,15 @@ void destroyField(Field* restrict o) {
     free(o->at);
 }
 
-static inline Carrier* createCarrier(Field* restrict, uint32_t, uint32_t, size_t);
+static inline Node* createNode(Field* restrict, uint32_t, uint32_t, size_t);
 
-static inline Carrier* createCarrier(Field* restrict field, uint32_t w, uint32_t h, size_t size) {
+static inline Node* createNode(Field* restrict field, uint32_t w, uint32_t h, size_t size) {
 
     auto index = field->nodes;
 
     if (index >= field->capacity) {
         field->capacity = field->capacity * 2 + 4;
-        field->node = realloc(field->node, field->capacity * sizeof(Carrier));
+        field->node = realloc(field->node, field->capacity * sizeof(Node));
     }
 
     field->node[index].width = w;
