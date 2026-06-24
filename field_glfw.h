@@ -128,7 +128,7 @@ void window_pos_callback(GLFWwindow* window, int, int)
     Field* context = (Field*)glfwGetWindowUserPointer(window);
 }
 
-static GLuint get_buffer(Frame* o) 
+static GLuint get_buffer(Frame* frame) 
 {
 	GLuint texture;
 
@@ -137,7 +137,7 @@ static GLuint get_buffer(Frame* o)
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, o->width, o->height, 0, GL_ABGR_EXT, GL_UNSIGNED_BYTE, o->data);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, frame->width, frame->height, 0, GL_ABGR_EXT, GL_UNSIGNED_BYTE, frame->data);
 
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -145,10 +145,10 @@ static GLuint get_buffer(Frame* o)
 	return texture;
 }
 
-static void update_buffer(Frame* o, GLuint texture) 
+static void update_buffer(Frame* frame, GLuint texture) 
 {
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, o->width, o->height, GL_ABGR_EXT, GL_UNSIGNED_BYTE, o->data);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, frame->width, frame->height, GL_ABGR_EXT, GL_UNSIGNED_BYTE, frame->data);
     
     glBegin(GL_QUADS);
         glTexCoord2f(0.0f, 1.0f);
