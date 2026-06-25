@@ -292,7 +292,6 @@ struct Entity {
     Entity*     connection;
     Node*       parent;
     Entity*     root;
-    Entity**    node;
 };
 
 struct Checkbox {
@@ -384,7 +383,6 @@ void fuse_link(Entity*, Entity*);
 void draw_scene(Field* restrict);
 
 void add_mod_link(Entity*, Entity*, CallbackType, void (*)(Entity*, Entity*));
-void link_entity(Entity*, Entity*);
 void move_entity(Entity* restrict, ltrb32u* restrict);
 void erase_entity(Entity* restrict);
 
@@ -776,10 +774,6 @@ Entity* createEntity(Node* restrict node, SectorDescriptor* descriptor) {
             printf("---- NO Target found...\n");
     }
 
-    auto entity_node = find_entity_by_id(node->parent, descriptor->node_id);
-    if(entity_node)
-        link_entity(entity_node, entity);
-
     return entity;
 }
 
@@ -859,7 +853,6 @@ void destroyField(Field* restrict field) {
                 }
                 free(s->data);
             }
-            if(s->node) free(s->node);
         }
         free(field->node[n].at);
     }
@@ -893,17 +886,6 @@ static inline Node* createNode(Field* restrict field, uint32_t w, uint32_t h, si
 void empty() {}
 
 void fuse_link(Entity*, Entity*) {}
-
-void link_entity(Entity* parent, Entity* child) {
-    assert(parent != child);
-    if (parent->nodes >= parent->capacity) {
-        parent->capacity = parent->capacity * 2 + 4;
-        parent->node = realloc(parent->node, parent->capacity * sizeof(Entity*));
-    }
-    parent->node[parent->nodes] = child;
-    child->root = parent;
-    ++parent->nodes;
-}
 
 void move_entity(Entity* restrict entity, ltrb32u* restrict bounds) {
     auto field = entity->parent->parent;
@@ -1409,8 +1391,8 @@ static void drag_socket(Entity* entity, int x, int y)
 {
     auto field = entity->parent->parent;
     if(entity->connected) {
-        field->pressed = entity->connection;
         entity = entity->connection;
+        field->pressed = entity;
         field->current[IP_ENTITY] = entity->index;
         field->current[IP_NODE] = entity->parent->index;
 
@@ -1494,7 +1476,7 @@ static void drag_cord(Entity* restrict entity, int x, int y)
         }
     }
 
-    auto o = entity->parent;
+    auto o = entity->parent->parent;
 
     float xe = (float)x;
     float ye = (float)y;
@@ -1596,7 +1578,7 @@ static void release_socket(Entity* restrict entity, int x, int y) {
     auto field = entity->parent->parent;
     auto target_uid = frame_get(field->layer[SC], x, y);
     auto target_nid = frame_get(field->layer[SN], x, y);
-  //  if(target_nid >= field->nodes || target_uid >= field->node[target_nid].entities) return;
+    if(target_nid >= field->nodes || target_uid >= field->node[target_nid].entities) return;
     auto target = &field->node[target_nid].at[target_uid];
     
     if(target->connected) disconnect(target);
@@ -1709,7 +1691,7 @@ static void release_node(Entity* restrict entity, int, int)
         draw_ltrb_f(field->layer[NG], &ir, 0x0);
 
         for(uint32_t i = 0; i < entity->nodes; ++i) {
-            entity->node[i]->repaint = true;
+            entity->parent->at[i].repaint = true;
         }
     }
     else {
@@ -1721,29 +1703,30 @@ static void release_node(Entity* restrict entity, int, int)
         int dx = entity->bounds.l - field->memory[SP_LT_PRESS].x;
         int dy = entity->bounds.t - field->memory[SP_LT_PRESS].y;
 
-        for(uint32_t i = 0; i < entity->nodes; ++i) {
-            auto node = entity->node[i];
+        for(uint32_t i = 0; i < entity->parent->entities; ++i) {
+            auto child = &entity->parent->at[i];
+            if(child == entity) continue;
 
             ltrb32u r = {
-                .l = node->bounds.l + dx,
-                .t = node->bounds.t + dy,
-                .r = node->bounds.r + dx,
-                .b = node->bounds.b + dy
+                .l = child->bounds.l + dx,
+                .t = child->bounds.t + dy,
+                .r = child->bounds.r + dx,
+                .b = child->bounds.b + dy
             };
 
-            move_entity(node, &r); 
+            move_entity(child, &r); 
 
-            if(node->connected) {
-                auto target = node->connection;
-                if(node->has_data) {
-                    drag_cord(node, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
+            if(child->connected) {
+                auto target = child->connection;
+                if(child->has_data) {
+                    drag_cord(child, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
                 }
                 else if(target->has_data) {
-                    drag_cord(target, node->bounds.l + node->width / 2, node->bounds.t + node->height / 2);
+                    drag_cord(target, child->bounds.l + child->width / 2, child->bounds.t + child->height / 2);
                 }
             }
 
-            node->repaint = true;
+            child->repaint = true;
         }
     }
 
