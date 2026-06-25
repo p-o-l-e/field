@@ -39,11 +39,13 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
     double x, y;
     glfwGetCursorPos(window, &x, &y);
     hit_test(context, (int)x, (int)y);
-    if(context->current != 0)
+    if(context->current[IP_ENTITY] != 0)
     {
-        scroll_sector[context->node->at[context->current].type](&context->node->at[context->current], (int)xoffset, (int)yoffset);
+        auto cn = context->current[IP_NODE];
+        auto ce = context->current[IP_ENTITY];
+        scroll_entity[context->node[cn].at[ce].type](&context->node[cn].at[ce], (int)xoffset, (int)yoffset);
     }
-    context->current = 0;
+    context->current[IP_ENTITY] = 0;
 }
 
 static void cursor_position_callback(GLFWwindow* window, double x, double y)
@@ -69,8 +71,9 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mod
                 glfwGetCursorPos(window, &x, &y);
 
                 hit_test_down(context, (int)x, (int)y, LMB);
-
-                if(context->node->at[context->current].flags & MOVEABLE)
+                auto cn = context->current[IP_NODE];
+                auto ce = context->current[IP_ENTITY];
+                if(context->node[cn].at[ce].flags & MOVEABLE)
                     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
 
             }
