@@ -284,6 +284,7 @@ void* draw_field(void* arg)
 
         if(context->connecting)
         {
+            printf("connecting...\n");
             glLineWidth(2.0f); 
             glEnableClientState(GL_VERTEX_ARRAY);
             glVertexPointer(2, GL_FLOAT, 0, context->pressed->data);
@@ -306,6 +307,7 @@ void* draw_field(void* arg)
                 for(uint32_t i = 0; i < context->node[n].entities; ++i) {
                     auto entity = &context->node[n].at[i];
                     if(entity->connected && entity->has_data) {
+                        printf("Draw cord\n");
                        
                         auto colour = entity->hovered || entity->connection->hovered ? CORD_SELECT : CORD_NORMAL;
 

@@ -371,6 +371,7 @@ static void frame_clr       (Frame*);
 static void frame_init      (Frame*, uint32_t, uint32_t);
 static void frame_flush     (Frame*);
 static void frame_copy      (Frame*, Frame*);
+static void frame_copy_with_alpha(Frame*, Frame*, uint8_t);
 static void frame_copy_at   (Frame*, Frame*, uint32_t, uint32_t);
 static void sprite_init     (Sprite*, uint32_t, uint32_t, uint32_t);
 static void sprite_flush    (Sprite*);
@@ -514,6 +515,13 @@ static inline void frame_flush(Frame* frame)
 
 static inline void frame_copy(Frame* target, Frame* source) {
     for(uint32_t i = 0; i < target->height * target->width; i++) target->data[i] = source->data[i];
+}
+
+static void frame_copy_with_alpha(Frame* target, Frame* source, uint8_t alpha) {
+    for(uint32_t i = 0; i < target->height * target->width; i++) {
+        auto data = (source->data[i] * 9873 << 8) | alpha;
+        target->data[i] = data;
+    }
 }
 
 static inline void frame_copy_at(Frame* target, Frame* source, uint32_t xo, uint32_t yo) {
@@ -985,10 +993,23 @@ static inline void draw_debug_overlay(Field* field, Entity* entity) {
 
     if(!entity) return;
 
+  //  frame_copy_with_alpha(field->layer[DO], field->layer[SC], 0xA0);
+
+    draw_rect_o(field->layer[DO], 
+            entity->bounds.l,
+            entity->bounds.t, 
+            entity->bounds.r,
+            entity->bounds.b, 
+            ERROR);
+
     char buffer[128];
     snprintf(buffer, 128, "CONTROL INDEX: %u", entity->index);
     drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "CONTROL UID  : %u", entity->uid);
+    drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    snprintf(buffer, 128, "NODE INDEX   : %u", entity->parent->index);
+    drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    snprintf(buffer, 128, "NODE UID     : %u", entity->parent->uid);
     drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "IS CONNECTED : %d", entity->connected);
     drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
@@ -1007,25 +1028,26 @@ static inline void draw_debug_overlay(Field* field, Entity* entity) {
 #endif
 
 void hit_test(Field* restrict field, int x, int y) {
-    auto uid = frame_get(field->layer[SC], x, y);
-    auto node_id = frame_get(field->layer[SN], x, y);
+    auto uid_e = frame_get(field->layer[SC], x, y);
+    auto uid_n = frame_get(field->layer[SN], x, y);
 
-    if(field->current[IP_ENTITY] != uid) {
+    if(field->current[IP_ENTITY] != uid_e || field->current[IP_NODE] != uid_n) {
         auto prior_node = field->prior[IP_NODE];
         auto prior_uid = field->prior[IP_ENTITY];
         if(prior_node >= field->nodes || prior_uid >= field->node[prior_node].entities) return;
-        if(node_id >= field->nodes || uid >= field->node[node_id].entities) return;
+        if(uid_n >= field->nodes || uid_e >= field->node[uid_n].entities) return;
         auto prior = &field->node[prior_node].at[prior_uid];
-        auto current = &field->node[node_id].at[uid];
+        auto current = &field->node[uid_n].at[uid_e];
 
         #ifdef DEBUG_OVERLAY
             draw_debug_overlay(field, current);
+            printf("DEBUG_OVERLAY\n");
         #endif
 
         field->prior[IP_ENTITY] = field->current[IP_ENTITY];
         field->prior[IP_NODE] = field->current[IP_NODE];
-        field->current[IP_ENTITY] = uid;
-        field->current[IP_NODE] = node_id;
+        field->current[IP_ENTITY] = uid_e;
+        field->current[IP_NODE] = uid_n;
        
         prior->hovered = false;
         prior->repaint = true;
@@ -1045,18 +1067,18 @@ void hit_test_drag(Field* restrict field, int x, int y) {
 }
 
 void hit_test_up(Field* restrict field, int x, int y, uint32_t button) {
-    auto uid = frame_get(field->layer[SC], x, y);
-    auto node_id_ = frame_get(field->layer[SN], x, y);
-    field->current[IP_NODE] = node_id_;
-    field->current[IP_ENTITY] = uid;
+    auto uid_e = frame_get(field->layer[SC], x, y);
+    auto uid_n = frame_get(field->layer[SN], x, y);
+    field->current[IP_NODE] = uid_n;
+    field->current[IP_ENTITY] = uid_e;
 
     if(field->pressed) {
         release_entity[field->pressed->type](field->pressed, x, y);
         field->pressed = nullptr;
     }
     else {
-        if(node_id_ >= field->nodes || uid >= field->node[node_id_].entities) return;
-        auto s = &field->node[node_id_].at[uid];
+ //       if(uid_n >= field->nodes || uid_e >= field->node[uid_n].entities) return;
+        auto s = &field->node[uid_n].at[uid_e];
         if(!s) return;
         release_entity[s->type](s, x, y);
     }
@@ -1405,7 +1427,7 @@ static void drag_socket(Entity* entity, int x, int y)
 
     }
 
-    auto o = entity->parent;
+    auto o = entity->parent->parent;
 
     float xe = (float)x;
     float ye = (float)y;
@@ -1574,7 +1596,7 @@ static void release_socket(Entity* restrict entity, int x, int y) {
     auto field = entity->parent->parent;
     auto target_uid = frame_get(field->layer[SC], x, y);
     auto target_nid = frame_get(field->layer[SN], x, y);
-    if(target_nid >= field->nodes || target_uid >= field->node[target_nid].entities) return;
+  //  if(target_nid >= field->nodes || target_uid >= field->node[target_nid].entities) return;
     auto target = &field->node[target_nid].at[target_uid];
     
     if(target->connected) disconnect(target);
@@ -1683,7 +1705,6 @@ static void release_node(Entity* restrict entity, int, int)
 
     if(overlap) { 
         entity->bounds = ir;
-        draw_ltrb_f(field->layer[SC], &ir, entity->index);
         draw_ltrb_f(field->layer[SN], &ir, entity->parent->index);
         draw_ltrb_f(field->layer[NG], &ir, 0x0);
 
@@ -1692,9 +1713,7 @@ static void release_node(Entity* restrict entity, int, int)
         }
     }
     else {
-        draw_ltrb_f(field->layer[SC], &ir, 0x0);
         draw_ltrb_f(field->layer[SN], &ir, 0x0);
-        draw_ltrb_f(field->layer[SC], &entity->bounds, entity->index);
         draw_ltrb_f(field->layer[SN], &entity->bounds, entity->parent->index);
 
         draw_ltrb_f(field->layer[NG], &ir, 0x0);
@@ -1778,7 +1797,7 @@ static void draw_canvas(Entity* restrict entity)
             
         for(uint32_t x = field->step, l = 1; x < field->layer[BG]->width; x += field->step) {
             for(uint32_t y = 0; y < field->layer[BG]->height; ++y) {
-                if(!frame_get(field->layer[SC], x, y))
+                if(!frame_get(field->layer[SN], x, y))
                     frame_set(field->layer[BG], x, y, l ? MINOR : MAJOR);
             }
             if(++l >= major) l = 0;
@@ -1786,7 +1805,7 @@ static void draw_canvas(Entity* restrict entity)
    
         for(uint32_t y = field->step, l = 1; y < field->layer[BG]->height; y += field->step) {
             for(uint32_t x = 0; x < field->layer[BG]->width; ++x) {
-                if(!frame_get(field->layer[SC], x, y))
+                if(!frame_get(field->layer[SN], x, y))
                     frame_set(field->layer[BG], x, y, l ? MINOR : MAJOR);
             }
             if(++l >= major) l = 0;
