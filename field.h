@@ -946,11 +946,13 @@ void hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
         field->staging = true;
         p->staging = true;
 
-        draw_ltrb_f(
-            p->parent->parent->layer[SN],
-            &p->bounds, 
-            0x0
-        );
+        if(p->type == ST_NODE) {
+            draw_ltrb_f(
+                p->parent->parent->layer[SN],
+                &p->bounds, 
+                0x0
+            );
+        }
 
     }
     else {
