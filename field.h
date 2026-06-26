@@ -438,6 +438,8 @@ uint32_t encode_uid(uint8_t, uint8_t, uint8_t, uint8_t);
 uid32 decode_uid(uint32_t);
 point32u uv_to_screen(float, float, uint32_t, uint32_t);
 point screen_to_uv(uint32_t, uint32_t, uint32_t, uint32_t);
+static uint32_t hsva_to_rgba(uint8_t, uint8_t, uint8_t, uint8_t);
+uint32_t index_to_hsv(uint32_t, uint8_t);
 
 /******************************************************************************************************************************
  * Returns 8-bit value
@@ -471,13 +473,11 @@ point screen_to_uv(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
  * CC : Parameter type
  * DD : Parameter id/position
  * *****************************************************************************************************************************/
-uint32_t encode_uid(uint8_t mt, uint8_t mp, uint8_t pt, uint8_t pp)
-{
+uint32_t encode_uid(uint8_t mt, uint8_t mp, uint8_t pt, uint8_t pp) {
     return ((mt << 24) | (mp << 16) | (pt << 8) | pp);
 }
 
-uid32 decode_uid(uint32_t data)
-{
+uid32 decode_uid(uint32_t data) {
     uid32 uid = {
         .mt = extract_byte(data, MT),
         .mp = extract_byte(data, MP),
@@ -488,37 +488,58 @@ uid32 decode_uid(uint32_t data)
     return uid;
 }
 
-static inline void frame_set(Frame* frame, uint32_t x, uint32_t y, uint32_t value)
-{
+static uint32_t hsva_to_rgba(uint8_t h, uint8_t s, uint8_t v, uint8_t a) {
+    uint8_t region = h / 43;
+    uint8_t remainder = (h - region * 43) * 6;
+
+    uint8_t p = (v * (255 - s)) >> 8;
+    uint8_t q = (v * (255 - ((s * remainder) >> 8))) >> 8;
+    uint8_t t = (v * (255 - ((s * (255 - remainder)) >> 8))) >> 8;
+
+    uint8_t r, g, b;
+    switch (region) {
+        case 0: r = v; g = t; b = p; break;
+        case 1: r = q; g = v; b = p; break;
+        case 2: r = p; g = v; b = t; break;
+        case 3: r = p; g = q; b = v; break;
+        case 4: r = t; g = p; b = v; break;
+        default: r = v; g = p; b = q; break;
+    }
+    return (r << 24) | (g << 16) | (b << 8) | a;
+}
+
+uint32_t index_to_hsv(uint32_t index, uint8_t alpha) {
+    uint8_t hue = (index * 137) & 0xFF;
+    uint8_t sat = 204;
+    uint8_t val = 230;
+    return hsva_to_rgba(hue, sat, val, alpha);
+}
+
+static inline void frame_set(Frame* frame, uint32_t x, uint32_t y, uint32_t value) {
     if(x < frame->width && y < frame->height)
     frame->data[x + y * frame->width] = value;
 }
 
-static inline uint32_t frame_get(Frame* frame, uint32_t x, uint32_t y)
-{
+static inline uint32_t frame_get(Frame* frame, uint32_t x, uint32_t y) {
     if(x < frame->width && y < frame->height) return frame->data[x + y * frame->width];
     return frame->data[0];
 }
 
-static inline void frame_clr(Frame* frame)
-{
+static inline void frame_clr(Frame* frame) {
     memset(frame->data, 0, frame->height * frame->width * sizeof(uint32_t));
 }
 
-static inline void frame_fill(Frame* frame, uint32_t value)
-{
+static inline void frame_fill(Frame* frame, uint32_t value) {
     for(uint32_t i = 0; i < (frame->height * frame->width); ++i) frame->data[i] = value;
 }
 
-static inline void frame_init(Frame* frame, uint32_t x, uint32_t y)
-{
+static inline void frame_init(Frame* frame, uint32_t x, uint32_t y) {
     frame->width  = x;
     frame->height = y;
     frame->data   = (uint32_t*)calloc(frame->width * frame->height , sizeof(uint32_t));
 }
 
-static inline void frame_flush(Frame* frame)
-{
+static inline void frame_flush(Frame* frame) {
     free(frame->data);
 }
 
@@ -527,8 +548,8 @@ static inline void frame_copy(Frame* target, Frame* source) {
 }
 
 static void frame_copy_with_alpha(Frame* target, Frame* source, uint8_t alpha) {
-    for(uint32_t i = 0; i < target->height * target->width; i++) {
-        auto data = (source->data[i] * 9873 << 8) | alpha;
+    for(uint32_t i = 0; i < target->height * target->width; ++i) {
+        auto data = index_to_hsv(source->data[i] + 0x2, alpha);
         target->data[i] = data;
     }
 }
@@ -541,8 +562,7 @@ static inline void frame_copy_at(Frame* target, Frame* source, uint32_t xo, uint
     }
 }
 
-static inline void draw_rect_o(Frame* restrict frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour)
-{
+static inline void draw_rect_o(Frame* restrict frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour) {
     for(uint32_t i = l; i <= r; i++) {
         frame_set(frame, i, t, colour);
         frame_set(frame, i, b, colour);
@@ -554,8 +574,7 @@ static inline void draw_rect_o(Frame* restrict frame, uint32_t l, uint32_t t, ui
     }
 }
 
-static inline void draw_rect_f(Frame* frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour)
-{
+static inline void draw_rect_f(Frame* frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour) {
     for(uint32_t y = t; y <= b; ++y) {
         for(uint32_t x = l; x <= r; ++x) {
             frame_set(frame, x, y, colour);
@@ -988,6 +1007,8 @@ void hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
     p->callback[CT_PRESS](p, p->target[CT_PRESS]);
 }
 
+
+
 #ifdef DEBUG_OVERLAY
 static inline void draw_debug_overlay(Field* field, Entity* entity) {
     constexpr uint32_t colour = 0xFF'FF'FF'90;
@@ -1000,7 +1021,7 @@ static inline void draw_debug_overlay(Field* field, Entity* entity) {
 
     if(!entity) return;
 
-  //  frame_copy_with_alpha(field->layer[DO], field->layer[SC], 0xA0);
+    // frame_copy_with_alpha(field->layer[DO], field->layer[SC], 0x30);
 
     draw_rect_o(field->layer[DO], 
             entity->bounds.l,
@@ -1048,7 +1069,6 @@ void hit_test(Field* restrict field, int x, int y) {
 
         #ifdef DEBUG_OVERLAY
             draw_debug_overlay(field, current);
-            printf("DEBUG_OVERLAY\n");
         #endif
 
         field->prior[IP_ENTITY] = field->current[IP_ENTITY];
