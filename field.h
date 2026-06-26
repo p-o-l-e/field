@@ -22,6 +22,7 @@ typedef struct Field Field;
 typedef struct Entity Entity;
 typedef struct Checkbox Checkbox;
 typedef struct Slider Slider;
+typedef struct Encoder Encoder;
 typedef struct Momentary Momentary;
 typedef struct rotary rotary;
 typedef struct Socket Socket;
@@ -29,7 +30,8 @@ typedef struct Node Node;
 typedef struct SectorDescriptor SectorDescriptor;
 
 typedef enum {
-    ST_SLIDER, 
+    ST_SLIDER,
+    ST_ENCODER,
     ST_ROTARY,
     ST_SPRITE_INF_SLIDER,
     ST_SOCKET,
@@ -48,6 +50,7 @@ typedef enum {
 typedef enum {
     SS_A, 
     SS_B,
+    SS_C,
 
     SS_LIMIT
 
@@ -302,6 +305,14 @@ struct Slider {
     SubType type;
     float default_value;
     float step[CP_LIMIT];
+    bool inverse;
+};
+
+struct Encoder {
+    SubType type;
+    float default_value;
+    float step[CP_LIMIT];
+    bool inverse;
 };
 
 struct rotary {
@@ -733,6 +744,18 @@ Entity* createEntity(Node* restrict node, SectorDescriptor* descriptor) {
             ext->default_value = descriptor->default_value; 
             ext->step[CP_COARSE] = descriptor->step[CP_COARSE];
             ext->step[CP_FINE] = descriptor->step[CP_FINE];
+            ext->inverse = false;
+        }
+        break;
+
+        case ST_ENCODER: {
+            entity->extension = (Encoder*)malloc(sizeof(Encoder));
+            auto ext = (Encoder*)entity->extension;
+            ext->type = descriptor->subtype;
+            ext->default_value = descriptor->default_value; 
+            ext->step[CP_COARSE] = descriptor->step[CP_COARSE];
+            ext->step[CP_FINE] = descriptor->step[CP_FINE];
+            ext->inverse = false;
         }
         break;
 
@@ -1138,6 +1161,8 @@ static void set_checkbox(Entity* restrict entity, int, int) {
     entity->repaint = true;
 }
 
+/*** Slider *******************************************************************************************************************/
+
 static void set_slider(Entity* restrict entity, int x, int y) {
     const float v = 0.1f;
     const auto coarse = &entity->value[CP_COARSE];
@@ -1149,12 +1174,14 @@ static void set_slider(Entity* restrict entity, int x, int y) {
 
     if(entity->flags & VERTICAL) {
         const int dy = field->memory[SP_CURSOR_PRIOR].y - y;
-        const auto step = ext->step[CP_COARSE]; 
+        float inverse = ext->inverse ? -1.0f : 1.0f;
+        const auto step = ext->step[CP_COARSE] * inverse; 
         value = step * roundf((float)dy * v) + entity->memory[CP_COARSE];
     }
     else {
         const int dx = field->memory[SP_CURSOR_PRIOR].x - x;
-        const auto step = ext->step[CP_COARSE]; 
+        float inverse = ext->inverse ? -1.0f : 1.0f;
+        const auto step = ext->step[CP_COARSE] * inverse; 
         value = - step * roundf((float)dx * v) + entity->memory[CP_COARSE];
     }
 
@@ -1211,6 +1238,39 @@ static void draw_slider(Entity* restrict entity) {
             }
             break;
 
+        case SS_C: {
+            float range_span = entity->range[1] - entity->range[0];
+            float zero_frac = (0.0f - entity->range[0]) / range_span;
+            float frac = (*coarse - entity->range[0]) / range_span;
+            if(entity->flags & VERTICAL) {
+                int h   = entity->bounds.b - entity->bounds.t - GAP * 2;
+                int cy = entity->bounds.t + GAP + (int)((1.0f - zero_frac) * (float)h);
+                int vy = entity->bounds.t + GAP + (int)((1.0f - frac) * (float)h);
+                if(vy < cy) {
+                    draw_rect_f(field->layer[FG], entity->bounds.l + GAP, vy,
+                                entity->bounds.r - GAP, cy, HIGHLIGHT);
+                } 
+                else if(vy > cy) {
+                    draw_rect_f(field->layer[FG], entity->bounds.l + GAP, cy,
+                                entity->bounds.r - GAP, vy, HIGHLIGHT);
+                }
+            } 
+            else {
+                int w   = entity->bounds.r - entity->bounds.l - GAP * 2;
+                int cx = entity->bounds.l + GAP + (int)(zero_frac * (float)w);
+                int vx = entity->bounds.l + GAP + (int)(frac * (float)w);
+                if(vx > cx) {
+                    draw_rect_f(field->layer[FG], cx + 1, entity->bounds.t + GAP,
+                                vx, entity->bounds.b - GAP, HIGHLIGHT);
+                } 
+                else if(vx < cx) {
+                    draw_rect_f(field->layer[FG], vx, entity->bounds.t + GAP,
+                                cx - 1, entity->bounds.b - GAP, HIGHLIGHT);
+                }
+            }
+            break;
+        }
+
         case SS_LIMIT:
         default:
             break;
@@ -1218,15 +1278,154 @@ static void draw_slider(Entity* restrict entity) {
     entity->repaint = false;
 }
 
-static void scroll_slider(Entity* restrict entity, int, int y) {
+static void scroll_slider(Entity* restrict entity, int x, int y) {
     auto fine = &entity->value[CP_FINE];
     auto coarse = &entity->value[CP_COARSE];
     auto ext = (Slider*)entity->extension;
-    auto df = (float)y * ext->step[CP_FINE];
+    float inverse = ext->inverse ? -1.0f : 1.0f;
+    auto df = (float)y * ext->step[CP_FINE] * inverse;
 
     if((*coarse + df < entity->range[1]) && (*coarse + df > entity->range[0])) {
         *fine += df;
     }
+
+    if((int)*fine != 0) {
+        *coarse += (int)*fine;
+        *fine = 0.0f;
+    };
+
+    entity->repaint = true;
+    entity->callback[CT_VALUE](entity, entity->target[CT_VALUE]);
+}
+
+/*** Slider *******************************************************************************************************************/
+
+static void set_encoder(Entity* restrict entity, int x, int y) {
+    const float v = 0.1f;
+    const auto coarse = &entity->value[CP_COARSE];
+    const auto fine = &entity->value[CP_FINE];
+    auto ext = (Slider*)entity->extension;
+    auto field = entity->parent->parent;
+
+    float value = {};
+
+    if(entity->flags & VERTICAL) {
+        const int dy = field->memory[SP_CURSOR_PRIOR].y - y;
+        float inverse = ext->inverse ? -1.0f : 1.0f;
+        const auto step = ext->step[CP_COARSE] * inverse; 
+        value = step * roundf((float)dy * v) + entity->memory[CP_COARSE];
+    }
+    else {
+        const int dx = field->memory[SP_CURSOR_PRIOR].x - x;
+        float inverse = ext->inverse ? -1.0f : 1.0f;
+        const auto step = ext->step[CP_COARSE] * inverse; 
+        value = - step * roundf((float)dx * v) + entity->memory[CP_COARSE];
+    }
+
+    if(value < entity->range[0]) {
+        ext->inverse = !ext->inverse;
+        entity->memory[CP_COARSE] = entity->range[0];
+        field->memory[SP_CURSOR_PRIOR].x = x;
+        field->memory[SP_CURSOR_PRIOR].y = y;
+        *coarse = entity->range[0];
+    }
+    else if(value > entity->range[1]) {
+        ext->inverse = !ext->inverse;
+        entity->memory[CP_COARSE] = entity->range[1];
+        field->memory[SP_CURSOR_PRIOR].x = x;
+        field->memory[SP_CURSOR_PRIOR].y = y;
+        *coarse = entity->range[1];
+    }
+    else *coarse = value;
+
+    entity->repaint = true;
+    entity->callback[CT_VALUE](entity, entity->target[CT_VALUE]);
+}
+
+static void draw_encoder(Entity* restrict entity) {
+    auto ext = (Slider*)entity->extension;
+    auto coarse = &entity->value[CP_COARSE];
+    auto fine = &entity->value[CP_FINE];
+    auto field = entity->parent->parent;
+    draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
+    draw_ltrb_o(field->layer[FG], &entity->bounds, BORDER);
+
+    float frac = (*coarse - entity->range[0]) / (entity->range[1] - entity->range[0]);
+
+    if(entity->flags & VERTICAL) {
+        int h   = entity->bounds.b - entity->bounds.t - GAP * 2;
+        if(ext->inverse) {
+            frac = 1.0f - frac;
+            int pos = (int)((1.0f - frac) * (float)h) + entity->bounds.t + GAP;
+            draw_rect_f(field->layer[FG], entity->bounds.l + GAP, entity->bounds.t + GAP,
+                        entity->bounds.r - GAP, pos, HIGHLIGHT);
+        } else {
+            int pos = (int)((1.0f - frac) * (float)h) + entity->bounds.t + GAP;
+            draw_rect_f(field->layer[FG], entity->bounds.l + GAP, pos,
+                        entity->bounds.r - GAP, entity->bounds.b - GAP, HIGHLIGHT);
+        }
+    } 
+    else {
+        int w   = entity->bounds.r - entity->bounds.l - GAP * 2;
+        int pos = (int)(frac * (float)w) + entity->bounds.l + GAP;
+        if(ext->inverse) {
+            frac = 1.0f - frac;
+            pos = (int)(frac * (float)w) + entity->bounds.l + GAP;
+            draw_rect_f(field->layer[FG], 
+                        pos, 
+                        entity->bounds.t + GAP,
+                        entity->bounds.r - GAP, 
+                        entity->bounds.b - GAP,
+                        HIGHLIGHT);
+        }
+        else {
+            draw_rect_f(field->layer[FG], 
+                        entity->bounds.l + GAP, 
+                        entity->bounds.t + GAP,
+                        pos, 
+                        entity->bounds.b - GAP,
+                        HIGHLIGHT);
+        }
+    }
+
+    entity->repaint = false;
+}
+
+static void scroll_encoder(Entity* restrict entity, int x, int y) {
+    auto fine = &entity->value[CP_FINE];
+    auto coarse = &entity->value[CP_COARSE];
+    auto ext = (Slider*)entity->extension;
+    float inverse = ext->inverse ? -1.0f : 1.0f;
+    auto df = (float)y * ext->step[CP_FINE] * inverse;
+
+    if((*coarse + df < entity->range[1]) && (*coarse + df > entity->range[0])) {
+        *fine += df;
+    }
+
+    // if(ext->type == SS_D) {
+    //     auto value = *coarse + *fine;
+    //     auto field = entity->parent->parent;
+    //
+    //     if(value < entity->range[0]) {
+    //         if(ext->type == SS_D) {
+    //             ext->inverse = !ext->inverse;
+    //             entity->memory[CP_COARSE] = entity->range[0];
+    //             field->memory[SP_CURSOR_PRIOR].x = x;
+    //             field->memory[SP_CURSOR_PRIOR].y = y;
+    //             *coarse = entity->range[0];
+    //
+    //         }
+    //     }
+    //     else if(value > entity->range[1]) {
+    //         if(ext->type == SS_D) {
+    //             ext->inverse = !ext->inverse;
+    //             entity->memory[CP_COARSE] = entity->range[1];
+    //             field->memory[SP_CURSOR_PRIOR].x = x;
+    //             field->memory[SP_CURSOR_PRIOR].y = y;
+    //             *coarse = entity->range[1];
+    //         }
+    //     }
+    // }
 
     if((int)*fine != 0) {
         *coarse += (int)*fine;
@@ -1803,7 +2002,8 @@ static void draw_canvas(Entity* restrict entity)
 static inline void init_none(Entity* restrict) {}
 
 void (*init_entity[])(Entity* restrict)  = {
-    [ST_SLIDER]                 = init_none,  
+    [ST_SLIDER]                 = init_none,
+    [ST_ENCODER]                = init_none,
     [ST_ROTARY]                 = init_none,  
     [ST_SPRITE_INF_SLIDER]      = init_none,  
     [ST_SOCKET]                 = init_socket,
@@ -1819,7 +2019,8 @@ void (*init_entity[])(Entity* restrict)  = {
 static inline void set_none(Entity* restrict, int, int) {}
 
 void (*set_entity[])(Entity* restrict, int, int) = {
-    [ST_SLIDER]                 = set_slider,            
+    [ST_SLIDER]                 = set_slider,   
+    [ST_ENCODER]                = set_encoder,   
     [ST_ROTARY]                 = set_rotary,     
     [ST_SPRITE_INF_SLIDER]      = set_sprite_inf_slider, 
     [ST_SOCKET]                 = set_socket,            
@@ -1834,6 +2035,7 @@ void (*set_entity[])(Entity* restrict, int, int) = {
 
 void (*draw_entity[])(Entity* restrict) = {
     [ST_SLIDER]                 = draw_slider,        
+    [ST_ENCODER]                = draw_encoder,        
     [ST_ROTARY]                 = draw_rotary, 
     [ST_SPRITE_INF_SLIDER]      = draw_rotary, 
     [ST_SOCKET]                 = draw_socket,        
@@ -1850,6 +2052,7 @@ static inline void drag_none(Entity* restrict, int, int) {}
 
 void (*drag_entity[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = set_slider,           
+    [ST_ENCODER]                = set_encoder,           
     [ST_ROTARY]                 = set_rotary,    
     [ST_SPRITE_INF_SLIDER]      = set_sprite_inf_slider,
     [ST_SOCKET]                 = drag_socket,          
@@ -1866,6 +2069,7 @@ static inline void scroll_none(Entity* restrict, int, int) {}
 
 void (*scroll_entity[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = scroll_slider,     
+    [ST_ENCODER]                = scroll_encoder,     
     [ST_ROTARY]                 = scroll_slider,     
     [ST_SPRITE_INF_SLIDER]      = scroll_slider,     
     [ST_SOCKET]                 = scroll_none,          
@@ -1882,6 +2086,7 @@ static inline void enter_none(Entity* restrict, int, int) {}
 
 void (*enter_entity[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = enter_none,         
+    [ST_ENCODER]                = enter_none,         
     [ST_ROTARY]                 = enter_none,         
     [ST_SPRITE_INF_SLIDER]      = enter_none,         
     [ST_SOCKET]                 = enter_none,         
@@ -1898,6 +2103,7 @@ static inline void leave_none(Entity* restrict, int, int) {}
 
 void (*leave_entity[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = leave_none,         
+    [ST_ENCODER]                = leave_none,         
     [ST_ROTARY]                 = leave_none,         
     [ST_SPRITE_INF_SLIDER]      = leave_none,         
     [ST_SOCKET]                 = leave_none,         
@@ -1914,6 +2120,7 @@ static inline void release_none(Entity* restrict, int, int) {}
 
 void (*release_entity[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = release_none,
+    [ST_ENCODER]                = release_none,
     [ST_ROTARY]                 = release_none,
     [ST_SPRITE_INF_SLIDER]      = release_none,
     [ST_SOCKET]                 = release_socket,
