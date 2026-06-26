@@ -1007,8 +1007,6 @@ void hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
     p->callback[CT_PRESS](p, p->target[CT_PRESS]);
 }
 
-
-
 #ifdef DEBUG_OVERLAY
 static inline void draw_debug_overlay(Field* field, Entity* entity) {
     constexpr uint32_t colour = 0xFF'FF'FF'90;
@@ -1412,45 +1410,41 @@ static void draw_encoder(Entity* restrict entity) {
 }
 
 static void scroll_encoder(Entity* restrict entity, int x, int y) {
-    auto fine = &entity->value[CP_FINE];
-    auto coarse = &entity->value[CP_COARSE];
+    const auto coarse = &entity->value[CP_COARSE];
+    const auto fine = &entity->value[CP_FINE];
     auto ext = (Slider*)entity->extension;
-    float inverse = ext->inverse ? -1.0f : 1.0f;
-    auto df = (float)y * ext->step[CP_FINE] * inverse;
+    auto field = entity->parent->parent;
 
-    if((*coarse + df < entity->range[1]) && (*coarse + df > entity->range[0])) {
-        *fine += df;
+    float value = {};
+
+    if(entity->flags & VERTICAL) {
+        const int dy = y;
+        float inverse = ext->inverse ? -1.0f : 1.0f;
+        const auto step = ext->step[CP_FINE] * inverse; 
+        value = step * dy + *coarse;
+    }
+    else {
+        const int dx = y;
+        float inverse = ext->inverse ? -1.0f : 1.0f;
+        const auto step = ext->step[CP_FINE] * inverse; 
+        value = step * dx + *coarse;
     }
 
-    // if(ext->type == SS_D) {
-    //     auto value = *coarse + *fine;
-    //     auto field = entity->parent->parent;
-    //
-    //     if(value < entity->range[0]) {
-    //         if(ext->type == SS_D) {
-    //             ext->inverse = !ext->inverse;
-    //             entity->memory[CP_COARSE] = entity->range[0];
-    //             field->memory[SP_CURSOR_PRIOR].x = x;
-    //             field->memory[SP_CURSOR_PRIOR].y = y;
-    //             *coarse = entity->range[0];
-    //
-    //         }
-    //     }
-    //     else if(value > entity->range[1]) {
-    //         if(ext->type == SS_D) {
-    //             ext->inverse = !ext->inverse;
-    //             entity->memory[CP_COARSE] = entity->range[1];
-    //             field->memory[SP_CURSOR_PRIOR].x = x;
-    //             field->memory[SP_CURSOR_PRIOR].y = y;
-    //             *coarse = entity->range[1];
-    //         }
-    //     }
-    // }
-
-    if((int)*fine != 0) {
-        *coarse += (int)*fine;
-        *fine = 0.0f;
-    };
+    if(value < entity->range[0]) {
+        ext->inverse = !ext->inverse;
+        entity->memory[CP_COARSE] = entity->range[0];
+        field->memory[SP_CURSOR_PRIOR].x = x;
+        field->memory[SP_CURSOR_PRIOR].y = y;
+        *coarse = entity->range[0];
+    }
+    else if(value > entity->range[1]) {
+        ext->inverse = !ext->inverse;
+        entity->memory[CP_COARSE] = entity->range[1];
+        field->memory[SP_CURSOR_PRIOR].x = x;
+        field->memory[SP_CURSOR_PRIOR].y = y;
+        *coarse = entity->range[1];
+    }
+    else *coarse = value;
 
     entity->repaint = true;
     entity->callback[CT_VALUE](entity, entity->target[CT_VALUE]);
