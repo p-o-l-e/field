@@ -174,6 +174,8 @@ typedef enum
     ATTRIBUTES          = 0xFFCB6BFF,
     NUMBERS             = 0xF78C6CFF,
     PARAMETERS          = 0xF78C6CFF,
+    SOCKET_IN           = 0x009688FF,
+    SOCKET_OUT          = 0xF07178FF,
 
 } Palette;
 
@@ -338,6 +340,8 @@ struct Node {
     uint32_t    capacity;
     Entity*     at;
     Field*      parent;
+    Frame       buffer;
+    bool        visible;
 };
 
 struct Field {
@@ -396,12 +400,17 @@ void ff_draw_scene(Field* restrict);
 void ff_add_mod_link(Entity*, Entity*, CallbackType, void (*)(Entity*, Entity*));
 void ff_move_entity(Entity* restrict, ltrb32u* restrict);
 void ff_erase_entity(Entity* restrict);
-
+static void ff_disconnect(Entity* restrict);
 /** Contructors ***************************************************************************************************************/
 
 Entity* ffCreateEntity(Node* restrict, SectorDescriptor*);
+static inline Node* ffCreateNode(Field* restrict, uint32_t, uint32_t, size_t);
 Field* ffCreateField(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 void ffDestroyField(Field* restrict);
+
+/** Helpers *******************************************************************************************************************/
+
+static inline void ffPlaceNode(Field* restrict, Node* restrict, uint32_t, uint32_t);
 
 /*****************************************************************************************************************************/
 Entity* ff_find_entity_by_id(Field* restrict field, uint32_t id) {
@@ -794,7 +803,7 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
 
     if(!(descriptor->flags & TRANSPARENT)) {
         ff_draw_ltrb_f (
-            node->parent->layer[SC],
+            &node->buffer,
             &entity->bounds,
             entity->index
         );
@@ -859,6 +868,7 @@ Field* ffCreateField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t si
     }
 
     field->node = malloc(size * sizeof(Node));
+    ff_frame_init(&field->node->buffer, w, h);
     field->nodes = 1;
     field->node[0].entities = 1;
     field->node[0].capacity = size;
@@ -866,6 +876,7 @@ Field* ffCreateField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t si
     field->node[0].parent = field;
     for(uint32_t i = 0; i < field->node[0].capacity; i++) field->node[0].at[i].index = i;
     field->node[0].index = 0;
+    field->node[0].visible = true;
 
     auto canvas = &field->node[0].at[0];
 
@@ -901,7 +912,6 @@ void ffDestroyField(Field* restrict field) {
     free(field->node);
 }
 
-static inline Node* ffCreateNode(Field* restrict, uint32_t, uint32_t, size_t);
 
 static inline Node* ffCreateNode(Field* restrict field, uint32_t w, uint32_t h, size_t size) {
 
@@ -918,11 +928,30 @@ static inline Node* ffCreateNode(Field* restrict field, uint32_t w, uint32_t h, 
     field->node[index].entities = 0;
     field->node[index].parent = field;
     field->node[index].index = index;
+    field->node[index].visible = false;
     
     field->node[index].at = malloc(size * sizeof(Entity));
+    ff_frame_init(&field->node[index].buffer,  w, h);
     
     ++field->nodes;
     return &field->node[index];
+}
+
+static inline void ffPlaceNode(Field* restrict field, Node* restrict node, uint32_t x, uint32_t y) {
+    node->visible = true;
+    ff_draw_ltrb_f(node->parent->layer[SN], &(ltrb32u) { .l = x, .t = y, x + node->width, y + node->height }, node->index);
+    ff_frame_copy_at(node->parent->layer[SC], &node->buffer, x, y);
+
+    for(uint32_t i = 0; i < node->entities; ++i) {
+        auto bounds = &node->at[i].bounds;
+        bounds->l += x;
+        bounds->t += y;
+        bounds->r += x;
+        bounds->b += y;
+
+        node->at[i].repaint = true;
+    }
+    field->repaint = true;
 }
 
 void ff_empty() {}
@@ -980,7 +1009,11 @@ void ff_hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
     p->memory[CP_FINE] = p->value[CP_FINE];
 
     if(p->flags & INTERCON) {
-        field->connecting = true;
+        if(button == RMB) {
+            ff_disconnect(field->pressed);
+        }
+        else
+            field->connecting = true;
     }
 
     if (p->flags & MOVEABLE) {
@@ -1138,6 +1171,7 @@ static void ff_draw_checkbox(Entity* restrict entity) {
 
 void ff_draw_scene(Field* restrict field) {
     for(uint32_t n = 0; n < field->nodes; ++n) {
+        if(!field->node[n].visible) continue;
         for(uint32_t i = 0; i < field->node[n].entities; ++i) {
             auto s = &field->node[n].at[i];
             if(s->repaint) {
@@ -1575,7 +1609,7 @@ static void ff_draw_socket(Entity* restrict entity) {
         .x = entity->bounds.l + r,
         .y = entity->bounds.t + r
     };
-    auto color = entity->flags & OUTPUT ? RED : PURPLE;
+    auto color = entity->flags & OUTPUT ? SOCKET_OUT : SOCKET_IN;
 
     ff_draw_circle_f(field->layer[FG], center.x, center.y, r, color);
     r = entity->width / 4;
@@ -1611,14 +1645,17 @@ static void ff_drag_socket(Entity* entity, int x, int y)
         field->current[IP_ENTITY] = entity->index;
         field->current[IP_NODE] = entity->parent->index;
 
-        if(entity->has_data) {
-            memset(entity->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float)); 
-            entity->connection->has_data = false;
+        auto entity_has_data = entity->has_data;
+        auto conn_has_data = entity->connection->has_data;
+
+        if(entity_has_data) {
+            memset(entity->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
         }
-        if(entity->connection->has_data) {
+        if(conn_has_data) {
             memset(entity->connection->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
-            entity->connection->has_data = false;
         }
+        entity->has_data = false;
+        entity->connection->has_data = false;
         entity->connection->connected = false;
         entity->connected = false;
 
@@ -1779,7 +1816,7 @@ inline static void ff_disconnect(Entity* restrict entity) {
 
     if(target) {
         if(target->has_data) {
-            memset(entity->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+            memset(target->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
         }
 
         target->connected = false;
@@ -1815,7 +1852,6 @@ static void ff_release_socket(Entity* restrict entity, int x, int y) {
 static void ff_init_node(Entity* restrict entity) {
     entity->data = (Frame*)calloc(1, sizeof(Frame));
     ff_frame_init((Frame*)entity->data, entity->width, entity->height);
-    ff_draw_ltrb_f(entity->parent->parent->layer[SN], &entity->bounds, entity->parent->index);
 }
 
 static void ff_set_node(Entity* restrict entity, int, int) {
@@ -1839,18 +1875,20 @@ static inline bool ff_has_overlap(const Entity* restrict entity) {
 }
 
 static void ff_draw_node(Entity* restrict entity) {
-    auto field = entity->parent->parent;
-    auto l = entity->staging ? ST : NG;
+    if(entity->visible) {
+        auto field = entity->parent->parent;
+        auto l = entity->staging ? ST : NG;
 
-    if(l == ST) {
-        ff_frame_clr(field->layer[l]);
-        ff_draw_ltrb_o(field->layer[l], &entity->bounds, ff_has_overlap(entity) ? ERROR : HIGHLIGHT);
+        if(l == ST) {
+            ff_frame_clr(field->layer[l]);
+            ff_draw_ltrb_o(field->layer[l], &entity->bounds, ff_has_overlap(entity) ? ERROR : HIGHLIGHT);
+        }
+        else {
+            ff_draw_ltrb_f(field->layer[l], &entity->bounds, SECONDBACKGROUND);
+            ff_draw_ltrb_o(field->layer[l], &entity->bounds, BORDER);
+        }
+        entity->repaint = false;
     }
-    else {
-        ff_draw_ltrb_f(field->layer[l], &entity->bounds, SECONDBACKGROUND);
-        ff_draw_ltrb_o(field->layer[l], &entity->bounds, BORDER);
-    }
-    entity->repaint = false;
 }
 
 static void ff_drag_node(Entity* restrict entity, int x, int y)
