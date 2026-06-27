@@ -38,7 +38,7 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 
     double x, y;
     glfwGetCursorPos(window, &x, &y);
-    hit_test(context, (int)x, (int)y);
+    ff_hit_test(context, (int)x, (int)y);
     if(context->current[IP_ENTITY] != 0)
     {
         auto cn = context->current[IP_NODE];
@@ -53,9 +53,9 @@ static void cursor_position_callback(GLFWwindow* window, double x, double y)
     Field* context = (Field*)glfwGetWindowUserPointer(window);
 
     if(context->drag)
-        hit_test_drag(context, (int)x, (int)y);
+        ff_hit_test_drag(context, (int)x, (int)y);
     else 
-        hit_test(context, (int)x, (int)y);
+        ff_hit_test(context, (int)x, (int)y);
 }
 
 void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mods*/)
@@ -70,7 +70,7 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mod
                 double x, y;
                 glfwGetCursorPos(window, &x, &y);
 
-                hit_test_down(context, (int)x, (int)y, LMB);
+                ff_hit_test_down(context, (int)x, (int)y, LMB);
                 auto cn = context->current[IP_NODE];
                 auto ce = context->current[IP_ENTITY];
                 if(context->node[cn].at[ce].flags & MOVEABLE)
@@ -81,7 +81,7 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mod
                 double x, y;
 
                 glfwGetCursorPos(window, &x, &y);
-                hit_test_up(context, (int)x, (int)y, LMB);
+                ff_hit_test_up(context, (int)x, (int)y, LMB);
                 context->move = false;
 
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
@@ -94,7 +94,7 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mod
             if(action == GLFW_PRESS) {
                 double x, y;
                 glfwGetCursorPos(window, &x, &y);
-                hit_test_down(context, (int)x, (int)y, RMB);
+                ff_hit_test_down(context, (int)x, (int)y, RMB);
             }
             else if(action == GLFW_RELEASE)
                 printf("RMB Released\n");
@@ -262,7 +262,7 @@ void* draw_field(void* arg)
         {
             glClear(GL_COLOR_BUFFER_BIT);
             glColor3f(1.0f, 1.0f, 1.0f);
-            draw_scene(context);
+            ff_draw_scene(context);
            
             update_buffer(context->layer[BG], bg);
             update_buffer(context->layer[NG], ng);
@@ -290,10 +290,10 @@ void* draw_field(void* arg)
             glVertexPointer(2, GL_FLOAT, 0, context->pressed->data);
 
             glColor4ub(
-                extract_byte(CORD_SELECT, 3),
-                extract_byte(CORD_SELECT, 2),
-                extract_byte(CORD_SELECT, 1),
-                extract_byte(CORD_SELECT, 0)
+                ff_extract_byte(CORD_SELECT, 3),
+                ff_extract_byte(CORD_SELECT, 2),
+                ff_extract_byte(CORD_SELECT, 1),
+                ff_extract_byte(CORD_SELECT, 0)
             );
 
             glDrawArrays(GL_LINE_STRIP, 0, SPLINE_SEGMENTS);
@@ -316,10 +316,10 @@ void* draw_field(void* arg)
                         glVertexPointer(2, GL_FLOAT, 0, context->node[n].at[i].data);
 
                         glColor4ub(
-                            extract_byte(colour, 3),
-                            extract_byte(colour, 2),
-                            extract_byte(colour, 1),
-                            extract_byte(colour, 0)
+                            ff_extract_byte(colour, 3),
+                            ff_extract_byte(colour, 2),
+                            ff_extract_byte(colour, 1),
+                            ff_extract_byte(colour, 0)
                         );
 
                         glDrawArrays(GL_LINE_STRIP, 0, SPLINE_SEGMENTS);
@@ -342,7 +342,7 @@ void* draw_field(void* arg)
     _handle_events  = false;
     glfwPostEmptyEvent();
 
-    destroyField(context);
+    ffDestroyField(context);
     glfwSetWindowShouldClose(window, GL_TRUE);
     glfwDestroyWindow(window);
 

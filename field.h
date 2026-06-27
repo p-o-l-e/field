@@ -364,47 +364,47 @@ struct Field {
 extern const uint8_t gtFont[];
 
 /** Primitives ****************************************************************************************************************/
-static void draw_glyph      (Frame*, const uint8_t*, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_text_label (Frame*, const uint8_t* , const char*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_rect_o     (Frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_rect_f     (Frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_line_v     (Frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_line_h     (Frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void draw_circle_f   (Frame*, uint32_t, uint32_t, uint32_t, uint32_t);
-static void draw_circle_o   (Frame*, uint32_t, uint32_t, uint32_t, uint32_t);
-static void draw_ltrb_o     (Frame*, ltrb32u*, const uint32_t);
-static void draw_ltrb_f     (Frame*, ltrb32u*, const uint32_t);
-static uint32_t frame_get   (Frame*, uint32_t, uint32_t);
-static void frame_set       (Frame*, uint32_t, uint32_t, uint32_t);
-static void frame_fill      (Frame*, uint32_t);
-static void frame_clr       (Frame*);
-static void frame_init      (Frame*, uint32_t, uint32_t);
-static void frame_flush     (Frame*);
-static void frame_copy      (Frame*, Frame*);
-static void frame_copy_with_alpha(Frame*, Frame*, uint8_t);
-static void frame_copy_at   (Frame*, Frame*, uint32_t, uint32_t);
-static void sprite_init     (Sprite*, uint32_t, uint32_t, uint32_t);
-static void sprite_flush    (Sprite*);
-static void sprite_load_stripe(Sprite*, Frame*);
+static void ff_draw_glyph      (Frame*, const uint8_t*, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void ff_draw_text_label (Frame*, const uint8_t* , const char*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void ff_draw_rect_o     (Frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void ff_draw_rect_f     (Frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void ff_draw_line_v     (Frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void ff_draw_line_h     (Frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void ff_draw_circle_f   (Frame*, uint32_t, uint32_t, uint32_t, uint32_t);
+static void ff_draw_circle_o   (Frame*, uint32_t, uint32_t, uint32_t, uint32_t);
+static void ff_draw_ltrb_o     (Frame*, ltrb32u*, const uint32_t);
+static void ff_draw_ltrb_f     (Frame*, ltrb32u*, const uint32_t);
+static uint32_t ff_frame_get   (Frame*, uint32_t, uint32_t);
+static void ff_frame_set       (Frame*, uint32_t, uint32_t, uint32_t);
+static void ff_frame_fill      (Frame*, uint32_t);
+static void ff_frame_clr       (Frame*);
+static void ff_frame_init      (Frame*, uint32_t, uint32_t);
+static void ff_frame_flush     (Frame*);
+static void ff_frame_copy      (Frame*, Frame*);
+static void ff_frame_copy_with_alpha(Frame*, Frame*, uint8_t);
+static void ff_frame_copy_at   (Frame*, Frame*, uint32_t, uint32_t);
+static void ff_sprite_init     (Sprite*, uint32_t, uint32_t, uint32_t);
+static void ff_sprite_flush    (Sprite*);
+static void ff_sprite_load_stripe(Sprite*, Frame*);
 /******************************************************************************************************************************/
-void set_text_data(Entity*, const char*); 
-static void value_to_textbox(Entity*, Entity*);
+void ff_set_text_data(Entity*, const char*); 
+static void ff_value_to_textbox(Entity*, Entity*);
 
-void fuse_link(Entity*, Entity*);
-void draw_scene(Field* restrict);
+void ff_fuse_link(Entity*, Entity*);
+void ff_draw_scene(Field* restrict);
 
-void add_mod_link(Entity*, Entity*, CallbackType, void (*)(Entity*, Entity*));
-void move_entity(Entity* restrict, ltrb32u* restrict);
-void erase_entity(Entity* restrict);
+void ff_add_mod_link(Entity*, Entity*, CallbackType, void (*)(Entity*, Entity*));
+void ff_move_entity(Entity* restrict, ltrb32u* restrict);
+void ff_erase_entity(Entity* restrict);
 
 /** Contructors ***************************************************************************************************************/
 
-Entity* createEntity(Node* restrict, SectorDescriptor*);
-Field* createField(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-void destroyField(Field* restrict);
+Entity* ffCreateEntity(Node* restrict, SectorDescriptor*);
+Field* ffCreateField(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+void ffDestroyField(Field* restrict);
 
 /*****************************************************************************************************************************/
-Entity* find_entity_by_id(Field* restrict field, uint32_t id) {
+Entity* ff_find_entity_by_id(Field* restrict field, uint32_t id) {
     if(!id) return nullptr;
 
     for(uint32_t n = 0; n < field->nodes; ++n) {
@@ -415,10 +415,10 @@ Entity* find_entity_by_id(Field* restrict field, uint32_t id) {
     return nullptr;
 }
 
-void hit_test_down(Field* restrict, int, int, uint32_t);
-void hit_test_drag(Field* restrict, int, int);
-void hit_test_up  (Field* restrict, int, int, uint32_t);
-void hit_test     (Field* restrict, int, int);
+void ff_hit_test_down(Field* restrict, int, int, uint32_t);
+void ff_hit_test_drag(Field* restrict, int, int);
+void ff_hit_test_up  (Field* restrict, int, int, uint32_t);
+void ff_hit_test     (Field* restrict, int, int);
 
 /*****************************************************************************************************************************/
 
@@ -433,24 +433,24 @@ extern void (*release_entity[])(Entity* restrict, int, int);
 
 /** Helpers *******************************************************************************************************************/
 
-uint8_t extract_byte(uint32_t, uint_fast8_t);
-uint32_t encode_uid(uint8_t, uint8_t, uint8_t, uint8_t);
-uid32 decode_uid(uint32_t);
-point32u uv_to_screen(float, float, uint32_t, uint32_t);
-point screen_to_uv(uint32_t, uint32_t, uint32_t, uint32_t);
-static uint32_t hsva_to_rgba(uint8_t, uint8_t, uint8_t, uint8_t);
-uint32_t index_to_hsv(uint32_t, uint8_t);
+uint8_t ff_extract_byte(uint32_t, uint_fast8_t);
+uint32_t ff_encode_uid(uint8_t, uint8_t, uint8_t, uint8_t);
+uid32 ff_decode_uid(uint32_t);
+point32u ff_uv_to_screen(float, float, uint32_t, uint32_t);
+point ff_screen_to_uv(uint32_t, uint32_t, uint32_t, uint32_t);
+static uint32_t ff_hsva_to_rgba(uint8_t, uint8_t, uint8_t, uint8_t);
+uint32_t ff_index_to_hsv(uint32_t, uint8_t);
 
 /******************************************************************************************************************************
  * Returns 8-bit value
  * Data : 0x FF FF FF FF
  * index:     3  2  1  0     MSB->LSB
  * *****************************************************************************************************************************/
-uint8_t extract_byte(uint32_t value, uint_fast8_t byte) {
+uint8_t ff_extract_byte(uint32_t value, uint_fast8_t byte) {
     return (value >> (byte * 8)) & 0xFF;
 }
 
-point32u uv_to_screen(float x, float y, uint32_t w, uint32_t h) {
+point32u ff_uv_to_screen(float x, float y, uint32_t w, uint32_t h) {
     point32u s = {
         .x = (uint32_t)(x * (float)w),
         .y = (uint32_t)(y * (float)h)
@@ -458,7 +458,7 @@ point32u uv_to_screen(float x, float y, uint32_t w, uint32_t h) {
     return s;
 }
 
-point screen_to_uv(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+point ff_screen_to_uv(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
     point n = {
         .x =  (float)x / (float)w,
         .y =  1.0f - (float)y / (float)h
@@ -473,22 +473,22 @@ point screen_to_uv(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
  * CC : Parameter type
  * DD : Parameter id/position
  * *****************************************************************************************************************************/
-uint32_t encode_uid(uint8_t mt, uint8_t mp, uint8_t pt, uint8_t pp) {
+uint32_t ff_encode_uid(uint8_t mt, uint8_t mp, uint8_t pt, uint8_t pp) {
     return ((mt << 24) | (mp << 16) | (pt << 8) | pp);
 }
 
-uid32 decode_uid(uint32_t data) {
+uid32 ff_decode_uid(uint32_t data) {
     uid32 uid = {
-        .mt = extract_byte(data, MT),
-        .mp = extract_byte(data, MP),
-        .pt = extract_byte(data, PT),
-        .pp = extract_byte(data, PP)
+        .mt = ff_extract_byte(data, MT),
+        .mp = ff_extract_byte(data, MP),
+        .pt = ff_extract_byte(data, PT),
+        .pp = ff_extract_byte(data, PP)
     };
 
     return uid;
 }
 
-static uint32_t hsva_to_rgba(uint8_t h, uint8_t s, uint8_t v, uint8_t a) {
+static uint32_t ff_hsva_to_rgba(uint8_t h, uint8_t s, uint8_t v, uint8_t a) {
     uint8_t region = h / 43;
     uint8_t remainder = (h - region * 43) * 6;
 
@@ -508,91 +508,91 @@ static uint32_t hsva_to_rgba(uint8_t h, uint8_t s, uint8_t v, uint8_t a) {
     return (r << 24) | (g << 16) | (b << 8) | a;
 }
 
-uint32_t index_to_hsv(uint32_t index, uint8_t alpha) {
+uint32_t ff_index_to_hsv(uint32_t index, uint8_t alpha) {
     uint8_t hue = (index * 137) & 0xFF;
     uint8_t sat = 204;
     uint8_t val = 230;
-    return hsva_to_rgba(hue, sat, val, alpha);
+    return ff_hsva_to_rgba(hue, sat, val, alpha);
 }
 
-static inline void frame_set(Frame* frame, uint32_t x, uint32_t y, uint32_t value) {
+static inline void ff_frame_set(Frame* frame, uint32_t x, uint32_t y, uint32_t value) {
     if(x < frame->width && y < frame->height)
     frame->data[x + y * frame->width] = value;
 }
 
-static inline uint32_t frame_get(Frame* frame, uint32_t x, uint32_t y) {
+static inline uint32_t ff_frame_get(Frame* frame, uint32_t x, uint32_t y) {
     if(x < frame->width && y < frame->height) return frame->data[x + y * frame->width];
     return frame->data[0];
 }
 
-static inline void frame_clr(Frame* frame) {
+static inline void ff_frame_clr(Frame* frame) {
     memset(frame->data, 0, frame->height * frame->width * sizeof(uint32_t));
 }
 
-static inline void frame_fill(Frame* frame, uint32_t value) {
+static inline void ff_frame_fill(Frame* frame, uint32_t value) {
     for(uint32_t i = 0; i < (frame->height * frame->width); ++i) frame->data[i] = value;
 }
 
-static inline void frame_init(Frame* frame, uint32_t x, uint32_t y) {
+static inline void ff_frame_init(Frame* frame, uint32_t x, uint32_t y) {
     frame->width  = x;
     frame->height = y;
     frame->data   = (uint32_t*)calloc(frame->width * frame->height , sizeof(uint32_t));
 }
 
-static inline void frame_flush(Frame* frame) {
+static inline void ff_frame_flush(Frame* frame) {
     free(frame->data);
 }
 
-static inline void frame_copy(Frame* target, Frame* source) {
+static inline void ff_frame_copy(Frame* target, Frame* source) {
     for(uint32_t i = 0; i < target->height * target->width; i++) target->data[i] = source->data[i];
 }
 
-static void frame_copy_with_alpha(Frame* target, Frame* source, uint8_t alpha) {
+static void ff_frame_copy_with_alpha(Frame* target, Frame* source, uint8_t alpha) {
     for(uint32_t i = 0; i < target->height * target->width; ++i) {
-        auto data = index_to_hsv(source->data[i] + 0x2, alpha);
+        auto data = ff_index_to_hsv(source->data[i] + 0x2, alpha);
         target->data[i] = data;
     }
 }
 
-static inline void frame_copy_at(Frame* target, Frame* source, uint32_t xo, uint32_t yo) {
+static inline void ff_frame_copy_at(Frame* target, Frame* source, uint32_t xo, uint32_t yo) {
     for(uint32_t y = 0; y < source->height; y++) {
         for(uint32_t x = 0; x < source->width; x++) {
-            frame_set(target, x + xo, y + yo, frame_get(source, x, y));
+            ff_frame_set(target, x + xo, y + yo, ff_frame_get(source, x, y));
         }
     }
 }
 
-static inline void draw_rect_o(Frame* restrict frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour) {
+static inline void ff_draw_rect_o(Frame* restrict frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour) {
     for(uint32_t i = l; i <= r; i++) {
-        frame_set(frame, i, t, colour);
-        frame_set(frame, i, b, colour);
+        ff_frame_set(frame, i, t, colour);
+        ff_frame_set(frame, i, b, colour);
     }
 
     for(uint32_t i = t; i <= b; i++) {
-        frame_set(frame, l, i, colour);
-        frame_set(frame, r, i, colour);
+        ff_frame_set(frame, l, i, colour);
+        ff_frame_set(frame, r, i, colour);
     }
 }
 
-static inline void draw_rect_f(Frame* frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour) {
+static inline void ff_draw_rect_f(Frame* frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour) {
     for(uint32_t y = t; y <= b; ++y) {
         for(uint32_t x = l; x <= r; ++x) {
-            frame_set(frame, x, y, colour);
+            ff_frame_set(frame, x, y, colour);
         }
     }
 }
 
-static inline void draw_line_v(Frame* frame, uint32_t x, uint32_t yo, uint32_t ye, const uint32_t value) {
+static inline void ff_draw_line_v(Frame* frame, uint32_t x, uint32_t yo, uint32_t ye, const uint32_t value) {
     for(uint32_t y = yo; y <= ye; ++y)
-        frame_set(frame, x, y, value);
+        ff_frame_set(frame, x, y, value);
 }
 
-static inline void draw_line_h(Frame* frame, uint32_t y, uint32_t xo, uint32_t xe, const uint32_t value) {
+static inline void ff_draw_line_h(Frame* frame, uint32_t y, uint32_t xo, uint32_t xe, const uint32_t value) {
     for(uint32_t x = xo; x <= xe; ++x)
-        frame_set(frame, x, y, value);
+        ff_frame_set(frame, x, y, value);
 }
 
-void draw_circle_f(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
+void ff_draw_circle_f(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
     int x = 0;
     int y = r;
     int p = 1 - r;
@@ -607,16 +607,16 @@ void draw_circle_f(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t 
             p = p + 2 * (x - y) + 1;
         }
 
-        draw_line_h(frame, yc + x, xc - y, xc + y, value);
-        draw_line_h(frame, yc - x, xc - y, xc + y, value);
-        draw_line_h(frame, yc + y, xc - x, xc + x, value);
-        draw_line_h(frame, yc - y, xc - x, xc + x, value);
+        ff_draw_line_h(frame, yc + x, xc - y, xc + y, value);
+        ff_draw_line_h(frame, yc - x, xc - y, xc + y, value);
+        ff_draw_line_h(frame, yc + y, xc - x, xc + x, value);
+        ff_draw_line_h(frame, yc - y, xc - x, xc + x, value);
     }
 
-    draw_line_h(frame, yc, xc - r, xc + r, value);
+    ff_draw_line_h(frame, yc, xc - r, xc + r, value);
 }
 
-static inline void draw_circle_o(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
+static inline void ff_draw_circle_o(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
     int x = 0;
     int y = r;
     int p = 1 - r;
@@ -631,97 +631,97 @@ static inline void draw_circle_o(Frame* frame, uint32_t xc, uint32_t yc, uint32_
             p = p + 2 * (x - y) + 1;
         }
 
-        frame_set(frame, xc + x, yc + y, value);
-        frame_set(frame, xc - x, yc + y, value);
-        frame_set(frame, xc + x, yc - y, value);
-        frame_set(frame, xc - x, yc - y, value);
-        frame_set(frame, xc + y, yc + x, value);
-        frame_set(frame, xc - y, yc + x, value);
-        frame_set(frame, xc + y, yc - x, value);
-        frame_set(frame, xc - y, yc - x, value); 
+        ff_frame_set(frame, xc + x, yc + y, value);
+        ff_frame_set(frame, xc - x, yc + y, value);
+        ff_frame_set(frame, xc + x, yc - y, value);
+        ff_frame_set(frame, xc - x, yc - y, value);
+        ff_frame_set(frame, xc + y, yc + x, value);
+        ff_frame_set(frame, xc - y, yc + x, value);
+        ff_frame_set(frame, xc + y, yc - x, value);
+        ff_frame_set(frame, xc - y, yc - x, value); 
     }
 
-    frame_set(frame, xc, yc - r, value);
-    frame_set(frame, xc, yc + r, value);
-    frame_set(frame, xc + r, yc, value);
-    frame_set(frame, xc - r, yc, value);
+    ff_frame_set(frame, xc, yc - r, value);
+    ff_frame_set(frame, xc, yc + r, value);
+    ff_frame_set(frame, xc + r, yc, value);
+    ff_frame_set(frame, xc - r, yc, value);
 }
 
-static inline void draw_glyph(Frame* frame, const uint8_t* font, uint32_t id, uint32_t l, uint32_t t, const uint32_t colour) {
+static inline void ff_draw_glyph(Frame* frame, const uint8_t* font, uint32_t id, uint32_t l, uint32_t t, const uint32_t colour) {
     uint32_t pos = id * 7;
     u_int8_t stencil = 0b1;
 
     for(uint32_t y = 0; y < 8; y++) {
         for(uint32_t x = 0; x < 7; x++) {
-            if(font[pos + x] & stencil) frame_set(frame, x + l, y + t, colour);
+            if(font[pos + x] & stencil) ff_frame_set(frame, x + l, y + t, colour);
         }
         stencil<<=1;
     }
 }
 
-static inline void drawTextLabel(Frame* frame, const uint8_t* font, const char* text, uint32_t l, uint32_t t, uint32_t, uint32_t, const uint32_t colour) {
+static inline void ffDrawTextLabel(Frame* frame, const uint8_t* font, const char* text, uint32_t l, uint32_t t, uint32_t, uint32_t, const uint32_t colour) {
     uint32_t n = strlen(text);
     for(uint32_t i = 0; i < n; i++) {
-        draw_glyph(frame, font, text[i] - 32, l + i * 8, t, colour);
+        ff_draw_glyph(frame, font, text[i] - 32, l + i * 8, t, colour);
     }
 }
 
 /******************************************************************************************************************************/
 
-static inline void sprite_init(Sprite* sprite, uint32_t w, uint32_t h, uint32_t nframes) {
+static inline void ff_sprite_init(Sprite* sprite, uint32_t w, uint32_t h, uint32_t nframes) {
     Frame temp;
-    frame_init(&temp, w, h);
+    ff_frame_init(&temp, w, h);
 
     sprite->data = (Frame*)malloc(nframes * sizeof(temp));
     sprite->width = w;
     sprite->height = h;
     sprite->nframes = nframes;
 
-    frame_flush(&temp);
+    ff_frame_flush(&temp);
     
     for(uint32_t i = 0; i < sprite->nframes; i++) {
-        frame_init(&sprite->data[i], w, h);
+        ff_frame_init(&sprite->data[i], w, h);
     }
 }
 
-static inline void sprite_flush(Sprite* restrict sprite) {
+static inline void ff_sprite_flush(Sprite* restrict sprite) {
     for(uint32_t i = 0; i < sprite->nframes; i++) {
-        frame_flush(&sprite->data[i]);
+        ff_frame_flush(&sprite->data[i]);
     }
     free(sprite->data);
 }
 
-static inline void sprite_load_stripe(Sprite* restrict sprite, Frame* restrict frame) {
+static inline void ff_sprite_load_stripe(Sprite* restrict sprite, Frame* restrict frame) {
     for(uint32_t i = 0; i < sprite->nframes; i++) {
         for(uint32_t y = 0; y < sprite->height; y++) {
             for(uint32_t x = 0; x < sprite->width; x++) {
-                frame_set(&sprite->data[i], x, y, frame_get(frame, x, y + (i * sprite->height)));
+                ff_frame_set(&sprite->data[i], x, y, ff_frame_get(frame, x, y + (i * sprite->height)));
             }
         }
     }
 }
 
-static inline void draw_ltrb_o(Frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour) {
+static inline void ff_draw_ltrb_o(Frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour) {
     for(uint32_t i = r->l; i <= r->r; ++i) {
-        frame_set(canvas, i, r->t, colour);
-        frame_set(canvas, i, r->b, colour);
+        ff_frame_set(canvas, i, r->t, colour);
+        ff_frame_set(canvas, i, r->b, colour);
     }
     for(uint32_t i = r->t; i <= r->b; i++) {
-        frame_set(canvas, r->l, i, colour);
-        frame_set(canvas, r->r, i, colour);
+        ff_frame_set(canvas, r->l, i, colour);
+        ff_frame_set(canvas, r->r, i, colour);
     }
 }
 
-static inline void draw_ltrb_f(Frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour)
+static inline void ff_draw_ltrb_f(Frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour)
 {
     for(uint32_t y = r->t; y <= r->b; ++y) {
         for(uint32_t x = r->l; x <= r->r; ++x) {
-            frame_set(canvas, x, y, colour);
+            ff_frame_set(canvas, x, y, colour);
         }
     }
 }
 
-Entity* createEntity(Node* restrict node, SectorDescriptor* descriptor) {
+Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
     if (node->entities >= node->capacity) {
         node->capacity = node->capacity * 2 + 4;
         node->at = realloc(node->at, node->capacity * sizeof(Entity));
@@ -789,11 +789,11 @@ Entity* createEntity(Node* restrict node, SectorDescriptor* descriptor) {
     }
 
     for(uint32_t i = 0; i < CT_LIMIT; ++i) {
-        entity->callback[i] = &fuse_link;
+        entity->callback[i] = &ff_fuse_link;
     }
 
     if(!(descriptor->flags & TRANSPARENT)) {
-        draw_ltrb_f (
+        ff_draw_ltrb_f (
             node->parent->layer[SC],
             &entity->bounds,
             entity->index
@@ -807,9 +807,9 @@ Entity* createEntity(Node* restrict node, SectorDescriptor* descriptor) {
 
     if(descriptor->output) {
         printf("---- Set output : %d\n", descriptor->output);
-        auto target = find_entity_by_id(node->parent, descriptor->output);
+        auto target = ff_find_entity_by_id(node->parent, descriptor->output);
         if(target) {
-            add_mod_link(entity, target, CT_VALUE, value_to_textbox);
+            ff_add_mod_link(entity, target, CT_VALUE, ff_value_to_textbox);
             printf("---- Target found...\n");
         }
         else
@@ -819,7 +819,7 @@ Entity* createEntity(Node* restrict node, SectorDescriptor* descriptor) {
     return entity;
 }
 
-Field* createField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags) {
+Field* ffCreateField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags) {
     Field *field = malloc(sizeof(Field));
 
     field->bounds.l     = x;
@@ -850,12 +850,12 @@ Field* createField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size
     if(true) {
         for(uint32_t i = 0; i < CC; ++i) {
             field->layer[i] = malloc(sizeof(Frame));
-            frame_init(field->layer[i],  w, h);
+            ff_frame_init(field->layer[i],  w, h);
         }
 
-        frame_clr(field->layer[SC]);
-        frame_clr(field->layer[SN]);
-        frame_fill(field->layer[BG], BACKGROUND);
+        ff_frame_clr(field->layer[SC]);
+        ff_frame_clr(field->layer[SN]);
+        ff_frame_fill(field->layer[BG], BACKGROUND);
     }
 
     field->node = malloc(size * sizeof(Node));
@@ -874,15 +874,15 @@ Field* createField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size
     canvas->repaint = true;
 
     for(uint32_t i = 0; i < CT_LIMIT; ++i) {
-        canvas->callback[i] = &fuse_link;
+        canvas->callback[i] = &ff_fuse_link;
     }
 
     return field;
 }
 
-void destroyField(Field* restrict field) {
+void ffDestroyField(Field* restrict field) {
     for(uint32_t i = 0; i < CC; ++i) {
-        frame_flush(field->layer[i]);
+        ff_frame_flush(field->layer[i]);
         free(field->layer[i]);
     }
     for(uint32_t n = 0; n < field->nodes; ++n) {
@@ -891,7 +891,7 @@ void destroyField(Field* restrict field) {
             if(s->extension) free(s->extension);
             if(s->data) {
                 if(s->type == ST_NODE) {
-                    frame_flush((Frame*)s->data);
+                    ff_frame_flush((Frame*)s->data);
                 }
                 free(s->data);
             }
@@ -901,9 +901,9 @@ void destroyField(Field* restrict field) {
     free(field->node);
 }
 
-static inline Node* createNode(Field* restrict, uint32_t, uint32_t, size_t);
+static inline Node* ffCreateNode(Field* restrict, uint32_t, uint32_t, size_t);
 
-static inline Node* createNode(Field* restrict field, uint32_t w, uint32_t h, size_t size) {
+static inline Node* ffCreateNode(Field* restrict field, uint32_t w, uint32_t h, size_t size) {
 
     auto index = field->nodes;
 
@@ -925,31 +925,31 @@ static inline Node* createNode(Field* restrict field, uint32_t w, uint32_t h, si
     return &field->node[index];
 }
 
-void empty() {}
+void ff_empty() {}
 
-void fuse_link(Entity*, Entity*) {}
+void ff_fuse_link(Entity*, Entity*) {}
 
-void move_entity(Entity* restrict entity, ltrb32u* restrict bounds) {
+void ff_move_entity(Entity* restrict entity, ltrb32u* restrict bounds) {
     auto field = entity->parent->parent;
-    draw_ltrb_f(field->layer[FG], &entity->bounds, 0x0);
+    ff_draw_ltrb_f(field->layer[FG], &entity->bounds, 0x0);
     if(!(entity->flags & TRANSPARENT)) {
-        draw_ltrb_f(field->layer[SC], &entity->bounds, 0x0);
-        draw_ltrb_f(field->layer[SC], bounds, entity->index);
+        ff_draw_ltrb_f(field->layer[SC], &entity->bounds, 0x0);
+        ff_draw_ltrb_f(field->layer[SC], bounds, entity->index);
     }
     entity->bounds = *bounds;
 }
 
-void add_mod_link(Entity* source, Entity* target, CallbackType type, void (*fn)(Entity*, Entity*)) {
+void ff_add_mod_link(Entity* source, Entity* target, CallbackType type, void (*fn)(Entity*, Entity*)) {
     source->callback[type] = fn;
     source->target[type] = target;
 }
 
-void set_text_data(Entity* restrict entity, const char* restrict text) {
+void ff_set_text_data(Entity* restrict entity, const char* restrict text) {
     strncpy(entity->data, text, TEXTBOX_SIZE);
     entity->repaint = true;
 }
 
-static inline void value_to_textbox(Entity* slider, Entity* tbox) {
+static inline void ff_value_to_textbox(Entity* slider, Entity* tbox) {
     int precision = 2;
     char *text = tbox->data;
     float val = slider->value[CP_COARSE] + slider->value[CP_FINE];
@@ -957,9 +957,9 @@ static inline void value_to_textbox(Entity* slider, Entity* tbox) {
     tbox->repaint = true;
 }
 
-void hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
-    auto uide = frame_get(field->layer[SC], x, y);
-    auto uidn = frame_get(field->layer[SN], x, y);
+void ff_hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
+    auto uide = ff_frame_get(field->layer[SC], x, y);
+    auto uidn = ff_frame_get(field->layer[SN], x, y);
     field->current[IP_NODE] = uidn;
     field->current[IP_ENTITY] = uide;
     if(uidn >= field->nodes || uide >= field->node[uidn].entities) return;
@@ -989,7 +989,7 @@ void hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
         p->staging = true;
 
         if(p->type == ST_NODE) {
-            draw_ltrb_f(
+            ff_draw_ltrb_f(
                 p->parent->parent->layer[SN],
                 &p->bounds, 
                 0x0
@@ -1008,20 +1008,20 @@ void hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
 }
 
 #ifdef DEBUG_OVERLAY
-static inline void draw_debug_overlay(Field* field, Entity* entity) {
+static inline void ff_draw_debug_overlay(Field* field, Entity* entity) {
     constexpr uint32_t colour = 0xFF'FF'FF'90;
-    frame_fill(field->layer[DO], 0);
+    ff_frame_fill(field->layer[DO], 0);
     uint32_t voffset = 10;
     uint32_t vstep = 12;
     uint32_t row = 0;
 
-    drawTextLabel(field->layer[DO], gtFont,    "#", 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont,    "#", 10, voffset + vstep * row++, 100, 10, colour);
 
     if(!entity) return;
 
-    // frame_copy_with_alpha(field->layer[DO], field->layer[SC], 0x30);
+    // ff_frame_copy_with_alpha(field->layer[DO], field->layer[SC], 0x30);
 
-    draw_rect_o(field->layer[DO], 
+    ff_draw_rect_o(field->layer[DO], 
             entity->bounds.l,
             entity->bounds.t, 
             entity->bounds.r,
@@ -1030,32 +1030,32 @@ static inline void draw_debug_overlay(Field* field, Entity* entity) {
 
     char buffer[128];
     snprintf(buffer, 128, "CONTROL INDEX: %u", entity->index);
-    drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "CONTROL UID  : %u", entity->uid);
-    drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "NODE INDEX   : %u", entity->parent->index);
-    drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "NODE UID     : %u", entity->parent->uid);
-    drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "IS CONNECTED : %d", entity->connected);
-    drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "CONNECTION   : %p", (void*)entity->connection);
-    drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "HAS DATA     : %d", entity->has_data);
-    drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "VALUE COARSE : %f", entity->value[0]);
-    drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "VALUE FINE   : %f", entity->value[1]);
-    drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "FLAGS        : %b", entity->flags);
-    drawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     atomic_store_explicit(&force_repaint, true, memory_order_release);
 }
 #endif
 
-void hit_test(Field* restrict field, int x, int y) {
-    auto uid_e = frame_get(field->layer[SC], x, y);
-    auto uid_n = frame_get(field->layer[SN], x, y);
+void ff_hit_test(Field* restrict field, int x, int y) {
+    auto uid_e = ff_frame_get(field->layer[SC], x, y);
+    auto uid_n = ff_frame_get(field->layer[SN], x, y);
 
     if(field->current[IP_ENTITY] != uid_e || field->current[IP_NODE] != uid_n) {
         auto prior_node = field->prior[IP_NODE];
@@ -1066,7 +1066,7 @@ void hit_test(Field* restrict field, int x, int y) {
         auto current = &field->node[uid_n].at[uid_e];
 
         #ifdef DEBUG_OVERLAY
-            draw_debug_overlay(field, current);
+            ff_draw_debug_overlay(field, current);
         #endif
 
         field->prior[IP_ENTITY] = field->current[IP_ENTITY];
@@ -1086,14 +1086,14 @@ void hit_test(Field* restrict field, int x, int y) {
     }
 }
 
-void hit_test_drag(Field* restrict field, int x, int y) {
+void ff_hit_test_drag(Field* restrict field, int x, int y) {
     drag_entity[field->pressed->type](field->pressed, x, y);
     field->repaint = true;
 }
 
-void hit_test_up(Field* restrict field, int x, int y, uint32_t button) {
-    auto uid_e = frame_get(field->layer[SC], x, y);
-    auto uid_n = frame_get(field->layer[SN], x, y);
+void ff_hit_test_up(Field* restrict field, int x, int y, uint32_t button) {
+    auto uid_e = ff_frame_get(field->layer[SC], x, y);
+    auto uid_n = ff_frame_get(field->layer[SN], x, y);
     field->current[IP_NODE] = uid_n;
     field->current[IP_ENTITY] = uid_e;
 
@@ -1127,16 +1127,16 @@ void hit_test_up(Field* restrict field, int x, int y, uint32_t button) {
 
 /*****************************************************************************************************************************/
 
-static void draw_checkbox(Entity* restrict entity) {
+static void ff_draw_checkbox(Entity* restrict entity) {
     auto field = entity->parent->parent;
-    draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
-    draw_ltrb_o(field->layer[FG], &entity->bounds, BORDER);
+    ff_draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
+    ff_draw_ltrb_o(field->layer[FG], &entity->bounds, BORDER);
     if(entity->value[CP_COARSE] > 0.5f)
-        draw_rect_f(field->layer[FG], entity->bounds.l + GAP, entity->bounds.t + GAP, entity->bounds.r - GAP, entity->bounds.b - GAP, SELECTIONBACKGROUND);
+        ff_draw_rect_f(field->layer[FG], entity->bounds.l + GAP, entity->bounds.t + GAP, entity->bounds.r - GAP, entity->bounds.b - GAP, SELECTIONBACKGROUND);
     entity->repaint = false;
 }
 
-void draw_scene(Field* restrict field) {
+void ff_draw_scene(Field* restrict field) {
     for(uint32_t n = 0; n < field->nodes; ++n) {
         for(uint32_t i = 0; i < field->node[n].entities; ++i) {
             auto s = &field->node[n].at[i];
@@ -1150,7 +1150,7 @@ void draw_scene(Field* restrict field) {
 
 /*****************************************************************************************************************************/
 
-static void set_checkbox(Entity* restrict entity, int, int) {
+static void ff_set_checkbox(Entity* restrict entity, int, int) {
     auto coarse = &entity->value[CP_COARSE];
     auto ext = (Checkbox*)entity->extension;
     if(entity->flags & RADIO) {
@@ -1181,7 +1181,7 @@ static void set_checkbox(Entity* restrict entity, int, int) {
 
 /*** Slider *******************************************************************************************************************/
 
-static void set_slider(Entity* restrict entity, int x, int y) {
+static void ff_set_slider(Entity* restrict entity, int x, int y) {
     const float v = 0.1f;
     const auto coarse = &entity->value[CP_COARSE];
     const auto fine = &entity->value[CP_FINE];
@@ -1217,13 +1217,13 @@ static void set_slider(Entity* restrict entity, int x, int y) {
     entity->callback[CT_VALUE](entity, entity->target[CT_VALUE]);
 }
 
-static void draw_slider(Entity* restrict entity) {
+static void ff_draw_slider(Entity* restrict entity) {
     auto ext = (Slider*)entity->extension;
     auto coarse = &entity->value[CP_COARSE];
     auto fine = &entity->value[CP_FINE];
     auto field = entity->parent->parent;
-    draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
-    draw_ltrb_o(field->layer[FG], &entity->bounds, BORDER);
+    ff_draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
+    ff_draw_ltrb_o(field->layer[FG], &entity->bounds, BORDER);
 
     float frac = (*coarse - entity->range[0]) / (entity->range[1] - entity->range[0]);
 
@@ -1232,12 +1232,12 @@ static void draw_slider(Entity* restrict entity) {
             if(entity->flags & VERTICAL) {
                 int h   = entity->bounds.b - entity->bounds.t - GRIP * 2 - GAP * 2;
                 int pos = (int)((1.0f - frac) * (float)h) + entity->bounds.t + GRIP + GAP;
-                draw_rect_f(field->layer[FG], entity->bounds.l + GAP, pos - GRIP,
+                ff_draw_rect_f(field->layer[FG], entity->bounds.l + GAP, pos - GRIP,
                             entity->bounds.r - GAP, pos + GRIP, HIGHLIGHT);
             } else {
                 int w   = entity->bounds.r - entity->bounds.l - GRIP * 2 - GAP * 2;
                 int pos = (int)(frac * (float)w) + entity->bounds.l + GRIP + GAP;
-                draw_rect_f(field->layer[FG], pos - GRIP, entity->bounds.t + GAP,
+                ff_draw_rect_f(field->layer[FG], pos - GRIP, entity->bounds.t + GAP,
                             pos + GRIP, entity->bounds.b - GAP, HIGHLIGHT);
             }
             break;
@@ -1246,12 +1246,12 @@ static void draw_slider(Entity* restrict entity) {
             if(entity->flags & VERTICAL) {
                 int h   = entity->bounds.b - entity->bounds.t - GAP * 2;
                 int pos = (int)((1.0f - frac) * (float)h) + entity->bounds.t + GAP;
-                draw_rect_f(field->layer[FG], entity->bounds.l + GAP, pos,
+                ff_draw_rect_f(field->layer[FG], entity->bounds.l + GAP, pos,
                             entity->bounds.r - GAP, entity->bounds.b - GAP, HIGHLIGHT);
             } else {
                 int w   = entity->bounds.r - entity->bounds.l - GAP * 2;
                 int pos = (int)(frac * (float)w) + entity->bounds.l + GAP;
-                draw_rect_f(field->layer[FG], entity->bounds.l + GAP, entity->bounds.t + GAP,
+                ff_draw_rect_f(field->layer[FG], entity->bounds.l + GAP, entity->bounds.t + GAP,
                             pos, entity->bounds.b - GAP, HIGHLIGHT);
             }
             break;
@@ -1265,11 +1265,11 @@ static void draw_slider(Entity* restrict entity) {
                 int cy = entity->bounds.t + GAP + (int)((1.0f - zero_frac) * (float)h);
                 int vy = entity->bounds.t + GAP + (int)((1.0f - frac) * (float)h);
                 if(vy < cy) {
-                    draw_rect_f(field->layer[FG], entity->bounds.l + GAP, vy,
+                    ff_draw_rect_f(field->layer[FG], entity->bounds.l + GAP, vy,
                                 entity->bounds.r - GAP, cy, HIGHLIGHT);
                 } 
                 else if(vy > cy) {
-                    draw_rect_f(field->layer[FG], entity->bounds.l + GAP, cy,
+                    ff_draw_rect_f(field->layer[FG], entity->bounds.l + GAP, cy,
                                 entity->bounds.r - GAP, vy, HIGHLIGHT);
                 }
             } 
@@ -1278,11 +1278,11 @@ static void draw_slider(Entity* restrict entity) {
                 int cx = entity->bounds.l + GAP + (int)(zero_frac * (float)w);
                 int vx = entity->bounds.l + GAP + (int)(frac * (float)w);
                 if(vx > cx) {
-                    draw_rect_f(field->layer[FG], cx + 1, entity->bounds.t + GAP,
+                    ff_draw_rect_f(field->layer[FG], cx + 1, entity->bounds.t + GAP,
                                 vx, entity->bounds.b - GAP, HIGHLIGHT);
                 } 
                 else if(vx < cx) {
-                    draw_rect_f(field->layer[FG], vx, entity->bounds.t + GAP,
+                    ff_draw_rect_f(field->layer[FG], vx, entity->bounds.t + GAP,
                                 cx - 1, entity->bounds.b - GAP, HIGHLIGHT);
                 }
             }
@@ -1296,7 +1296,7 @@ static void draw_slider(Entity* restrict entity) {
     entity->repaint = false;
 }
 
-static void scroll_slider(Entity* restrict entity, int x, int y) {
+static void ff_scroll_slider(Entity* restrict entity, int x, int y) {
     auto fine = &entity->value[CP_FINE];
     auto coarse = &entity->value[CP_COARSE];
     auto ext = (Slider*)entity->extension;
@@ -1318,7 +1318,7 @@ static void scroll_slider(Entity* restrict entity, int x, int y) {
 
 /*** Slider *******************************************************************************************************************/
 
-static void set_encoder(Entity* restrict entity, int x, int y) {
+static void ff_set_encoder(Entity* restrict entity, int x, int y) {
     const float v = 0.1f;
     const auto coarse = &entity->value[CP_COARSE];
     const auto fine = &entity->value[CP_FINE];
@@ -1360,13 +1360,13 @@ static void set_encoder(Entity* restrict entity, int x, int y) {
     entity->callback[CT_VALUE](entity, entity->target[CT_VALUE]);
 }
 
-static void draw_encoder(Entity* restrict entity) {
+static void ff_draw_encoder(Entity* restrict entity) {
     auto ext = (Slider*)entity->extension;
     auto coarse = &entity->value[CP_COARSE];
     auto fine = &entity->value[CP_FINE];
     auto field = entity->parent->parent;
-    draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
-    draw_ltrb_o(field->layer[FG], &entity->bounds, BORDER);
+    ff_draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
+    ff_draw_ltrb_o(field->layer[FG], &entity->bounds, BORDER);
 
     float frac = (*coarse - entity->range[0]) / (entity->range[1] - entity->range[0]);
 
@@ -1375,11 +1375,11 @@ static void draw_encoder(Entity* restrict entity) {
         if(ext->inverse) {
             frac = 1.0f - frac;
             int pos = (int)((1.0f - frac) * (float)h) + entity->bounds.t + GAP;
-            draw_rect_f(field->layer[FG], entity->bounds.l + GAP, entity->bounds.t + GAP,
+            ff_draw_rect_f(field->layer[FG], entity->bounds.l + GAP, entity->bounds.t + GAP,
                         entity->bounds.r - GAP, pos, HIGHLIGHT);
         } else {
             int pos = (int)((1.0f - frac) * (float)h) + entity->bounds.t + GAP;
-            draw_rect_f(field->layer[FG], entity->bounds.l + GAP, pos,
+            ff_draw_rect_f(field->layer[FG], entity->bounds.l + GAP, pos,
                         entity->bounds.r - GAP, entity->bounds.b - GAP, HIGHLIGHT);
         }
     } 
@@ -1389,7 +1389,7 @@ static void draw_encoder(Entity* restrict entity) {
         if(ext->inverse) {
             frac = 1.0f - frac;
             pos = (int)(frac * (float)w) + entity->bounds.l + GAP;
-            draw_rect_f(field->layer[FG], 
+            ff_draw_rect_f(field->layer[FG], 
                         pos, 
                         entity->bounds.t + GAP,
                         entity->bounds.r - GAP, 
@@ -1397,7 +1397,7 @@ static void draw_encoder(Entity* restrict entity) {
                         HIGHLIGHT);
         }
         else {
-            draw_rect_f(field->layer[FG], 
+            ff_draw_rect_f(field->layer[FG], 
                         entity->bounds.l + GAP, 
                         entity->bounds.t + GAP,
                         pos, 
@@ -1409,7 +1409,7 @@ static void draw_encoder(Entity* restrict entity) {
     entity->repaint = false;
 }
 
-static void scroll_encoder(Entity* restrict entity, int x, int y) {
+static void ff_scroll_encoder(Entity* restrict entity, int x, int y) {
     const auto coarse = &entity->value[CP_COARSE];
     const auto fine = &entity->value[CP_FINE];
     auto ext = (Slider*)entity->extension;
@@ -1450,33 +1450,33 @@ static void scroll_encoder(Entity* restrict entity, int x, int y) {
     entity->callback[CT_VALUE](entity, entity->target[CT_VALUE]);
 }
 
-static void draw_button(Entity* restrict entity) {
+static void ff_draw_button(Entity* restrict entity) {
     auto field = entity->parent->parent;
-    draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
-    draw_ltrb_o(field->layer[FG], &entity->bounds, BORDER);
+    ff_draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
+    ff_draw_ltrb_o(field->layer[FG], &entity->bounds, BORDER);
 
     if(entity->hovered)
-        draw_rect_f(field->layer[FG], entity->bounds.l + GAP, entity->bounds.t + GAP, entity->bounds.r - GAP, entity->bounds.b - GAP, ACTIVE);
+        ff_draw_rect_f(field->layer[FG], entity->bounds.l + GAP, entity->bounds.t + GAP, entity->bounds.r - GAP, entity->bounds.b - GAP, ACTIVE);
 
     if(entity->value[CP_COARSE] > 0.5f)
-        draw_rect_f(field->layer[FG], entity->bounds.l + GAP, entity->bounds.t + GAP, entity->bounds.r - GAP, entity->bounds.b - GAP, ACCENT);
+        ff_draw_rect_f(field->layer[FG], entity->bounds.l + GAP, entity->bounds.t + GAP, entity->bounds.r - GAP, entity->bounds.b - GAP, ACCENT);
 
     entity->repaint = false;
 }
 
 /******************************************************************************************************************************/
 
-static void draw_rotary(Entity* restrict entity) {
+static void ff_draw_rotary(Entity* restrict entity) {
     auto field = entity->parent->parent;
     auto range = entity->range[1] - entity->range[0];
     Sprite* spr = (Sprite*)entity->data;
     int f = ((entity->value[CP_COARSE] - entity->range[0]) / range) * spr->nframes;
-    frame_copy_at(field->layer[FG], &spr->data[f], entity->bounds.l, entity->bounds.t);
+    ff_frame_copy_at(field->layer[FG], &spr->data[f], entity->bounds.l, entity->bounds.t);
 
     entity->repaint = false;
 }
 
-static void set_rotary(Entity* restrict entity, int x, int y) {
+static void ff_set_rotary(Entity* restrict entity, int x, int y) {
     auto field = entity->parent->parent;
     auto coarse = &entity->value[CP_COARSE];
     auto ext = (rotary*)entity->extension;
@@ -1495,7 +1495,7 @@ static void set_rotary(Entity* restrict entity, int x, int y) {
 
 /******************************************************************************************************************************/
 
-static void set_sprite_inf_slider(Entity* restrict entity, int x, int y) {
+static void ff_set_sprite_inf_slider(Entity* restrict entity, int x, int y) {
     auto field = entity->parent->parent;
     auto coarse = &entity->value[CP_COARSE];
     auto ext = (rotary*)entity->extension;
@@ -1515,7 +1515,7 @@ static void set_sprite_inf_slider(Entity* restrict entity, int x, int y) {
     field->memory[SP_CURSOR_PRIOR].y = (float)y;
 }
 
-static void set_button(Entity* restrict entity, int, int) {
+static void ff_set_button(Entity* restrict entity, int, int) {
     auto field = entity->parent->parent;
     auto coarse = &entity->value[CP_COARSE];
     if(*coarse < 0.5f) *coarse = 1.0f;
@@ -1526,7 +1526,7 @@ static void set_button(Entity* restrict entity, int, int) {
     field->prior[IP_NODE] = field->current[IP_NODE];
 }
 
-static void release_button(Entity* restrict entity, int, int) {
+static void ff_release_button(Entity* restrict entity, int, int) {
     auto field = entity->parent->parent;
     auto pressed = field->pressed; 
     auto coarse = &pressed->value[CP_COARSE];
@@ -1541,23 +1541,23 @@ static void release_button(Entity* restrict entity, int, int) {
     }
 }
 
-static void draw_sprite_button(Entity* restrict entity) {
+static void ff_draw_sprite_button(Entity* restrict entity) {
     auto field = entity->parent->parent;
     Sprite* spr = (Sprite*)entity->data;
 
     if(entity->value[CP_COARSE] > 0.5f)
-        frame_copy_at(field->layer[FG], &spr->data[1], entity->bounds.l, entity->bounds.t);
+        ff_frame_copy_at(field->layer[FG], &spr->data[1], entity->bounds.l, entity->bounds.t);
     else
-        frame_copy_at(field->layer[FG], &spr->data[0], entity->bounds.l, entity->bounds.t);
+        ff_frame_copy_at(field->layer[FG], &spr->data[0], entity->bounds.l, entity->bounds.t);
 
     entity->repaint = false;
 }
 
-static void init_socket(Entity* restrict entity) {
+static void ff_init_socket(Entity* restrict entity) {
     entity->data = (float*)calloc(SPLINE_SEGMENTS * 2, sizeof(float));
 }
 
-static void set_socket(Entity* restrict entity, int, int) {
+static void ff_set_socket(Entity* restrict entity, int, int) {
     auto field = entity->parent->parent;
     auto coarse = &entity->value[CP_COARSE];
     if(*coarse < 0.5f) *coarse = 1.0f;
@@ -1568,7 +1568,7 @@ static void set_socket(Entity* restrict entity, int, int) {
     field->prior[IP_NODE] = field->current[IP_NODE];
 }
 
-static void draw_socket(Entity* restrict entity) {
+static void ff_draw_socket(Entity* restrict entity) {
     auto field = entity->parent->parent;
     auto r = entity->width / 2;
     point32u center = {
@@ -1577,13 +1577,13 @@ static void draw_socket(Entity* restrict entity) {
     };
     auto color = entity->flags & OUTPUT ? RED : PURPLE;
 
-    draw_circle_f(field->layer[FG], center.x, center.y, r, color);
+    ff_draw_circle_f(field->layer[FG], center.x, center.y, r, color);
     r = entity->width / 4;
-    draw_circle_f(field->layer[FG], center.x, center.y, r, BUTTONS);
+    ff_draw_circle_f(field->layer[FG], center.x, center.y, r, BUTTONS);
     entity->repaint = false;
 }
 
-static inline point interpolate_bezier(point a, point b, point c, point d, float t)
+static inline point ff_interpolate_bezier(point a, point b, point c, point d, float t)
 {
     float ti = 1.0f - t;
     float tsq = t * t;
@@ -1602,7 +1602,7 @@ static inline point interpolate_bezier(point a, point b, point c, point d, float
     return o;
 }
 
-static void drag_socket(Entity* entity, int x, int y)
+static void ff_drag_socket(Entity* entity, int x, int y)
 {
     auto field = entity->parent->parent;
     if(entity->connected) {
@@ -1661,13 +1661,13 @@ static void drag_socket(Entity* entity, int x, int y)
     const float inc = 1.0f / (float)(SPLINE_SEGMENTS - 1) ;
     float t = 0.0;
 
-    auto uva = screen_to_uv(a.x, a.y, o->width, o->height);
-    auto uvb = screen_to_uv(b.x, b.y, o->width, o->height);
-    auto uvc = screen_to_uv(c.x, c.y, o->width, o->height);
-    auto uvd = screen_to_uv(d.x, d.y, o->width, o->height);
+    auto uva = ff_screen_to_uv(a.x, a.y, o->width, o->height);
+    auto uvb = ff_screen_to_uv(b.x, b.y, o->width, o->height);
+    auto uvc = ff_screen_to_uv(c.x, c.y, o->width, o->height);
+    auto uvd = ff_screen_to_uv(d.x, d.y, o->width, o->height);
 
     for(uint32_t i = 0, j = 0; i < SPLINE_SEGMENTS; i++) {
-        point uvp = interpolate_bezier(uva, uvb, uvc, uvd, t);
+        point uvp = ff_interpolate_bezier(uva, uvb, uvc, uvd, t);
 
         ((float*)entity->data)[j++] = uvp.x;
         ((float*)entity->data)[j++] = uvp.y;
@@ -1678,7 +1678,7 @@ static void drag_socket(Entity* entity, int x, int y)
     entity->has_data = true;
 }
 
-static void drag_cord(Entity* restrict entity, int x, int y)
+static void ff_drag_cord(Entity* restrict entity, int x, int y)
 {
     if(entity->connected) {
         if(entity->has_data) {
@@ -1728,13 +1728,13 @@ static void drag_cord(Entity* restrict entity, int x, int y)
     const float inc = 1.0f / (float)(SPLINE_SEGMENTS - 1) ;
     float t = 0.0;
 
-    auto uva = screen_to_uv(a.x, a.y, o->width, o->height);
-    auto uvb = screen_to_uv(b.x, b.y, o->width, o->height);
-    auto uvc = screen_to_uv(c.x, c.y, o->width, o->height);
-    auto uvd = screen_to_uv(d.x, d.y, o->width, o->height);
+    auto uva = ff_screen_to_uv(a.x, a.y, o->width, o->height);
+    auto uvb = ff_screen_to_uv(b.x, b.y, o->width, o->height);
+    auto uvc = ff_screen_to_uv(c.x, c.y, o->width, o->height);
+    auto uvd = ff_screen_to_uv(d.x, d.y, o->width, o->height);
 
     for(uint32_t i = 0, j = 0; i < SPLINE_SEGMENTS; i++) {
-        point uvp = interpolate_bezier(uva, uvb, uvc, uvd, t);
+        point uvp = ff_interpolate_bezier(uva, uvb, uvc, uvd, t);
 
         ((float*)entity->data)[j++] = uvp.x;
         ((float*)entity->data)[j++] = uvp.y;
@@ -1745,7 +1745,7 @@ static void drag_cord(Entity* restrict entity, int x, int y)
     entity->has_data = true;
 }
 
-inline static void connect(Entity* restrict source, Entity* restrict target) {
+inline static void ff_connect(Entity* restrict source, Entity* restrict target) {
     if(target->connected) {
         if(target->has_data) {
             memset(target->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
@@ -1758,7 +1758,7 @@ inline static void connect(Entity* restrict source, Entity* restrict target) {
             target->connection->connected = false;
         }
     }
-    drag_cord(source, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
+    ff_drag_cord(source, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
     source->connected = true;
     target->connected = true;
     source->connection = target;
@@ -1768,7 +1768,7 @@ inline static void connect(Entity* restrict source, Entity* restrict target) {
     source->parent->parent->connecting = false;
 }
 
-inline static void disconnect(Entity* restrict entity) {
+inline static void ff_disconnect(Entity* restrict entity) {
     auto target = entity->connection;
 
     if(entity->has_data) {
@@ -1789,48 +1789,48 @@ inline static void disconnect(Entity* restrict entity) {
     }
 }
 
-static void release_socket(Entity* restrict entity, int x, int y) {
+static void ff_release_socket(Entity* restrict entity, int x, int y) {
     auto field = entity->parent->parent;
-    auto target_uid = frame_get(field->layer[SC], x, y);
-    auto target_nid = frame_get(field->layer[SN], x, y);
+    auto target_uid = ff_frame_get(field->layer[SC], x, y);
+    auto target_nid = ff_frame_get(field->layer[SN], x, y);
     if(target_nid >= field->nodes || target_uid >= field->node[target_nid].entities) return;
     auto target = &field->node[target_nid].at[target_uid];
     
-    if(target->connected) disconnect(target);
+    if(target->connected) ff_disconnect(target);
 
     if((entity->flags & OUTPUT) && (target->flags & INPUT)) {
-        connect(entity, target);
+        ff_connect(entity, target);
         return;
     }
     else if((entity->flags & INPUT) && (target->flags & OUTPUT)) {
-        connect(entity, target);
+        ff_connect(entity, target);
         return;
     }
     
-    disconnect(entity);
+    ff_disconnect(entity);
 }
 
 /*****************************************************************************************************************************/
 
-static void init_node(Entity* restrict entity) {
+static void ff_init_node(Entity* restrict entity) {
     entity->data = (Frame*)calloc(1, sizeof(Frame));
-    frame_init((Frame*)entity->data, entity->width, entity->height);
-    draw_ltrb_f(entity->parent->parent->layer[SN], &entity->bounds, entity->parent->index);
+    ff_frame_init((Frame*)entity->data, entity->width, entity->height);
+    ff_draw_ltrb_f(entity->parent->parent->layer[SN], &entity->bounds, entity->parent->index);
 }
 
-static void set_node(Entity* restrict entity, int, int) {
+static void ff_set_node(Entity* restrict entity, int, int) {
     entity->repaint = true;
     auto field = entity->parent->parent;
     field->prior[IP_ENTITY] = field->current[IP_ENTITY];
     field->prior[IP_NODE] = field->current[IP_NODE];
 }
 
-static inline bool has_overlap(const Entity* restrict entity) {
+static inline bool ff_has_overlap(const Entity* restrict entity) {
     auto field = entity->parent->parent;
     const auto l = field->layer[SN];
     for(uint32_t y = entity->bounds.t; y < entity->bounds.b; ++y) {
         for(uint32_t x = entity->bounds.l; x < entity->bounds.r; ++x) {
-            auto v = frame_get(l, x, y);
+            auto v = ff_frame_get(l, x, y);
             if(v && v != entity->parent->index)
                 return true;
         }
@@ -1838,22 +1838,22 @@ static inline bool has_overlap(const Entity* restrict entity) {
     return false;
 }
 
-static void draw_node(Entity* restrict entity) {
+static void ff_draw_node(Entity* restrict entity) {
     auto field = entity->parent->parent;
     auto l = entity->staging ? ST : NG;
 
     if(l == ST) {
-        frame_clr(field->layer[l]);
-        draw_ltrb_o(field->layer[l], &entity->bounds, has_overlap(entity) ? ERROR : HIGHLIGHT);
+        ff_frame_clr(field->layer[l]);
+        ff_draw_ltrb_o(field->layer[l], &entity->bounds, ff_has_overlap(entity) ? ERROR : HIGHLIGHT);
     }
     else {
-        draw_ltrb_f(field->layer[l], &entity->bounds, SECONDBACKGROUND);
-        draw_ltrb_o(field->layer[l], &entity->bounds, BORDER);
+        ff_draw_ltrb_f(field->layer[l], &entity->bounds, SECONDBACKGROUND);
+        ff_draw_ltrb_o(field->layer[l], &entity->bounds, BORDER);
     }
     entity->repaint = false;
 }
 
-static void drag_node(Entity* restrict entity, int x, int y)
+static void ff_drag_node(Entity* restrict entity, int x, int y)
 {
     auto field = entity->parent->parent;
     bool moved = false;
@@ -1888,10 +1888,10 @@ static void drag_node(Entity* restrict entity, int x, int y)
     }
 }
 
-static void release_node(Entity* restrict entity, int, int) 
+static void ff_release_node(Entity* restrict entity, int, int) 
 {
     auto field = entity->parent->parent;
-    auto overlap = has_overlap(entity);
+    auto overlap = ff_has_overlap(entity);
 
     ltrb32u ir = {
         .l = field->memory[SP_LT_PRESS].x, 
@@ -1902,18 +1902,18 @@ static void release_node(Entity* restrict entity, int, int)
 
     if(overlap) { 
         entity->bounds = ir;
-        draw_ltrb_f(field->layer[SN], &ir, entity->parent->index);
-        draw_ltrb_f(field->layer[NG], &ir, 0x0);
+        ff_draw_ltrb_f(field->layer[SN], &ir, entity->parent->index);
+        ff_draw_ltrb_f(field->layer[NG], &ir, 0x0);
 
         for(uint32_t i = 0; i < entity->nodes; ++i) {
             entity->parent->at[i].repaint = true;
         }
     }
     else {
-        draw_ltrb_f(field->layer[SN], &ir, 0x0);
-        draw_ltrb_f(field->layer[SN], &entity->bounds, entity->parent->index);
+        ff_draw_ltrb_f(field->layer[SN], &ir, 0x0);
+        ff_draw_ltrb_f(field->layer[SN], &entity->bounds, entity->parent->index);
 
-        draw_ltrb_f(field->layer[NG], &ir, 0x0);
+        ff_draw_ltrb_f(field->layer[NG], &ir, 0x0);
 
         int dx = entity->bounds.l - field->memory[SP_LT_PRESS].x;
         int dy = entity->bounds.t - field->memory[SP_LT_PRESS].y;
@@ -1929,15 +1929,15 @@ static void release_node(Entity* restrict entity, int, int)
                 .b = child->bounds.b + dy
             };
 
-            move_entity(child, &r); 
+            ff_move_entity(child, &r); 
 
             if(child->connected) {
                 auto target = child->connection;
                 if(child->has_data) {
-                    drag_cord(child, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
+                    ff_drag_cord(child, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
                 }
                 else if(target->has_data) {
-                    drag_cord(target, child->bounds.l + child->width / 2, child->bounds.t + child->height / 2);
+                    ff_drag_cord(target, child->bounds.l + child->width / 2, child->bounds.t + child->height / 2);
                 }
             }
 
@@ -1945,7 +1945,7 @@ static void release_node(Entity* restrict entity, int, int)
         }
     }
 
-    frame_clr(field->layer[ST]);
+    ff_frame_clr(field->layer[ST]);
     field->staging = false;
     entity->staging = false;
     entity->repaint = true;
@@ -1954,23 +1954,23 @@ static void release_node(Entity* restrict entity, int, int)
 
 /*****************************************************************************************************************************/
 
-static void init_textbox(Entity* restrict entity) {
+static void ff_init_textbox(Entity* restrict entity) {
     entity->data = (char*)calloc(TEXTBOX_SIZE, sizeof(char)); 
 }
 
-static void set_textbox(Entity* restrict entity, int, int) {
+static void ff_set_textbox(Entity* restrict entity, int, int) {
     entity->repaint = true;
 }
 
-static void draw_textbox(Entity* restrict entity) {
+static void ff_draw_textbox(Entity* restrict entity) {
     auto field = entity->parent->parent;
-    draw_ltrb_f(field->layer[FG], &entity->bounds, SECONDBACKGROUND);
+    ff_draw_ltrb_f(field->layer[FG], &entity->bounds, SECONDBACKGROUND);
     char *text = entity->data;
     //auto len = strlen(text);
     //auto offset_x = (entity->width - 10 * len) / 2;
     auto offset_y = (entity->height - 8) / 2;
 
-    drawTextLabel(
+    ffDrawTextLabel(
         field->layer[FG],
         gtFont,
         text,
@@ -1986,25 +1986,25 @@ static void draw_textbox(Entity* restrict entity) {
 
 /*****************************************************************************************************************************/
 
-static void draw_canvas(Entity* restrict entity) 
+static void ff_draw_canvas(Entity* restrict entity) 
 {
     auto field = entity->parent->parent;
-    frame_fill(field->layer[BG], BACKGROUND);
+    ff_frame_fill(field->layer[BG], BACKGROUND);
     uint32_t major = 4;
     if(true) {
             
         for(uint32_t x = field->step, l = 1; x < field->layer[BG]->width; x += field->step) {
             for(uint32_t y = 0; y < field->layer[BG]->height; ++y) {
-                if(!frame_get(field->layer[SN], x, y))
-                    frame_set(field->layer[BG], x, y, l ? MINOR : MAJOR);
+                if(!ff_frame_get(field->layer[SN], x, y))
+                    ff_frame_set(field->layer[BG], x, y, l ? MINOR : MAJOR);
             }
             if(++l >= major) l = 0;
         }
    
         for(uint32_t y = field->step, l = 1; y < field->layer[BG]->height; y += field->step) {
             for(uint32_t x = 0; x < field->layer[BG]->width; ++x) {
-                if(!frame_get(field->layer[SN], x, y))
-                    frame_set(field->layer[BG], x, y, l ? MINOR : MAJOR);
+                if(!ff_frame_get(field->layer[SN], x, y))
+                    ff_frame_set(field->layer[BG], x, y, l ? MINOR : MAJOR);
             }
             if(++l >= major) l = 0;
         }
@@ -2013,138 +2013,138 @@ static void draw_canvas(Entity* restrict entity)
 
 /*****************************************************************************************************************************/
 
-static inline void init_none(Entity* restrict) {}
+static inline void ff_init_none(Entity* restrict) {}
 
 void (*init_entity[])(Entity* restrict)  = {
-    [ST_SLIDER]                 = init_none,
-    [ST_ENCODER]                = init_none,
-    [ST_ROTARY]                 = init_none,  
-    [ST_SPRITE_INF_SLIDER]      = init_none,  
-    [ST_SOCKET]                 = init_socket,
-    [ST_CHECKBOX]               = init_none,  
-    [ST_MOMENTARY]              = init_none,  
-    [ST_SPRITE_CHECKBOX]        = init_none,  
-    [ST_SPRITE_BUTTON]          = init_none,  
-    [ST_CANVAS]                 = init_none,  
-    [ST_TEXTBOX]                = init_textbox,  
-    [ST_NODE]                   = init_node,  
+    [ST_SLIDER]                 = ff_init_none,
+    [ST_ENCODER]                = ff_init_none,
+    [ST_ROTARY]                 = ff_init_none,  
+    [ST_SPRITE_INF_SLIDER]      = ff_init_none,  
+    [ST_SOCKET]                 = ff_init_socket,
+    [ST_CHECKBOX]               = ff_init_none,  
+    [ST_MOMENTARY]              = ff_init_none,  
+    [ST_SPRITE_CHECKBOX]        = ff_init_none,  
+    [ST_SPRITE_BUTTON]          = ff_init_none,  
+    [ST_CANVAS]                 = ff_init_none,  
+    [ST_TEXTBOX]                = ff_init_textbox,  
+    [ST_NODE]                   = ff_init_node,  
 };
 
-static inline void set_none(Entity* restrict, int, int) {}
+static inline void ff_set_none(Entity* restrict, int, int) {}
 
 void (*set_entity[])(Entity* restrict, int, int) = {
-    [ST_SLIDER]                 = set_slider,   
-    [ST_ENCODER]                = set_encoder,   
-    [ST_ROTARY]                 = set_rotary,     
-    [ST_SPRITE_INF_SLIDER]      = set_sprite_inf_slider, 
-    [ST_SOCKET]                 = set_socket,            
-    [ST_CHECKBOX]               = set_checkbox,          
-    [ST_MOMENTARY]              = set_button,            
-    [ST_SPRITE_CHECKBOX]        = set_checkbox,          
-    [ST_SPRITE_BUTTON]          = set_button,            
-    [ST_CANVAS]                 = set_none,              
-    [ST_TEXTBOX]                = set_textbox,
-    [ST_NODE]                   = set_node               
+    [ST_SLIDER]                 = ff_set_slider,   
+    [ST_ENCODER]                = ff_set_encoder,   
+    [ST_ROTARY]                 = ff_set_rotary,     
+    [ST_SPRITE_INF_SLIDER]      = ff_set_sprite_inf_slider, 
+    [ST_SOCKET]                 = ff_set_socket,            
+    [ST_CHECKBOX]               = ff_set_checkbox,          
+    [ST_MOMENTARY]              = ff_set_button,            
+    [ST_SPRITE_CHECKBOX]        = ff_set_checkbox,          
+    [ST_SPRITE_BUTTON]          = ff_set_button,            
+    [ST_CANVAS]                 = ff_set_none,              
+    [ST_TEXTBOX]                = ff_set_textbox,
+    [ST_NODE]                   = ff_set_node               
 };
 
 void (*draw_entity[])(Entity* restrict) = {
-    [ST_SLIDER]                 = draw_slider,        
-    [ST_ENCODER]                = draw_encoder,        
-    [ST_ROTARY]                 = draw_rotary, 
-    [ST_SPRITE_INF_SLIDER]      = draw_rotary, 
-    [ST_SOCKET]                 = draw_socket,        
-    [ST_CHECKBOX]               = draw_checkbox,      
-    [ST_MOMENTARY]              = draw_button,        
-    [ST_SPRITE_CHECKBOX]        = draw_sprite_button, 
-    [ST_SPRITE_BUTTON]          = draw_sprite_button, 
-    [ST_CANVAS]                 = draw_canvas,        
-    [ST_TEXTBOX]                = draw_textbox,
-    [ST_NODE]                   = draw_node           
+    [ST_SLIDER]                 = ff_draw_slider,        
+    [ST_ENCODER]                = ff_draw_encoder,        
+    [ST_ROTARY]                 = ff_draw_rotary, 
+    [ST_SPRITE_INF_SLIDER]      = ff_draw_rotary, 
+    [ST_SOCKET]                 = ff_draw_socket,        
+    [ST_CHECKBOX]               = ff_draw_checkbox,      
+    [ST_MOMENTARY]              = ff_draw_button,        
+    [ST_SPRITE_CHECKBOX]        = ff_draw_sprite_button, 
+    [ST_SPRITE_BUTTON]          = ff_draw_sprite_button, 
+    [ST_CANVAS]                 = ff_draw_canvas,        
+    [ST_TEXTBOX]                = ff_draw_textbox,
+    [ST_NODE]                   = ff_draw_node           
 };
 
-static inline void drag_none(Entity* restrict, int, int) {}
+static inline void ff_drag_none(Entity* restrict, int, int) {}
 
 void (*drag_entity[])(Entity* restrict, int, int) = {
-    [ST_SLIDER]                 = set_slider,           
-    [ST_ENCODER]                = set_encoder,           
-    [ST_ROTARY]                 = set_rotary,    
-    [ST_SPRITE_INF_SLIDER]      = set_sprite_inf_slider,
-    [ST_SOCKET]                 = drag_socket,          
-    [ST_CHECKBOX]               = drag_none,             
-    [ST_MOMENTARY]              = drag_none,             
-    [ST_SPRITE_CHECKBOX]        = drag_none,             
-    [ST_SPRITE_BUTTON]          = drag_none,             
-    [ST_CANVAS]                 = drag_none,             
-    [ST_TEXTBOX]                = drag_none,  
-    [ST_NODE]                   = drag_node             
+    [ST_SLIDER]                 = ff_set_slider,           
+    [ST_ENCODER]                = ff_set_encoder,           
+    [ST_ROTARY]                 = ff_set_rotary,    
+    [ST_SPRITE_INF_SLIDER]      = ff_set_sprite_inf_slider,
+    [ST_SOCKET]                 = ff_drag_socket,          
+    [ST_CHECKBOX]               = ff_drag_none,             
+    [ST_MOMENTARY]              = ff_drag_none,             
+    [ST_SPRITE_CHECKBOX]        = ff_drag_none,             
+    [ST_SPRITE_BUTTON]          = ff_drag_none,             
+    [ST_CANVAS]                 = ff_drag_none,             
+    [ST_TEXTBOX]                = ff_drag_none,  
+    [ST_NODE]                   = ff_drag_node             
 };
 
-static inline void scroll_none(Entity* restrict, int, int) {}
+static inline void ff_scroll_none(Entity* restrict, int, int) {}
 
 void (*scroll_entity[])(Entity* restrict, int, int) = {
-    [ST_SLIDER]                 = scroll_slider,     
-    [ST_ENCODER]                = scroll_encoder,     
-    [ST_ROTARY]                 = scroll_slider,     
-    [ST_SPRITE_INF_SLIDER]      = scroll_slider,     
-    [ST_SOCKET]                 = scroll_none,          
-    [ST_CHECKBOX]               = scroll_none,          
-    [ST_MOMENTARY]              = scroll_none,          
-    [ST_SPRITE_CHECKBOX]        = scroll_none,          
-    [ST_SPRITE_BUTTON]          = scroll_none,          
-    [ST_CANVAS]                 = scroll_none,          
-    [ST_TEXTBOX]                = scroll_none,  
-    [ST_NODE]                   = scroll_none 
+    [ST_SLIDER]                 = ff_scroll_slider,     
+    [ST_ENCODER]                = ff_scroll_encoder,     
+    [ST_ROTARY]                 = ff_scroll_slider,     
+    [ST_SPRITE_INF_SLIDER]      = ff_scroll_slider,     
+    [ST_SOCKET]                 = ff_scroll_none,          
+    [ST_CHECKBOX]               = ff_scroll_none,          
+    [ST_MOMENTARY]              = ff_scroll_none,          
+    [ST_SPRITE_CHECKBOX]        = ff_scroll_none,          
+    [ST_SPRITE_BUTTON]          = ff_scroll_none,          
+    [ST_CANVAS]                 = ff_scroll_none,          
+    [ST_TEXTBOX]                = ff_scroll_none,  
+    [ST_NODE]                   = ff_scroll_none 
 };
 
-static inline void enter_none(Entity* restrict, int, int) {}
+static inline void ff_enter_none(Entity* restrict, int, int) {}
 
 void (*enter_entity[])(Entity* restrict, int, int) = {
-    [ST_SLIDER]                 = enter_none,         
-    [ST_ENCODER]                = enter_none,         
-    [ST_ROTARY]                 = enter_none,         
-    [ST_SPRITE_INF_SLIDER]      = enter_none,         
-    [ST_SOCKET]                 = enter_none,         
-    [ST_CHECKBOX]               = enter_none,         
-    [ST_MOMENTARY]              = enter_none,   
-    [ST_SPRITE_CHECKBOX]        = enter_none,         
-    [ST_SPRITE_BUTTON]          = enter_none,   
-    [ST_CANVAS]                 = enter_none,         
-    [ST_TEXTBOX]                = enter_none,  
-    [ST_NODE]                   = enter_none 
+    [ST_SLIDER]                 = ff_enter_none,         
+    [ST_ENCODER]                = ff_enter_none,         
+    [ST_ROTARY]                 = ff_enter_none,         
+    [ST_SPRITE_INF_SLIDER]      = ff_enter_none,         
+    [ST_SOCKET]                 = ff_enter_none,         
+    [ST_CHECKBOX]               = ff_enter_none,         
+    [ST_MOMENTARY]              = ff_enter_none,   
+    [ST_SPRITE_CHECKBOX]        = ff_enter_none,         
+    [ST_SPRITE_BUTTON]          = ff_enter_none,   
+    [ST_CANVAS]                 = ff_enter_none,         
+    [ST_TEXTBOX]                = ff_enter_none,  
+    [ST_NODE]                   = ff_enter_none 
 };
 
-static inline void leave_none(Entity* restrict, int, int) {}
+static inline void ff_leave_none(Entity* restrict, int, int) {}
 
 void (*leave_entity[])(Entity* restrict, int, int) = {
-    [ST_SLIDER]                 = leave_none,         
-    [ST_ENCODER]                = leave_none,         
-    [ST_ROTARY]                 = leave_none,         
-    [ST_SPRITE_INF_SLIDER]      = leave_none,         
-    [ST_SOCKET]                 = leave_none,         
-    [ST_CHECKBOX]               = leave_none,         
-    [ST_MOMENTARY]              = leave_none,   
-    [ST_SPRITE_CHECKBOX]        = leave_none,         
-    [ST_SPRITE_BUTTON]          = leave_none,   
-    [ST_CANVAS]                 = leave_none,         
-    [ST_TEXTBOX]                = leave_none,  
-    [ST_NODE]                   = leave_none          
+    [ST_SLIDER]                 = ff_leave_none,         
+    [ST_ENCODER]                = ff_leave_none,         
+    [ST_ROTARY]                 = ff_leave_none,         
+    [ST_SPRITE_INF_SLIDER]      = ff_leave_none,         
+    [ST_SOCKET]                 = ff_leave_none,         
+    [ST_CHECKBOX]               = ff_leave_none,         
+    [ST_MOMENTARY]              = ff_leave_none,   
+    [ST_SPRITE_CHECKBOX]        = ff_leave_none,         
+    [ST_SPRITE_BUTTON]          = ff_leave_none,   
+    [ST_CANVAS]                 = ff_leave_none,         
+    [ST_TEXTBOX]                = ff_leave_none,  
+    [ST_NODE]                   = ff_leave_none          
 };
 
-static inline void release_none(Entity* restrict, int, int) {}
+static inline void ff_release_none(Entity* restrict, int, int) {}
 
 void (*release_entity[])(Entity* restrict, int, int) = {
-    [ST_SLIDER]                 = release_none,
-    [ST_ENCODER]                = release_none,
-    [ST_ROTARY]                 = release_none,
-    [ST_SPRITE_INF_SLIDER]      = release_none,
-    [ST_SOCKET]                 = release_socket,
-    [ST_CHECKBOX]               = release_none,
-    [ST_MOMENTARY]              = release_button,
-    [ST_SPRITE_CHECKBOX]        = release_none,
-    [ST_SPRITE_BUTTON]          = release_button,
-    [ST_CANVAS]                 = release_none,
-    [ST_TEXTBOX]                = release_none,  
-    [ST_NODE]                   = release_node 
+    [ST_SLIDER]                 = ff_release_none,
+    [ST_ENCODER]                = ff_release_none,
+    [ST_ROTARY]                 = ff_release_none,
+    [ST_SPRITE_INF_SLIDER]      = ff_release_none,
+    [ST_SOCKET]                 = ff_release_socket,
+    [ST_CHECKBOX]               = ff_release_none,
+    [ST_MOMENTARY]              = ff_release_button,
+    [ST_SPRITE_CHECKBOX]        = ff_release_none,
+    [ST_SPRITE_BUTTON]          = ff_release_button,
+    [ST_CANVAS]                 = ff_release_none,
+    [ST_TEXTBOX]                = ff_release_none,  
+    [ST_NODE]                   = ff_release_node 
 }; 
 
 const uint8_t gtFont[] = {
