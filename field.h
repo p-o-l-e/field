@@ -753,6 +753,7 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
     entity->range[1]                 = descriptor->range[1];
     entity->repaint                  = true;
     entity->flags                    = descriptor->flags;
+    entity->visible                  = true;
     entity->parent                   = node;
 
     printf("Created entity : %u\n", entity->index);
