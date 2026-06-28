@@ -532,9 +532,7 @@ static void ff_frame_copy_with_alpha(Frame* target, Frame* source, uint8_t alpha
 static inline void ff_frame_copy_at(Frame* target, Frame* source, uint32_t xo, uint32_t yo) {
     for(uint32_t y = 0; y < source->height; y++) {
         for(uint32_t x = 0; x < source->width; x++) {
-            auto data = ff_frame_get(source, x, y);
-            if(data)
-                ff_frame_set(target, x + xo, y + yo, data);
+            ff_frame_set(target, x + xo, y + yo, ff_frame_get(source, x, y));
         }
     }
 }
@@ -1994,79 +1992,12 @@ static void ff_draw_textbox(Entity* restrict entity) {
 /*****************************************************************************************************************************/
 
 static void ff_draw_graticule(Frame* frame, uint32_t colour, uint32_t vdiv, uint32_t hdiv) {
-    const float W = (float)frame->width;
-    const float H = (float)frame->height;
 
-    const float stepX = W / (float)vdiv;
-    const float stepY = H / (float)hdiv;
-    const float step  = stepX < stepY ? stepX : stepY;
-
-    const float gridW = step * (float)vdiv;
-    const float gridH = step * (float)hdiv;
-
-    const float hgap = (W - gridW) * 0.5f;
-    const float vgap = (H - gridH) * 0.5f;
-
-    const float cx = hgap + gridW * 0.5f;
-    const float cy = vgap + gridH * 0.5f;
-
-    const float sub = step / 5.0f;
-
-    // Major vertical lines
-    const uint32_t y0 = (uint32_t)(vgap + 0.5f);
-    const uint32_t y1 = (uint32_t)(vgap + gridH - 0.5f);
-    for (uint32_t i = 0; i <= vdiv; ++i) {
-        auto x = (uint32_t)(hgap + (float)i * step + 0.5f);
-        if (x >= frame->width) x = frame->width - 1;
-        ff_draw_line_v(frame, x, y0, y1, colour);
-    }
-
-    // Major horizontal lines
-    const uint32_t x0 = (uint32_t)(hgap + 0.5f);
-    const uint32_t x1 = (uint32_t)(hgap + gridW - 0.5f);
-    for (uint32_t i = 0; i <= hdiv; ++i) {
-        auto y = (uint32_t)(vgap + (float)i * step + 0.5f);
-        if (y >= frame->height) y = frame->height - 1;
-        ff_draw_line_h(frame, y, x0, x1, colour);
-    }
-
-    // Minor vertical ticks
-    const float tickH = step * 0.2f;
-    const uint32_t ty0 = (uint32_t)(cy - tickH + 0.5f);
-    const uint32_t ty1 = (uint32_t)(cy + tickH - 0.5f);
-    for (uint32_t i = 0; i < vdiv * 5; ++i) {
-        auto x = (uint32_t)(hgap + (float)i * sub + 0.5f);
-        if (x >= frame->width) x = frame->width - 1;
-        ff_draw_line_v(frame, x, ty0, ty1, colour);
-    }
-
-    // Minor horizontal ticks
-    const float tickW = step * 0.2f;
-    const uint32_t tx0 = (uint32_t)(cx - tickW + 0.5f);
-    const uint32_t tx1 = (uint32_t)(cx + tickW - 0.5f);
-    for (uint32_t i = 0; i < hdiv * 5; ++i) {
-        auto y = (uint32_t)(vgap + (float)i * sub + 0.5f);
-        if (y >= frame->height) y = frame->height - 1;
-        ff_draw_line_h(frame, y, tx0, tx1, colour);
-    }
-
-    // Dotted lines at ±2.4 divisions
-    const float dottedOffset = step * 2.4f;
-    const auto yt = (size_t)(cy - dottedOffset + 0.5f);
-    const auto yb = (size_t)(cy + dottedOffset + 0.5f);
-
-    for (uint32_t i = 0; i < vdiv * 5; ++i) {
-        auto x = (size_t)(hgap + (float)i * sub + 0.5f);
-        if (x >= frame->width) x = frame->width - 1;
-        ff_frame_set(frame, x, yt, colour);
-        ff_frame_set(frame, x, yb, colour);
-    }
 }
 
 static void ff_init_crt(Entity* restrict entity) {
     entity->data = malloc(sizeof(Frame));
     ff_frame_init((Frame*)entity->data, entity->width, entity->height);
-    ff_draw_graticule((Frame*)entity->data, BORDER, 10, 8);
 }
 
 static void ff_set_crt(Entity* restrict entity, int, int) {
@@ -2076,8 +2007,6 @@ static void ff_set_crt(Entity* restrict entity, int, int) {
 static void ff_draw_crt(Entity* restrict entity) {
     auto field = entity->parent->parent;
     ff_draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
-    ff_frame_copy_at(field->layer[FG], (Frame*)entity->data, entity->bounds.l, entity->bounds.t);
-
     entity->repaint = false;
 }
 
