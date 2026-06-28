@@ -2066,7 +2066,7 @@ static void ff_draw_graticule(Frame* frame, uint32_t colour, uint32_t vdiv, uint
 static void ff_init_crt(Entity* restrict entity) {
     entity->data = malloc(sizeof(Frame));
     ff_frame_init((Frame*)entity->data, entity->width, entity->height);
-    ff_draw_graticule((Frame*)entity->data, BORDER, 10, 8);
+    ff_draw_graticule((Frame*)entity->data, BACKGROUND, 10, 8);
 }
 
 static void ff_set_crt(Entity* restrict entity, int, int) {
