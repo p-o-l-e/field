@@ -57,6 +57,13 @@ typedef enum {
 
 } SubType;
 
+typedef enum: uint8_t {
+    F_CT_STATIC,
+    F_CT_CONTROL,
+    F_CT_INPUT, 
+    F_CT_OUTPUT 
+} CoreType;
+
 typedef enum {
     CT_PRESS,
     CT_RELEASE,
@@ -120,10 +127,8 @@ typedef enum: uint32_t {
     VERTICAL    = 1 << 0,
     MOVEABLE    = 1 << 1,
     INTERCON    = 1 << 2,
-    INPUT       = 1 << 3,
-    OUTPUT      = 1 << 4,
-    TRANSPARENT = 1 << 5,
-    RADIO       = 1 << 6,
+    TRANSPARENT = 1 << 3,
+    RADIO       = 1 << 4,
 
 } SectorFlags;
 
@@ -249,6 +254,7 @@ struct SectorDescriptor {
     uint32_t    id;
     uint32_t    node_id;
     ltwh32u     bounds;
+    CoreType    core_type;
     SectorType  type;
     SubType     subtype;
     float       default_value;
@@ -266,6 +272,7 @@ struct Entity {
     ltrb32u     bounds;
     uint32_t    width;
     uint32_t    height;
+    CoreType    core_type;
     SectorType  type;
     void*       data;                   // Type dependent data
     void*       extension;
@@ -315,6 +322,7 @@ struct rotary {
 struct Socket {
 
 };
+
 struct Momentary {
 
 };
@@ -709,6 +717,7 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
     entity->index                    = pos;
     entity->uid                      = descriptor->id;
     entity->type                     = descriptor->type;
+    entity->core_type                = descriptor->core_type;
     entity->bounds.l                 = descriptor->bounds.l;
     entity->bounds.t                 = descriptor->bounds.t;
     entity->bounds.r                 = descriptor->bounds.l + descriptor->bounds.w;
@@ -1032,6 +1041,8 @@ static inline void ff_draw_debug_overlay(Field* field, Entity* entity) {
 
     char buffer[128];
     snprintf(buffer, 128, "CONTROL INDEX: %u", entity->index);
+    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    snprintf(buffer, 128, "CORE TYPE    : %u", entity->core_type);
     ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "CONTROL UID  : %u", entity->uid);
     ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
@@ -1578,7 +1589,7 @@ static void ff_draw_socket(Entity* restrict entity) {
         .x = entity->bounds.l + r,
         .y = entity->bounds.t + r
     };
-    auto color = entity->flags & OUTPUT ? SOCKET_OUT : SOCKET_IN;
+    auto color = entity->core_type == F_CT_OUTPUT ? SOCKET_OUT : SOCKET_IN;
 
     ff_draw_circle_f(field->layer[FG], center.x, center.y, r, color);
     r = entity->width / 4;
@@ -1804,11 +1815,11 @@ static void ff_release_socket(Entity* restrict entity, int x, int y) {
     
     if(target->connected) ff_disconnect(target);
 
-    if((entity->flags & OUTPUT) && (target->flags & INPUT)) {
+    if((entity->core_type == F_CT_OUTPUT) && (target->core_type == F_CT_INPUT)) {
         ff_connect(entity, target);
         return;
     }
-    else if((entity->flags & INPUT) && (target->flags & OUTPUT)) {
+    else if((entity->core_type == F_CT_INPUT) && (target->core_type == F_CT_OUTPUT)) {
         ff_connect(entity, target);
         return;
     }
