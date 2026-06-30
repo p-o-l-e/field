@@ -26,6 +26,7 @@ typedef struct Encoder Encoder;
 typedef struct Momentary Momentary;
 typedef struct rotary rotary;
 typedef struct Socket Socket;
+typedef struct Oscillograph Oscillograph;
 typedef struct Node Node;
 typedef struct SectorDescriptor SectorDescriptor;
 
@@ -264,6 +265,8 @@ struct SectorDescriptor {
     char*       label;
     uint32_t    flags;
     uint32_t    output;
+    uint32_t    input_x;
+    uint32_t    input_y;
 };
 
 struct Entity {
@@ -276,8 +279,6 @@ struct Entity {
     SectorType  type;
     void*       data;                   // Type dependent data
     void*       extension;
-    float*      input;
-    float*      output;
     float       value[CP_LIMIT];
     float       memory[CP_LIMIT];
     float       range[2];
@@ -322,7 +323,13 @@ struct rotary {
 };
 
 struct Socket {
+    float* input;
+    float* output;
+};
 
+struct Oscillograph {
+    float** x;
+    float** y;
 };
 
 struct Momentary {
@@ -734,8 +741,6 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
     entity->flags                    = descriptor->flags;
     entity->visible                  = true;
     entity->parent                   = node;
-    entity->output                   = nullptr;
-    entity->input                    = nullptr;
 
     //printf("Created entity : %u\n", entity->index);
 
@@ -771,6 +776,25 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
 
         case ST_SOCKET: {
             entity->extension = (Socket*)malloc(sizeof(Socket));
+            auto ext = (Socket*)entity->extension;
+            ext->input = nullptr;
+            ext->output = nullptr;
+        }
+        break;
+
+        case ST_CRT: {
+            entity->extension = (Oscillograph*)malloc(sizeof(Oscillograph));
+            auto ext = (Oscillograph*)entity->extension;
+            auto xi = ff_find_entity_by_id(node->parent, descriptor->input_x);
+            auto yi = ff_find_entity_by_id(node->parent, descriptor->input_y);
+                
+            ext->x = &((Socket*)xi->extension)->input;
+            ext->y = &((Socket*)yi->extension)->input;
+        }
+        break;
+
+        case ST_TEXTBOX: {
+
         }
         break;
 
@@ -1066,9 +1090,16 @@ static inline void ff_draw_debug_overlay(Field* field, Entity* entity) {
     ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "FLAGS        : %b", entity->flags);
     ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
-    if(entity->output) {
-        snprintf(buffer, 128, "OUTPUT       : %f", *entity->output);
-        ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    if(entity->type == ST_SOCKET) {
+        auto ext = (Socket*)entity->extension;
+        if(ext->input) {
+            snprintf(buffer, 128, "INPUT        : %f", *ext->input);
+            ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+        }
+        if(ext->output) {
+            snprintf(buffer, 128, "OUTPUT       : %f", *ext->output);
+            ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+        }
     }
     atomic_store_explicit(&force_repaint, true, memory_order_release);
 }
@@ -1770,7 +1801,18 @@ static void ff_drag_cord(Entity* restrict entity, int x, int y)
     entity->has_data = true;
 }
 
-inline static void ff_connect(Entity* restrict source, Entity* restrict target) {
+inline static bool ff_connect(Entity* restrict source, Entity* restrict target) {
+    auto ext_s = (Socket*)source->extension;
+    auto ext_t = (Socket*)target->extension;
+
+    if(source->core_type == F_CT_INPUT && target->core_type == F_CT_OUTPUT) {
+        ext_s->input = ext_t->output;
+    }
+    else if(source->core_type == F_CT_OUTPUT && target->core_type == F_CT_INPUT) {
+        ext_t->input = ext_s->output;
+    }
+    else return false;
+
     if(target->connected) {
         if(target->has_data) {
             memset(target->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
@@ -1791,10 +1833,21 @@ inline static void ff_connect(Entity* restrict source, Entity* restrict target) 
     source->hovered = false;
     target->hovered = true;
     source->parent->parent->connecting = false;
+
+    return true;
 }
 
 inline static void ff_disconnect(Entity* restrict entity) {
     auto target = entity->connection;
+
+    if(entity->core_type == F_CT_INPUT) {
+        auto ext = (Socket*)entity->extension;
+        ext->input = nullptr;
+    }
+    else if(target->core_type == F_CT_INPUT) {
+        auto ext = (Socket*)target->extension;
+        ext->input = nullptr;
+    }
 
     if(entity->has_data) {
         memset(entity->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
@@ -1822,16 +1875,7 @@ static void ff_release_socket(Entity* restrict entity, int x, int y) {
     auto target = &field->node[target_nid].at[target_uid];
     
     if(target->connected) ff_disconnect(target);
-
-    if((entity->core_type == F_CT_OUTPUT) && (target->core_type == F_CT_INPUT)) {
-        ff_connect(entity, target);
-        return;
-    }
-    else if((entity->core_type == F_CT_INPUT) && (target->core_type == F_CT_OUTPUT)) {
-        ff_connect(entity, target);
-        return;
-    }
-    
+    if(ff_connect(entity, target)) return;
     ff_disconnect(entity);
 }
 
@@ -2097,7 +2141,30 @@ static void ff_draw_crt(Entity* restrict entity) {
     ff_draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
     ff_frame_copy_at(field->layer[FG], (Frame*)entity->data, entity->bounds.l, entity->bounds.t);
 
-    entity->repaint = false;
+    printf("Draw CRT\n");
+
+    auto ext = (Oscillograph*)entity->extension;
+    if(ext->x && *ext->x && ext->y && *ext->y) {
+        float xv = **ext->x;
+        float yv = **ext->y;
+        uint32_t cx = entity->width / 2;
+        uint32_t cy = entity->height / 2;
+        uint32_t scale = entity->width / 12;
+
+        int32_t bx = (int32_t)cx + (int32_t)(xv * scale);
+        int32_t by = (int32_t)cy - (int32_t)(yv * scale);
+        if(bx < 0) bx = 0; else if(bx >= (int32_t)entity->width) bx = entity->width - 1;
+        if(by < 0) by = 0; else if(by >= (int32_t)entity->height) by = entity->height - 1;
+
+        ff_frame_set(field->layer[FG],
+                entity->bounds.l + (uint32_t)bx,
+                entity->bounds.t + (uint32_t)by,
+                FOREGROUND);
+    }
+
+    entity->repaint = true;
+    field->repaint = true;
+
 }
 
 /*****************************************************************************************************************************/
@@ -2162,7 +2229,7 @@ void (*set_entity[])(Entity* restrict, int, int) = {
     [ST_CANVAS]                 = ff_set_none,              
     [ST_TEXTBOX]                = ff_set_textbox,
     [ST_NODE]                   = ff_set_node,       
-    [ST_CRT]                    = ff_set_none        
+    [ST_CRT]                    = ff_set_crt        
 };
 
 void (*draw_entity[])(Entity* restrict) = {
