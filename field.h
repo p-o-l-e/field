@@ -276,6 +276,8 @@ struct Entity {
     SectorType  type;
     void*       data;                   // Type dependent data
     void*       extension;
+    float*      input;
+    float*      output;
     float       value[CP_LIMIT];
     float       memory[CP_LIMIT];
     float       range[2];
@@ -732,8 +734,10 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
     entity->flags                    = descriptor->flags;
     entity->visible                  = true;
     entity->parent                   = node;
+    entity->output                   = nullptr;
+    entity->input                    = nullptr;
 
-    printf("Created entity : %u\n", entity->index);
+    //printf("Created entity : %u\n", entity->index);
 
     switch (descriptor->type) {
         case ST_CHECKBOX: {
@@ -793,14 +797,14 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
     }
 
     if(descriptor->output) {
-        printf("---- Set output : %d\n", descriptor->output);
+        //printf("---- Set output : %d\n", descriptor->output);
         auto target = ff_find_entity_by_id(node->parent, descriptor->output);
         if(target) {
             ff_add_mod_link(entity, target, CT_VALUE, ff_value_to_textbox);
-            printf("---- Target found...\n");
+            //printf("---- Target found...\n");
         }
-        else
-            printf("---- NO Target found...\n");
+        // else
+        //     printf("---- NO Target found...\n");
     }
 
     return entity;
@@ -1062,6 +1066,10 @@ static inline void ff_draw_debug_overlay(Field* field, Entity* entity) {
     ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "FLAGS        : %b", entity->flags);
     ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    if(entity->output) {
+        snprintf(buffer, 128, "OUTPUT       : %f", *entity->output);
+        ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    }
     atomic_store_explicit(&force_repaint, true, memory_order_release);
 }
 #endif
