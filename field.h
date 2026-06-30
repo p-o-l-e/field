@@ -1072,11 +1072,11 @@ static inline void ff_draw_debug_overlay(Field* field, Entity* entity) {
     ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "CORE TYPE    : %u", entity->core_type);
     ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
-    snprintf(buffer, 128, "CONTROL UID  : %u", entity->uid);
+    snprintf(buffer, 128, "CONTROL UID  : %x", entity->uid);
     ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "NODE INDEX   : %u", entity->parent->index);
     ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
-    snprintf(buffer, 128, "NODE UID     : %u", entity->parent->uid);
+    snprintf(buffer, 128, "NODE UID     : %x", entity->parent->uid);
     ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "IS CONNECTED : %d", entity->connected);
     ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
@@ -1844,7 +1844,7 @@ inline static void ff_disconnect(Entity* restrict entity) {
         auto ext = (Socket*)entity->extension;
         ext->input = nullptr;
     }
-    else if(target->core_type == F_CT_INPUT) {
+    else if(target && target->core_type == F_CT_INPUT) {
         auto ext = (Socket*)target->extension;
         ext->input = nullptr;
     }
