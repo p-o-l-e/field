@@ -2,6 +2,7 @@
 
 #include <GLFW/glfw3.h>
 #include <stdatomic.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -257,9 +258,17 @@ void* draw_field(void* arg)
         #endif
         
         bool swap = false;
+        bool update_stream = false;
+
+        if(atomic_load_explicit(&trigger_stream_update, memory_order_acquire)) {
+            atomic_store_explicit(&trigger_stream_update, false, memory_order_release);
+            context->repaint = true;
+            update_stream = true;
+        }
         
         if(context->repaint)
         {
+            update_stream = true;
             glClear(GL_COLOR_BUFFER_BIT);
             glColor3f(1.0f, 1.0f, 1.0f);
             ff_draw_scene(context);
@@ -280,6 +289,50 @@ void* draw_field(void* arg)
             #endif
 
             swap = true;
+        }
+
+        if(update_stream) {
+            constexpr size_t bsize = 128;
+            static size_t w = 0;
+
+            static float buffer[bsize * 2];
+
+            auto ext = (Oscillograph*)context->stream[0]->extension;
+            if(ext->x && *ext->x && ext->y && *ext->y) {
+
+                float scale = (float)context->stream[0]->width / (float)context->width;
+                float cx = (float)(context->stream[0]->bounds.l + context->stream[0]->width / 2) / (float)context->width;
+                float cy = 1.0f - (float)(context->stream[0]->bounds.t + context->stream[0]->height / 2) / (float)context->height;
+
+                buffer[w++] = **ext->x * scale + cx;
+                buffer[w++] = **ext->y * scale + cy;
+                if(w >= bsize * 2) w = 0;
+            }
+
+            glEnable(GL_SCISSOR_TEST);
+            glScissor(context->stream[0]->bounds.l,
+                      context->height - context->stream[0]->bounds.t - context->stream[0]->height,
+                      context->stream[0]->width,
+                      context->stream[0]->height);
+
+            glLineWidth(1.0f); 
+            glEnableClientState(GL_VERTEX_ARRAY);
+            glVertexPointer(2, GL_FLOAT, 0, buffer);
+
+            glColor4ub(
+                0x40,
+                0xA0,
+                0x90,
+                0xFF
+            );
+
+            glDrawArrays(GL_LINE_STRIP, 0, bsize);
+            glDisableClientState(GL_VERTEX_ARRAY);
+
+            glDisable(GL_SCISSOR_TEST);
+
+            update_stream = false;
+
         }
 
         if(context->connecting)

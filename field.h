@@ -15,6 +15,8 @@
 #ifdef DEBUG_OVERLAY
     atomic_bool force_repaint = false;
 #endif
+
+atomic_bool trigger_stream_update = false;
 constexpr uint_fast32_t SPLINE_SEGMENTS = 32;
 constexpr uint_fast32_t TEXTBOX_SIZE = 32;
 
@@ -330,6 +332,9 @@ struct Socket {
 struct Oscillograph {
     float** x;
     float** y;
+    void* data;
+    uint32_t r_head;
+    uint32_t w_head;
 };
 
 struct Momentary {
@@ -359,6 +364,7 @@ struct Field {
     Frame*      layer[CC];
     Node*       node;
     Entity*     pressed;
+    Entity*     stream[3];
     uint32_t    current[IP_LIMIT];  // HitTest return
     uint32_t    prior[IP_LIMIT];    // Last HitTest
     bool        repaint;            // Repaint flag
@@ -1098,6 +1104,17 @@ static inline void ff_draw_debug_overlay(Field* field, Entity* entity) {
         }
         if(ext->output) {
             snprintf(buffer, 128, "OUTPUT       : %f", *ext->output);
+            ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+        }
+    }
+    else if(entity->type == ST_CRT) {
+        auto ext = (Oscillograph*)entity->extension;
+        if(ext->x && *ext->x) {
+            snprintf(buffer, 128, "X            : %f", **ext->x);
+            ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+        }
+        if(ext->y && *ext->y) {
+            snprintf(buffer, 128, "Y            : %f", **ext->y);
             ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
         }
     }
@@ -2130,6 +2147,13 @@ static void ff_init_crt(Entity* restrict entity) {
     entity->data = malloc(sizeof(Frame));
     ff_frame_init((Frame*)entity->data, entity->width, entity->height);
     ff_draw_graticule((Frame*)entity->data, BACKGROUND, 10, 8);
+    
+    auto ext = (Oscillograph*)entity->extension;
+    ext->data = (float*)calloc(SPLINE_SEGMENTS * 2, sizeof(float));
+    ext->r_head = 0;
+    ext->w_head = 0;
+
+    entity->parent->parent->stream[0] = entity;
 }
 
 static void ff_set_crt(Entity* restrict entity, int, int) {
@@ -2141,30 +2165,7 @@ static void ff_draw_crt(Entity* restrict entity) {
     ff_draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
     ff_frame_copy_at(field->layer[FG], (Frame*)entity->data, entity->bounds.l, entity->bounds.t);
 
-    printf("Draw CRT\n");
-
-    auto ext = (Oscillograph*)entity->extension;
-    if(ext->x && *ext->x && ext->y && *ext->y) {
-        float xv = **ext->x;
-        float yv = **ext->y;
-        uint32_t cx = entity->width / 2;
-        uint32_t cy = entity->height / 2;
-        uint32_t scale = entity->width / 12;
-
-        int32_t bx = (int32_t)cx + (int32_t)(xv * scale);
-        int32_t by = (int32_t)cy - (int32_t)(yv * scale);
-        if(bx < 0) bx = 0; else if(bx >= (int32_t)entity->width) bx = entity->width - 1;
-        if(by < 0) by = 0; else if(by >= (int32_t)entity->height) by = entity->height - 1;
-
-        ff_frame_set(field->layer[FG],
-                entity->bounds.l + (uint32_t)bx,
-                entity->bounds.t + (uint32_t)by,
-                FOREGROUND);
-    }
-
-    entity->repaint = true;
-    field->repaint = true;
-
+    entity->repaint = false;
 }
 
 /*****************************************************************************************************************************/
