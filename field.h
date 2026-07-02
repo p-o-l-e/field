@@ -26,7 +26,7 @@ typedef struct Checkbox Checkbox;
 typedef struct Slider Slider;
 typedef struct Encoder Encoder;
 typedef struct Momentary Momentary;
-typedef struct rotary rotary;
+typedef struct Rotary Rotary;
 typedef struct Socket Socket;
 typedef struct Oscillograph Oscillograph;
 typedef struct Node Node;
@@ -68,13 +68,14 @@ typedef enum: uint8_t {
 } CoreType;
 
 typedef enum {
-    CT_PRESS,
-    CT_RELEASE,
-    CT_VALUE,
+    F_CE_PRESS,
+    F_CE_RELEASE,
+    F_CE_VALUE,
+    F_CE_REPAINT,
 
-    CT_LIMIT
+    F_CE_LIMIT
 
-} CallbackType;
+} CallbackEvent;
 
 typedef enum {
     IP_NODE,
@@ -115,6 +116,7 @@ typedef enum {
 typedef enum: uint32_t { 
     BG,
     NG,                         // nodes
+    TL,
     FG,
     SC,                         // controls stencil
     SN,                         // nodes stencil
@@ -266,9 +268,10 @@ struct SectorDescriptor {
     uint32_t    radio_id;
     char*       label;
     uint32_t    flags;
-    uint32_t    output;
+    uint32_t    callback_target_id;
     uint32_t    input_x;
     uint32_t    input_y;
+    CallbackEvent callback_event;
 };
 
 struct Entity {
@@ -294,8 +297,8 @@ struct Entity {
     uint32_t    flags;
     uint32_t    nodes;
     uint32_t    capacity;
-    void        (*callback[CT_LIMIT])(Entity*, Entity*);
-    Entity*     target[CT_LIMIT];
+    void        (*callback[F_CE_LIMIT])(Entity*, Entity*);
+    Entity*     target[F_CE_LIMIT];
     Entity*     connection;
     Node*       parent;
     Entity*     root;
@@ -319,7 +322,7 @@ struct Encoder {
     bool inverse;
 };
 
-struct rotary {
+struct Rotary {
     float default_value;
     float step[CP_LIMIT];
 };
@@ -406,11 +409,12 @@ static void ff_sprite_load_stripe(Sprite*, Frame*);
 /******************************************************************************************************************************/
 void ff_set_text_data(Entity*, const char*); 
 static void ff_value_to_textbox(Entity*, Entity*);
+static void ff_set_repaint(Entity*, Entity*);
 
 void ff_fuse_link(Entity*, Entity*);
 void ff_draw_scene(Field* restrict);
 
-void ff_add_mod_link(Entity*, Entity*, CallbackType, void (*)(Entity*, Entity*));
+void ff_add_mod_link(Entity*, Entity*, CallbackEvent, void (*)(Entity*, Entity*));
 void ff_move_entity(Entity* restrict, ltrb32u* restrict);
 void ff_erase_entity(Entity* restrict);
 static void ff_disconnect(Entity* restrict);
@@ -809,7 +813,7 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
     
     }
 
-    for(uint32_t i = 0; i < CT_LIMIT; ++i) {
+    for(uint32_t i = 0; i < F_CE_LIMIT; ++i) {
         entity->callback[i] = &ff_fuse_link;
     }
 
@@ -826,11 +830,15 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
         strncpy(entity->data, descriptor->label, TEXTBOX_SIZE);
     }
 
-    if(descriptor->output) {
+    if(descriptor->callback_target_id) {
         //printf("---- Set output : %d\n", descriptor->output);
-        auto target = ff_find_entity_by_id(node->parent, descriptor->output);
+        auto target = ff_find_entity_by_id(node->parent, descriptor->callback_target_id);
         if(target) {
-            ff_add_mod_link(entity, target, CT_VALUE, ff_value_to_textbox);
+
+            if(descriptor->callback_event == F_CE_REPAINT)
+                ff_add_mod_link(entity, target, descriptor->callback_event, ff_set_repaint);
+            else
+                ff_add_mod_link(entity, target, descriptor->callback_event, ff_value_to_textbox);
             //printf("---- Target found...\n");
         }
         // else
@@ -896,7 +904,7 @@ Field* ffCreateField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t si
     canvas->parent = &field->node[0];
     canvas->repaint = true;
 
-    for(uint32_t i = 0; i < CT_LIMIT; ++i) {
+    for(uint32_t i = 0; i < F_CE_LIMIT; ++i) {
         canvas->callback[i] = &ff_fuse_link;
     }
 
@@ -980,7 +988,7 @@ void ff_move_entity(Entity* restrict entity, ltrb32u* restrict bounds) {
     entity->bounds = *bounds;
 }
 
-void ff_add_mod_link(Entity* source, Entity* target, CallbackType type, void (*fn)(Entity*, Entity*)) {
+void ff_add_mod_link(Entity* source, Entity* target, CallbackEvent type, void (*fn)(Entity*, Entity*)) {
     source->callback[type] = fn;
     source->target[type] = target;
 }
@@ -996,6 +1004,10 @@ static inline void ff_value_to_textbox(Entity* slider, Entity* tbox) {
     float val = slider->value[CP_COARSE] + slider->value[CP_FINE];
     snprintf(text, TEXTBOX_SIZE, "%.*f", precision, val);
     tbox->repaint = true;
+}
+
+static inline void ff_set_repaint(Entity*, Entity* target) {
+    target->repaint = true;
 }
 
 void ff_hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
@@ -1049,7 +1061,7 @@ void ff_hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
     field->prior[IP_NODE] = field->current[IP_NODE];
     field->prior[IP_ENTITY] = field->current[IP_ENTITY];
         
-    p->callback[CT_PRESS](p, p->target[CT_PRESS]);
+    p->callback[F_CE_PRESS](p, p->target[F_CE_PRESS]);
 }
 
 #ifdef DEBUG_OVERLAY
@@ -1209,9 +1221,10 @@ void ff_draw_scene(Field* restrict field) {
     for(uint32_t n = 0; n < field->nodes; ++n) {
         if(!field->node[n].visible) continue;
         for(uint32_t i = 0; i < field->node[n].entities; ++i) {
-            auto s = &field->node[n].at[i];
-            if(s->repaint) {
-                draw_entity[s->type](s);
+            auto entity = &field->node[n].at[i];
+            if(entity->repaint) {
+                draw_entity[entity->type](entity);
+                entity->callback[F_CE_REPAINT](entity, entity->target[F_CE_REPAINT]);
             }
         }
     }
@@ -1284,7 +1297,7 @@ static void ff_set_slider(Entity* restrict entity, int x, int y) {
     else *coarse = value;
 
     entity->repaint = true;
-    entity->callback[CT_VALUE](entity, entity->target[CT_VALUE]);
+    entity->callback[F_CE_VALUE](entity, entity->target[F_CE_VALUE]);
 }
 
 static void ff_draw_slider(Entity* restrict entity) {
@@ -1383,7 +1396,7 @@ static void ff_scroll_slider(Entity* restrict entity, int x, int y) {
     };
 
     entity->repaint = true;
-    entity->callback[CT_VALUE](entity, entity->target[CT_VALUE]);
+    entity->callback[F_CE_VALUE](entity, entity->target[F_CE_VALUE]);
 }
 
 /*** Slider *******************************************************************************************************************/
@@ -1427,7 +1440,7 @@ static void ff_set_encoder(Entity* restrict entity, int x, int y) {
     else *coarse = value;
 
     entity->repaint = true;
-    entity->callback[CT_VALUE](entity, entity->target[CT_VALUE]);
+    entity->callback[F_CE_VALUE](entity, entity->target[F_CE_VALUE]);
 }
 
 static void ff_draw_encoder(Entity* restrict entity) {
@@ -1517,7 +1530,7 @@ static void ff_scroll_encoder(Entity* restrict entity, int x, int y) {
     else *coarse = value;
 
     entity->repaint = true;
-    entity->callback[CT_VALUE](entity, entity->target[CT_VALUE]);
+    entity->callback[F_CE_VALUE](entity, entity->target[F_CE_VALUE]);
 }
 
 static void ff_draw_button(Entity* restrict entity) {
@@ -1549,7 +1562,7 @@ static void ff_draw_rotary(Entity* restrict entity) {
 static void ff_set_rotary(Entity* restrict entity, int x, int y) {
     auto field = entity->parent->parent;
     auto coarse = &entity->value[CP_COARSE];
-    auto ext = (rotary*)entity->extension;
+    auto ext = (Rotary*)entity->extension;
     int dy = roundf((field->memory[SP_CURSOR_PRIOR].y - y)/ext->step[CP_COARSE]);
     int dx = roundf((x - field->memory[SP_CURSOR_PRIOR].x)/ext->step[CP_COARSE]);
 
@@ -1568,7 +1581,7 @@ static void ff_set_rotary(Entity* restrict entity, int x, int y) {
 static void ff_set_sprite_inf_slider(Entity* restrict entity, int x, int y) {
     auto field = entity->parent->parent;
     auto coarse = &entity->value[CP_COARSE];
-    auto ext = (rotary*)entity->extension;
+    auto ext = (Rotary*)entity->extension;
     int dy = roundf((y - field->memory[SP_CURSOR_PRIOR].y)/ext->step[CP_COARSE]);
     int dx = roundf((field->memory[SP_CURSOR_PRIOR].x - x)/ext->step[CP_COARSE]);
 
@@ -2001,6 +2014,7 @@ static void ff_release_node(Entity* restrict entity, int, int)
         ff_draw_ltrb_f(field->layer[SN], &entity->bounds, entity->parent->index);
 
         ff_draw_ltrb_f(field->layer[NG], &ir, 0x0);
+        ff_draw_ltrb_f(field->layer[TL], &ir, 0x0);
 
         int dx = entity->bounds.l - field->memory[SP_LT_PRESS].x;
         int dy = entity->bounds.t - field->memory[SP_LT_PRESS].y;
@@ -2051,14 +2065,14 @@ static void ff_set_textbox(Entity* restrict entity, int, int) {
 
 static void ff_draw_textbox(Entity* restrict entity) {
     auto field = entity->parent->parent;
-    ff_draw_ltrb_f(field->layer[FG], &entity->bounds, SECONDBACKGROUND);
+    ff_draw_ltrb_f(field->layer[TL], &entity->bounds, 0);
     char *text = entity->data;
     //auto len = strlen(text);
     //auto offset_x = (entity->width - 10 * len) / 2;
     auto offset_y = (entity->height - 8) / 2;
 
     ffDrawTextLabel(
-        field->layer[FG],
+        field->layer[TL],
         gtFont,
         text,
         entity->bounds.l,

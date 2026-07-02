@@ -240,6 +240,7 @@ void* draw_field(void* arg)
     GLuint ng = get_buffer(context->layer[NG]);
     GLuint fg = get_buffer(context->layer[FG]);
     GLuint st = get_buffer(context->layer[ST]);
+    GLuint tl = get_buffer(context->layer[TL]);
     constexpr uint32_t CORD_NORMAL = GRAY;
     constexpr uint32_t CORD_SELECT = GREEN;
 
@@ -276,6 +277,7 @@ void* draw_field(void* arg)
             update_buffer(context->layer[BG], bg);
             update_buffer(context->layer[NG], ng);
             update_buffer(context->layer[FG], fg);
+            update_buffer(context->layer[TL], tl);
 
             if(context->staging) {
                 update_buffer(context->layer[ST], st);
