@@ -33,6 +33,12 @@ pthread_cond_t _escape_condition;
 
 /*****************************************************************************************************************************/
 
+void framebuffer_size_callback(GLFWwindow* window, int width, int height)
+{
+    (void)window;
+    glViewport(0, 0, width, height);
+}
+
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
     Field* context = (Field*)glfwGetWindowUserPointer(window);
@@ -199,6 +205,11 @@ void* draw_field(void* arg)
     glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
     glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
     glfwWindowHint(GLFW_SAMPLES, 8); 
+    glfwWindowHint(GLFW_MAXIMIZED, GLFW_FALSE);
+    glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_FALSE);
+    glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_FALSE);
+    glfwWindowHint(GLFW_POSITION_X, 100);
+    glfwWindowHint(GLFW_POSITION_Y, 100);
 
     Field* context = (Field*)arg;
 
@@ -209,6 +220,8 @@ void* draw_field(void* arg)
         glfwTerminate();
         exit(EXIT_FAILURE);
     }
+    glfwSetWindowSizeLimits(window, context->layer[FG]->width, context->layer[FG]->height, context->layer[FG]->width, context->layer[FG]->height);
+    glfwSetWindowSize(window, context->layer[FG]->width, context->layer[FG]->height);
 
     glfwSetWindowUserPointer(window, context);
     glfwMakeContextCurrent(window);
@@ -218,6 +231,7 @@ void* draw_field(void* arg)
     glfwSetMouseButtonCallback(window, mouse_button_callback);
     glfwSetCursorPosCallback(window, cursor_position_callback);
     glfwSetScrollCallback(window, scroll_callback);
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
