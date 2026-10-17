@@ -428,18 +428,26 @@ static void renderer_upload_layer(RendererContext* ctx, int layer_index,
     VkLayerTexture* lt = &ctx->layers[layer_index];
     VkDeviceSize size = (VkDeviceSize)width * height * sizeof(uint32_t);
 
-    /* Ensure staging buffer is large enough */
-    if (size > ctx->staging_size) {
+    /* The staging buffer holds one full-layer slot per layer texture, per
+     * frame in flight — per-frame updates write each layer into its own slot
+     * (strided by the full layer size) so copies in one command buffer don't
+     * clobber each other, and so a frame's CPU-side memcpy can't overwrite
+     * data the previous frame's copy is still reading on the GPU (each frame
+     * slot is only reused after its in-flight fence is waited on in
+     * renderer_begin_frame). Growing it here (once, at init) also covers the
+     * per-frame path. */
+    VkDeviceSize alloc = size * RENDERER_LAYER_COUNT * VK_MAX_FRAMES_IN_FLIGHT;
+    if (alloc > ctx->staging_size) {
         if (ctx->staging_buffer) {
             vkDestroyBuffer(ctx->device, ctx->staging_buffer, nullptr);
             vkFreeMemory(ctx->device, ctx->staging_memory, nullptr);
         }
-        vk_create_buffer(ctx->device, ctx->physical_device, size,
+        vk_create_buffer(ctx->device, ctx->physical_device, alloc,
                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                          &ctx->staging_buffer, &ctx->staging_memory);
-        ctx->staging_size = size;
-        vkMapMemory(ctx->device, ctx->staging_memory, 0, size, 0, &ctx->staging_mapped);
+        ctx->staging_size = alloc;
+        vkMapMemory(ctx->device, ctx->staging_memory, 0, alloc, 0, &ctx->staging_mapped);
     }
 
     /* Copy pixels into staging buffer */
@@ -526,17 +534,22 @@ static void renderer_upload_layer(RendererContext* ctx, int layer_index,
 
 /* Re-upload pixels to an existing texture (per-frame update path).
  * Records into an already-begun command buffer, OUTSIDE the render pass.
+ * Only the (x, y, w, h) sub-region is copied (dirty-rect upload): source
+ * pixels are read as pixels[(y + row) * width + x + col] and packed tightly
+ * into the staging slot (bufferRowLength = 0 in the copy region below).
  * `buffer_offset` is the byte offset into the staging buffer for this layer's
  * pixels — each layer gets its own slot so multiple updates in one command
  * buffer don't overwrite each other before the GPU reads them. */
 static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
                                      VkLayerTexture* lt,
-                                     const uint32_t* pixels, uint32_t width, uint32_t height,
+                                     const uint32_t* pixels, uint32_t width,
+                                     uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                                      VkDeviceSize buffer_offset)
 {
-    VkDeviceSize size = (VkDeviceSize)width * height * sizeof(uint32_t);
-
-    memcpy((char*)ctx->staging_mapped + buffer_offset, pixels, size);
+    uint32_t* dst = (uint32_t*)((char*)ctx->staging_mapped + buffer_offset);
+    for (uint32_t row = 0; row < h; ++row)
+        memcpy(dst + (size_t)row * w, pixels + (size_t)(y + row) * width + x,
+               (size_t)w * sizeof(uint32_t));
 
     /* Transition to TRANSFER_DST */
     VkImageMemoryBarrier barrier = {
@@ -563,7 +576,7 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
 
     VkBufferImageCopy region = {
         .bufferOffset      = buffer_offset,
-        .bufferRowLength   = 0,
+        .bufferRowLength   = 0, /* tightly packed: row length = imageExtent.width */
         .bufferImageHeight = 0,
         .imageSubresource  = {
             .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -571,8 +584,8 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
             .baseArrayLayer = 0,
             .layerCount     = 1,
         },
-        .imageOffset = {0, 0, 0},
-        .imageExtent = { width, height, 1 },
+        .imageOffset = { (int32_t)x, (int32_t)y, 0 },
+        .imageExtent = { w, h, 1 },
     };
     vkCmdCopyBufferToImage(cmd, ctx->staging_buffer, lt->image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
@@ -1345,18 +1358,22 @@ static void renderer_draw_line(RendererContext* ctx,
     ctx->line_vbo_offset += draw_size;
 }
 
-/* Update a layer texture with new pixel data. Records into the current cmd buffer.
+/* Update a sub-region of a layer texture with new pixel data (dirty-rect
+ * upload). Records into the current cmd buffer.
  * Must be called OUTSIDE a render pass (uses vkCmdCopyBufferToImage).
- * Each layer gets its own slot in the staging buffer so multiple updates
- * in one command buffer don't clobber each other. */
-static void renderer_update_layer(RendererContext* ctx, int layer_index,
-                                     const uint32_t* pixels, uint32_t width, uint32_t height)
+ * Each layer gets its own slot in the staging buffer per frame in flight, so
+ * multiple updates in one command buffer don't clobber each other and a
+ * frame's memcpy can't race the previous frame's in-flight copy. */
+static void renderer_update_layer_rect(RendererContext* ctx, int layer_index,
+                                        const uint32_t* pixels, uint32_t width, uint32_t height,
+                                        uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 {
     VkDeviceSize layer_size = (VkDeviceSize)width * height * sizeof(uint32_t);
-    VkDeviceSize buffer_offset = (VkDeviceSize)layer_index * layer_size;
+    VkDeviceSize buffer_offset =
+        ((VkDeviceSize)ctx->current_frame * RENDERER_LAYER_COUNT + (VkDeviceSize)layer_index) * layer_size;
     vk_update_layer_texture(ctx->command_buffers[ctx->current_frame], ctx,
-                            &ctx->layers[layer_index], pixels, width, height,
-                            buffer_offset);
+                            &ctx->layers[layer_index], pixels, width,
+                            x, y, w, h, buffer_offset);
 }
 
 /* End the frame: finish render pass, submit, present. */

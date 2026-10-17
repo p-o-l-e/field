@@ -17,7 +17,8 @@
  *   static bool renderer_init(RendererContext*, GLFWwindow*, uint32_t w, uint32_t h);
  *   static void renderer_upload_layer(RendererContext*, int layer, const uint32_t* px, uint32_t w, uint32_t h);
  *   static bool renderer_begin_frame(RendererContext*, uint32_t* image_index);
- *   static void renderer_update_layer(RendererContext*, int layer, const uint32_t* px, uint32_t w, uint32_t h);
+ *   static void renderer_update_layer_rect(RendererContext*, int layer, const uint32_t* px,
+ *                                          uint32_t w, uint32_t h, uint32_t x, uint32_t y, uint32_t rw, uint32_t rh);
  *   static void renderer_begin_render(RendererContext*, uint32_t image_index);
  *   static void renderer_draw_layer(RendererContext*, int layer);
  *   static void renderer_draw_line(RendererContext*, const float* data, uint32_t count,
@@ -88,6 +89,10 @@ typedef ptrdiff_t      GLintptr;
 #define GL_LINEAR                 0x2601
 #define GL_RGBA                   0x1908
 #define GL_RGBA8                  0x8058
+#define GL_UNPACK_ROW_LENGTH      0x0CF2
+#define GL_UNPACK_SKIP_ROWS       0x0CF3
+#define GL_UNPACK_SKIP_PIXELS     0x0CF4
+#define GL_UNPACK_ALIGNMENT       0x0CF5
 #define GL_TEXTURE0               0x84C0
 #define GL_BLEND                  0x0BE2
 #define GL_SRC_ALPHA              0x0302
@@ -119,6 +124,7 @@ typedef void           (APIENTRY *PFNGLBINDTEXTUREPROC)(GLenum, GLuint);
 typedef void           (APIENTRY *PFNGLTEXPARAMETERIPROC)(GLenum, GLenum, GLint);
 typedef void           (APIENTRY *PFNGLTEXIMAGE2DPROC)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*);
 typedef void           (APIENTRY *PFNGLTEXSUBIMAGE2DPROC)(GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void*);
+typedef void           (APIENTRY *PFNGLPIXELSTOREIPROC)(GLenum, GLint);
 typedef void           (APIENTRY *PFNGLACTIVETEXTUREPROC)(GLenum);
 typedef void           (APIENTRY *PFNGLGENVERTEXARRAYSPROC)(GLsizei, GLuint*);
 typedef void           (APIENTRY *PFNGLDELETEVERTEXARRAYSPROC)(GLsizei, const GLuint*);
@@ -161,6 +167,7 @@ static PFNGLBINDTEXTUREPROC           pglBindTexture           = nullptr;
 static PFNGLTEXPARAMETERIPROC         pglTexParameteri         = nullptr;
 static PFNGLTEXIMAGE2DPROC            pglTexImage2D            = nullptr;
 static PFNGLTEXSUBIMAGE2DPROC         pglTexSubImage2D         = nullptr;
+static PFNGLPIXELSTOREIPROC           pglPixelStorei           = nullptr;
 static PFNGLACTIVETEXTUREPROC         pglActiveTexture         = nullptr;
 static PFNGLGENVERTEXARRAYSPROC       pglGenVertexArrays       = nullptr;
 static PFNGLDELETEVERTEXARRAYSPROC    pglDeleteVertexArrays    = nullptr;
@@ -203,6 +210,7 @@ static PFNGLGETSTRINGPROC             pglGetString             = nullptr;
 #define glTexParameteri         pglTexParameteri
 #define glTexImage2D            pglTexImage2D
 #define glTexSubImage2D         pglTexSubImage2D
+#define glPixelStorei           pglPixelStorei
 #define glActiveTexture         pglActiveTexture
 #define glGenVertexArrays       pglGenVertexArrays
 #define glDeleteVertexArrays    pglDeleteVertexArrays
@@ -251,6 +259,7 @@ static bool load_gl_functions(void)
     LOAD(glTexParameteri,         PFNGLTEXPARAMETERIPROC)
     LOAD(glTexImage2D,            PFNGLTEXIMAGE2DPROC)
     LOAD(glTexSubImage2D,         PFNGLTEXSUBIMAGE2DPROC)
+    LOAD(glPixelStorei,           PFNGLPIXELSTOREIPROC)
     LOAD(glActiveTexture,         PFNGLACTIVETEXTUREPROC)
     LOAD(glGenVertexArrays,       PFNGLGENVERTEXARRAYSPROC)
     LOAD(glDeleteVertexArrays,    PFNGLDELETEVERTEXARRAYSPROC)
@@ -513,13 +522,26 @@ static bool renderer_begin_frame(RendererContext* ctx, uint32_t* image_index)
     return true;
 }
 
-/* Per-frame layer texture update (just glTexSubImage2D, no barriers needed). */
-static void renderer_update_layer(RendererContext* ctx, int layer_index,
-                                   const uint32_t* pixels, uint32_t width, uint32_t height)
+/* Per-frame layer texture update of a sub-region (dirty-rect upload).
+ * Source pixels are addressed as pixels[(y + row) * width + x + col] — the
+ * row stride stays the full layer width via GL_UNPACK_ROW_LENGTH, so no
+ * intermediate copy is needed. Pixel store state is restored afterwards. */
+static void renderer_update_layer_rect(RendererContext* ctx, int layer_index,
+                                       const uint32_t* pixels, uint32_t width, uint32_t height,
+                                       uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 {
+    (void)height; /* upload extents are (w, h); height only bounds the source rows */
     glBindTexture(GL_TEXTURE_2D, ctx->layer_textures[layer_index]);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)width, (GLsizei)height,
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, (GLint)width);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, (GLint)x);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS, (GLint)y);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4); /* rows start on uint32_t boundaries */
+    glTexSubImage2D(GL_TEXTURE_2D, 0, (GLint)x, (GLint)y, (GLsizei)w, (GLsizei)h,
                     GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 

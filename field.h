@@ -344,6 +344,8 @@ typedef struct
     uint32_t* data;     ///< Pixel array (width × height entries).
     uint32_t width;     ///< Buffer width in pixels.
     uint32_t height;    ///< Buffer height in pixels.
+    ltrb32u  dirty;     ///< Union of modified regions since the last reset (inclusive bounds).
+    bool     is_dirty;  ///< Whether @c dirty holds a valid region (false = nothing modified).
 
 } Frame;
 
@@ -553,7 +555,6 @@ struct Field {
     Entity*     pressed;            ///< Currently pressed entity (drag source).
     Entity*     stream[3];          ///< Streaming entities (e.g. CRT displays).
     uint32_t    current[IP_LIMIT];  ///< Current hit-test result.
-    uint32_t    prior[IP_LIMIT];    ///< Previous hit-test result.
     bool        repaint;            ///< Global repaint flag.
     bool        drag;               ///< Sector (node) drag in progress.
     bool        move;               ///< Window move in progress.
@@ -671,6 +672,20 @@ static void     ff_frame_copy_with_alpha(Frame*, Frame*, uint8_t);
  *  @param yo      Y offset in target.
  */
 static void     ff_frame_copy_at(Frame*, Frame*, uint32_t, uint32_t);
+
+/** @brief Union a modified region into a frame's dirty rectangle (clamped to bounds).
+ *  @param frame  Target frame.
+ *  @param l      Left edge (inclusive; negative values are clamped to 0).
+ *  @param t      Top edge (inclusive; negative values are clamped to 0).
+ *  @param r      Right edge (inclusive).
+ *  @param b      Bottom edge (inclusive).
+ */
+static void     ff_frame_mark(Frame*, int32_t, int32_t, int32_t, int32_t);
+
+/** @brief Reset a frame's dirty rectangle (call after the region was uploaded).
+ *  @param frame  Target frame.
+ */
+static void     ff_frame_dirty_reset(Frame*);
 
 /** @brief Allocate a sprite with @c nframes frames of size @c w × @c h.
  *  @param sprite   Sprite to initialise.
@@ -1051,6 +1066,7 @@ static inline uint32_t ff_frame_get(Frame* frame, uint32_t x, uint32_t y) {
  */
 static inline void ff_frame_clr(Frame* frame) {
     memset(frame->data, 0, frame->height * frame->width * sizeof(uint32_t));
+    ff_frame_mark(frame, 0, 0, (int32_t)frame->width - 1, (int32_t)frame->height - 1);
 }
 
 /** @brief Fill the entire frame with a single colour value.
@@ -1059,6 +1075,7 @@ static inline void ff_frame_clr(Frame* frame) {
  */
 static inline void ff_frame_fill(Frame* frame, uint32_t value) {
     for(uint32_t i = 0; i < (frame->height * frame->width); ++i) frame->data[i] = value;
+    ff_frame_mark(frame, 0, 0, (int32_t)frame->width - 1, (int32_t)frame->height - 1);
 }
 
 /** @brief Allocate and zero-initialise a frame buffer.
@@ -1067,9 +1084,10 @@ static inline void ff_frame_fill(Frame* frame, uint32_t value) {
  *  @param y      Height in pixels.
  */
 static inline void ff_frame_init(Frame* frame, uint32_t x, uint32_t y) {
-    frame->width  = x;
-    frame->height = y;
-    frame->data   = (uint32_t*)calloc(frame->width * frame->height , sizeof(uint32_t));
+    frame->width     = x;
+    frame->height    = y;
+    frame->data      = (uint32_t*)calloc(frame->width * frame->height , sizeof(uint32_t));
+    frame->is_dirty = false;
 }
 
 /** @brief Free the frame's pixel buffer (does not free the Frame struct itself).
@@ -1079,12 +1097,55 @@ static inline void ff_frame_flush(Frame* frame) {
     free(frame->data);
 }
 
+/** @brief Union a modified region into a frame's dirty rectangle.
+ *  @details The rectangle is clamped to the frame bounds; empty or fully
+ *           out-of-range rectangles are ignored. The draw primitives call
+ *           this so the backend can upload only the changed region
+ *           (dirty-rect texturing) instead of the whole layer. Cost is a
+ *           few integer compares per primitive — deliberately NOT per pixel
+ *           in ff_frame_set(), which stays mark-free.
+ *  @param frame  Target frame.
+ *  @param l      Left edge (inclusive).
+ *  @param t      Top edge (inclusive).
+ *  @param r      Right edge (inclusive).
+ *  @param b      Bottom edge (inclusive).
+ */
+static inline void ff_frame_mark(Frame* frame, int32_t l, int32_t t, int32_t r, int32_t b) {
+    if(r < l || b < t) return;
+    if(l < 0) l = 0;
+    if(t < 0) t = 0;
+    if(r >= (int32_t)frame->width)  r = (int32_t)frame->width - 1;
+    if(b >= (int32_t)frame->height) b = (int32_t)frame->height - 1;
+    if(l > r || t > b) return;
+
+    if(!frame->is_dirty) {
+        frame->dirty.l   = (uint32_t)l;
+        frame->dirty.t   = (uint32_t)t;
+        frame->dirty.r   = (uint32_t)r;
+        frame->dirty.b   = (uint32_t)b;
+        frame->is_dirty = true;
+        return;
+    }
+    if((uint32_t)l < frame->dirty.l) frame->dirty.l = (uint32_t)l;
+    if((uint32_t)t < frame->dirty.t) frame->dirty.t = (uint32_t)t;
+    if((uint32_t)r > frame->dirty.r) frame->dirty.r = (uint32_t)r;
+    if((uint32_t)b > frame->dirty.b) frame->dirty.b = (uint32_t)b;
+}
+
+/** @brief Reset a frame's dirty rectangle (call after the region was uploaded).
+ *  @param frame  Target frame.
+ */
+static inline void ff_frame_dirty_reset(Frame* frame) {
+    frame->is_dirty = false;
+}
+
 /** @brief Copy all pixels from source to target (dimensions must match).
  *  @param target  Destination frame.
  *  @param source  Source frame.
  */
 static inline void ff_frame_copy(Frame* target, Frame* source) {
     for(uint32_t i = 0; i < target->height * target->width; i++) target->data[i] = source->data[i];
+    ff_frame_mark(target, 0, 0, (int32_t)target->width - 1, (int32_t)target->height - 1);
 }
 
 /** @brief Copy source to target, recoloring each pixel via ff_index_to_hsv.
@@ -1097,6 +1158,7 @@ static void ff_frame_copy_with_alpha(Frame* target, Frame* source, uint8_t alpha
         auto data = ff_index_to_hsv(source->data[i] + 0x2, alpha);
         target->data[i] = data;
     }
+    ff_frame_mark(target, 0, 0, (int32_t)target->width - 1, (int32_t)target->height - 1);
 }
 
 /** @brief Copy source to target at a pixel offset, skipping transparent (zero) pixels.
@@ -1106,6 +1168,9 @@ static void ff_frame_copy_with_alpha(Frame* target, Frame* source, uint8_t alpha
  *  @param yo      Y offset in target.
  */
 static inline void ff_frame_copy_at(Frame* target, Frame* source, uint32_t xo, uint32_t yo) {
+    ff_frame_mark(target, (int32_t)xo, (int32_t)yo,
+                  (int32_t)(xo + source->width - 1),
+                  (int32_t)(yo + source->height - 1));
     for(uint32_t y = 0; y < source->height; y++) {
         for(uint32_t x = 0; x < source->width; x++) {
             auto data = ff_frame_get(source, x, y);
@@ -1126,6 +1191,7 @@ static inline void ff_frame_copy_at(Frame* target, Frame* source, uint32_t xo, u
  *  @param colour  32-bit RGBA colour.
  */
 static inline void ff_draw_rect_o(Frame* restrict frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour) {
+    ff_frame_mark(frame, (int32_t)l, (int32_t)t, (int32_t)r, (int32_t)b);
     for(uint32_t i = l; i <= r; i++) {
         ff_frame_set(frame, i, t, colour);
         ff_frame_set(frame, i, b, colour);
@@ -1146,6 +1212,7 @@ static inline void ff_draw_rect_o(Frame* restrict frame, uint32_t l, uint32_t t,
  *  @param colour  32-bit RGBA colour.
  */
 static inline void ff_draw_rect_f(Frame* frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour) {
+    ff_frame_mark(frame, (int32_t)l, (int32_t)t, (int32_t)r, (int32_t)b);
     for(uint32_t y = t; y <= b; ++y) {
         for(uint32_t x = l; x <= r; ++x) {
             ff_frame_set(frame, x, y, colour);
@@ -1161,6 +1228,7 @@ static inline void ff_draw_rect_f(Frame* frame, uint32_t l, uint32_t t, uint32_t
  *  @param value  32-bit RGBA colour.
  */
 static inline void ff_draw_line_v(Frame* frame, uint32_t x, uint32_t yo, uint32_t ye, const uint32_t value) {
+    ff_frame_mark(frame, (int32_t)x, (int32_t)yo, (int32_t)x, (int32_t)ye);
     for(uint32_t y = yo; y <= ye; ++y)
         ff_frame_set(frame, x, y, value);
 }
@@ -1173,6 +1241,7 @@ static inline void ff_draw_line_v(Frame* frame, uint32_t x, uint32_t yo, uint32_
  *  @param value  32-bit RGBA colour.
  */
 static inline void ff_draw_line_h(Frame* frame, uint32_t y, uint32_t xo, uint32_t xe, const uint32_t value) {
+    ff_frame_mark(frame, (int32_t)xo, (int32_t)y, (int32_t)xe, (int32_t)y);
     for(uint32_t x = xo; x <= xe; ++x)
         ff_frame_set(frame, x, y, value);
 }
@@ -1185,6 +1254,8 @@ static inline void ff_draw_line_h(Frame* frame, uint32_t y, uint32_t xo, uint32_
  *  @param value  32-bit RGBA colour.
  */
 static void ff_draw_circle_f(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
+    ff_frame_mark(frame, (int32_t)xc - (int32_t)r, (int32_t)yc - (int32_t)r,
+                  (int32_t)xc + (int32_t)r, (int32_t)yc + (int32_t)r);
     int x = 0;
     int y = r;
     int p = 1 - r;
@@ -1216,6 +1287,8 @@ static void ff_draw_circle_f(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r,
  *  @param value  32-bit RGBA colour.
  */
 static inline void ff_draw_circle_o(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
+    ff_frame_mark(frame, (int32_t)xc - (int32_t)r, (int32_t)yc - (int32_t)r,
+                  (int32_t)xc + (int32_t)r, (int32_t)yc + (int32_t)r);
     int x = 0;
     int y = r;
     int p = 1 - r;
@@ -1255,6 +1328,7 @@ static inline void ff_draw_circle_o(Frame* frame, uint32_t xc, uint32_t yc, uint
  *  @param colour  32-bit RGBA colour.
  */
 static inline void ff_draw_glyph(Frame* frame, const uint8_t* font, uint32_t id, uint32_t l, uint32_t t, const uint32_t colour) {
+    ff_frame_mark(frame, (int32_t)l, (int32_t)t, (int32_t)(l + 6), (int32_t)(t + 7));
     uint32_t pos = id * 7;
     u_int8_t stencil = 0b1;
 
@@ -1278,6 +1352,7 @@ static inline void ff_draw_glyph(Frame* frame, const uint8_t* font, uint32_t id,
  */
 static inline void ffDrawTextLabel(Frame* frame, const uint8_t* font, const char* text, uint32_t l, uint32_t t, uint32_t, uint32_t, const uint32_t colour) {
     uint32_t n = strlen(text);
+    ff_frame_mark(frame, (int32_t)l, (int32_t)t, (int32_t)(l + n * 8 - 1), (int32_t)(t + 7));
     for(uint32_t i = 0; i < n; i++) {
         ff_draw_glyph(frame, font, text[i] - 32, l + i * 8, t, colour);
     }
@@ -1339,6 +1414,7 @@ static inline void ff_sprite_load_stripe(Sprite* restrict sprite, Frame* restric
  *  @param colour  32-bit RGBA colour.
  */
 static inline void ff_draw_ltrb_o(Frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour) {
+    ff_frame_mark(canvas, (int32_t)r->l, (int32_t)r->t, (int32_t)r->r, (int32_t)r->b);
     for(uint32_t i = r->l; i <= r->r; ++i) {
         ff_frame_set(canvas, i, r->t, colour);
         ff_frame_set(canvas, i, r->b, colour);
@@ -1356,6 +1432,7 @@ static inline void ff_draw_ltrb_o(Frame* restrict canvas, ltrb32u* restrict r, c
  */
 static inline void ff_draw_ltrb_f(Frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour)
 {
+    ff_frame_mark(canvas, (int32_t)r->l, (int32_t)r->t, (int32_t)r->r, (int32_t)r->b);
     for(uint32_t y = r->t; y <= r->b; ++y) {
         for(uint32_t x = r->l; x <= r->r; ++x) {
             ff_frame_set(canvas, x, y, colour);
@@ -1564,8 +1641,6 @@ Field* ffCreateField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t si
     field->step         = 25;
     field->staging      = false;
     field->connecting   = false;
-    field->prior[IP_NODE] = 0;
-    field->prior[IP_ENTITY] = 0;
     field->current[IP_NODE] = 0;
     field->current[IP_ENTITY] = 0;
     field->pressed      = nullptr;
@@ -1708,6 +1783,9 @@ static inline void ffPlaceNode(Field* restrict field, Node* restrict node, uint3
     node->visible = true;
     ff_draw_ltrb_f(node->parent->layer[SN], &(ltrb32u) { .l = x, .t = y, x + node->width, y + node->height }, node->index);
     ff_frame_copy_at(node->parent->layer[SC], &node->buffer, x, y);
+    /* SN changed — the canvas grid is drawn around node areas and must be
+     * redrawn. Node 0, entity 0 is the root canvas (see ffCreateField). */
+    field->node[0].at[0].repaint = true;
 
     for(uint32_t i = 0; i < node->entities; ++i) {
         auto bounds = &node->at[i].bounds;
@@ -1876,6 +1954,8 @@ void ff_hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
                 &p->bounds,
                 0x0
             );
+            /* SN changed — restore the canvas grid under the node's old area. */
+            field->node[0].at[0].repaint = true;
         }
 
     }
@@ -1883,9 +1963,7 @@ void ff_hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
         set_entity[p->type](field->pressed, x, y);
     }
     field->repaint = true;
-    field->prior[IP_NODE] = field->current[IP_NODE];
-    field->prior[IP_ENTITY] = field->current[IP_ENTITY];
-        
+
     p->callback[F_CE_PRESS](p, p->target[F_CE_PRESS]);
 }
 
@@ -1968,8 +2046,11 @@ static inline void ff_draw_debug_overlay(Field* field, Entity* entity) {
 #endif
 /**
  * @brief Handle mouse move: detect hover enter/leave and update cursor state.
- * @details Compares the current stencil hit with the prior hit and dispatches
- *          enter/leave handlers when the hovered entity changes.
+ * @details Compares the stencil hit with the currently hovered entity and
+ *          dispatches enter/leave handlers when it changes. The leave target
+ *          is the previous @c current[] entry — the entity that was actually
+ *          hovered — so it is always un-hovered (the old prior[] copy lagged
+ *          one change behind and left stale hover highlights).
  * @param field  Target field.
  * @param x      Mouse X coordinate.
  * @param y      Mouse Y coordinate.
@@ -1979,30 +2060,28 @@ void ff_hit_test(Field* restrict field, int x, int y) {
     auto uid_n = ff_frame_get(field->layer[SN], x, y);
 
     if(field->current[IP_ENTITY] != uid_e || field->current[IP_NODE] != uid_n) {
-        auto prior_node = field->prior[IP_NODE];
-        auto prior_uid = field->prior[IP_ENTITY];
-        if(prior_node >= field->nodes || prior_uid >= field->node[prior_node].entities) return;
+        auto prev_node = field->current[IP_NODE];
+        auto prev_uid  = field->current[IP_ENTITY];
+        if(prev_node >= field->nodes || prev_uid >= field->node[prev_node].entities) return;
         if(uid_n >= field->nodes || uid_e >= field->node[uid_n].entities) return;
-        auto prior = &field->node[prior_node].at[prior_uid];
+        auto prev    = &field->node[prev_node].at[prev_uid];
         auto current = &field->node[uid_n].at[uid_e];
 
         #ifdef DEBUG_OVERLAY
             ff_draw_debug_overlay(field, current);
         #endif
 
-        field->prior[IP_ENTITY] = field->current[IP_ENTITY];
-        field->prior[IP_NODE] = field->current[IP_NODE];
         field->current[IP_ENTITY] = uid_e;
-        field->current[IP_NODE] = uid_n;
-       
-        prior->hovered = false;
-        prior->repaint = true;
-        leave_entity[prior->type](prior, x, y);
-        
+        field->current[IP_NODE]   = uid_n;
+
+        prev->hovered = false;
+        prev->repaint = true;
+        leave_entity[prev->type](prev, x, y);
+
         current->hovered = true;
         current->repaint = true;
         enter_entity[current->type](current, x, y);
-        
+
         field->repaint = true;
     }
 }
@@ -2508,14 +2587,10 @@ static void ff_set_sprite_inf_slider(Entity* restrict entity, int x, int y) {
  *  @param y       Mouse Y (unused).
  */
 static void ff_set_button(Entity* restrict entity, int, int) {
-    auto field = entity->parent->parent;
     auto coarse = &entity->value[CP_COARSE];
     if(*coarse < 0.5f) *coarse = 1.0f;
     else *coarse = 0.0f;
     entity->repaint = true;
-
-    field->prior[IP_ENTITY] = field->current[IP_ENTITY];
-    field->prior[IP_NODE] = field->current[IP_NODE];
 }
 
 /** @brief Handle button release (only fires if the same button was pressed).
@@ -2571,14 +2646,10 @@ static void ff_init_socket(Entity* restrict entity) {
  *  @param y       Mouse Y (unused).
  */
 static void ff_set_socket(Entity* restrict entity, int, int) {
-    auto field = entity->parent->parent;
     auto coarse = &entity->value[CP_COARSE];
     if(*coarse < 0.5f) *coarse = 1.0f;
     else *coarse = 0.0f;
     entity->repaint = true;
-
-    field->prior[IP_ENTITY] = field->current[IP_ENTITY];
-    field->prior[IP_NODE] = field->current[IP_NODE];
 }
 
 /** @brief Draw a socket as a coloured circle (teal=input, red=output).
@@ -2905,9 +2976,6 @@ static void ff_init_node(Entity* restrict entity) {
  */
 static void ff_set_node(Entity* restrict entity, int, int) {
     entity->repaint = true;
-    auto field = entity->parent->parent;
-    field->prior[IP_ENTITY] = field->current[IP_ENTITY];
-    field->prior[IP_NODE] = field->current[IP_NODE];
 }
 
 /** @brief Check whether an entity's bounds overlap another node in the stencil.
@@ -3062,6 +3130,8 @@ static void ff_release_node(Entity* restrict entity, int, int)
     field->staging = false;
     auto ext = (EntityNode*)entity->extension;
     ext->staging = false;
+    /* SN changed (node committed or snapped back) — redraw the canvas grid. */
+    field->node[0].at[0].repaint = true;
     entity->repaint = true;
     field->repaint = true;
 }
@@ -3246,6 +3316,11 @@ static void ff_draw_canvas(Entity* restrict entity)
             if(++l >= major) l = 0;
         }
     }
+    /* The grid depends only on the SN stencil, not on hover — it must be
+     * redrawn only when SN changes (node placed / drag started / released).
+     * Sites that modify SN set this flag; see ffPlaceNode, ff_hit_test_down
+     * and ff_release_node. */
+    entity->repaint = false;
 }
 
 /** Dispatch Tables ***********************************************************************************************************/

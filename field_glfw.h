@@ -49,6 +49,22 @@ enum {
     R_LAYER_DO = 5,  /* only used when DEBUG_OVERLAY is defined */
 };
 
+/* Upload only the dirty region of a field layer to its GPU texture, then
+ * reset the layer's dirty flag. Layers with no modifications since the last
+ * upload are skipped entirely — this is what keeps per-frame bandwidth
+ * proportional to what actually changed instead of the full layer size.
+ * Note the renderer and field layer indices differ (R_LAYER_FG=2 vs FG=3),
+ * so both indices are passed explicitly. */
+static void ff_upload_dirty_layer(RendererContext* ctx, Field* field, int r_layer, int f_layer) {
+    Frame* frame = field->layer[f_layer];
+    if (!frame->is_dirty) return;
+    renderer_update_layer_rect(ctx, r_layer, frame->data, frame->width, frame->height,
+                               frame->dirty.l, frame->dirty.t,
+                               frame->dirty.r - frame->dirty.l + 1,
+                               frame->dirty.b - frame->dirty.t + 1);
+    frame->is_dirty = false;
+}
+
 /******************************************************************************************************************************
  * Threading globals
  ******************************************************************************************************************************/
@@ -366,24 +382,26 @@ void* draw_field(void* arg)
         if (!renderer_begin_frame(&g_renderer, &image_index))
             continue;
 
-        /* Update layer textures BEFORE rendering.
+        /* Update layer textures BEFORE rendering. Only the dirty region of
+         * each layer is uploaded (dirty-rect texturing); clean layers are
+         * skipped entirely.
          * Vulkan: must be outside the render pass (transfer commands illegal inside).
          * OpenGL: just glTexSubImage2D, order doesn't matter but we keep it consistent. */
         if (scene_dirty) {
-            renderer_update_layer(&g_renderer, R_LAYER_BG, context->layer[BG]->data, context->layer[BG]->width, context->layer[BG]->height);
-            renderer_update_layer(&g_renderer, R_LAYER_NG, context->layer[NG]->data, context->layer[NG]->width, context->layer[NG]->height);
-            renderer_update_layer(&g_renderer, R_LAYER_FG, context->layer[FG]->data, context->layer[FG]->width, context->layer[FG]->height);
-            renderer_update_layer(&g_renderer, R_LAYER_TL, context->layer[TL]->data, context->layer[TL]->width, context->layer[TL]->height);
+            ff_upload_dirty_layer(&g_renderer, context, R_LAYER_BG, BG);
+            ff_upload_dirty_layer(&g_renderer, context, R_LAYER_NG, NG);
+            ff_upload_dirty_layer(&g_renderer, context, R_LAYER_FG, FG);
+            ff_upload_dirty_layer(&g_renderer, context, R_LAYER_TL, TL);
 
             if (context->staging) {
-                renderer_update_layer(&g_renderer, R_LAYER_ST, context->layer[ST]->data, context->layer[ST]->width, context->layer[ST]->height);
+                ff_upload_dirty_layer(&g_renderer, context, R_LAYER_ST, ST);
             }
 
             #ifdef DEBUG_OVERLAY
                 if(atomic_load_explicit(&force_repaint, memory_order_acquire)) {
                     atomic_store_explicit(&force_repaint, false, memory_order_release);
                 }
-                renderer_update_layer(&g_renderer, R_LAYER_DO, context->layer[DO]->data, context->layer[DO]->width, context->layer[DO]->height);
+                ff_upload_dirty_layer(&g_renderer, context, R_LAYER_DO, DO);
             #endif
         }
 
