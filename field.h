@@ -338,6 +338,7 @@ struct Oscillograph {
     void* data;
     uint32_t r_head;
     uint32_t w_head;
+    uint32_t fps;               // Target frames per second for streaming redraw
 };
 
 struct Momentary {
@@ -797,9 +798,10 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
             auto ext = (Oscillograph*)entity->extension;
             auto xi = ff_find_entity_by_id(node->parent, descriptor->input_x);
             auto yi = ff_find_entity_by_id(node->parent, descriptor->input_y);
-                
+
             ext->x = &((Socket*)xi->extension)->input;
             ext->y = &((Socket*)yi->extension)->input;
+            ext->fps = 60;
         }
         break;
 
