@@ -346,12 +346,16 @@ void* draw_field(void* arg)
             }
         }
 
-        bool draw_connecting = context->connecting && context->pressed && context->pressed->data;
+        bool draw_connecting = context->connecting && context->pressed &&
+            ((Socket*)context->pressed->extension)->cord;
         bool draw_cords = false;
         for(uint32_t n = 0; n < context->nodes && !draw_cords; ++n) {
             for(uint32_t i = 0; i < context->node[n].entities; ++i) {
                 auto entity = &context->node[n].at[i];
-                if(entity->connected && entity->has_data) { draw_cords = true; break; }
+                if(entity->type == ST_SOCKET) {
+                    auto ext = (Socket*)entity->extension;
+                    if(ext->connected && ext->has_data) { draw_cords = true; break; }
+                }
             }
         }
 
@@ -413,8 +417,9 @@ void* draw_field(void* arg)
 
         /* Draw pending connection cord */
         if (draw_connecting) {
+            auto ext = (Socket*)context->pressed->extension;
             renderer_draw_line(&g_renderer,
-                (const float*)context->pressed->data, SPLINE_SEGMENTS,
+                (const float*)ext->cord, SPLINE_SEGMENTS,
                 CORD_SELECT, 0, 0, 0, 0);
         }
 
@@ -422,11 +427,14 @@ void* draw_field(void* arg)
         for(uint32_t n = 0; n < context->nodes; ++n) {
             for(uint32_t i = 0; i < context->node[n].entities; ++i) {
                 auto entity = &context->node[n].at[i];
-                if(entity->connected && entity->has_data) {
-                    auto colour = entity->hovered || entity->connection->hovered ? CORD_SELECT : CORD_NORMAL;
-                    renderer_draw_line(&g_renderer,
-                        (const float*)entity->data, SPLINE_SEGMENTS,
-                        colour, 0, 0, 0, 0);
+                if(entity->type == ST_SOCKET) {
+                    auto ext = (Socket*)entity->extension;
+                    if(ext->connected && ext->has_data) {
+                        auto colour = entity->hovered || ext->connection->hovered ? CORD_SELECT : CORD_NORMAL;
+                        renderer_draw_line(&g_renderer,
+                            (const float*)ext->cord, SPLINE_SEGMENTS,
+                            colour, 0, 0, 0, 0);
+                    }
                 }
             }
         }

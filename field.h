@@ -1,3 +1,25 @@
+/**
+ * @file field.h
+ * @brief Immediate-mode UI field framework — canvas, entities, widgets, and rendering.
+ *
+ * @details This header implements the core of a graphical modular-synthesizer-style
+ * patcher canvas. It provides:
+ * - A layered @ref Field with hit-test stencil buffers for mouse interaction.
+ * - @ref Node containers that own arrays of @ref Entity widgets.
+ * - Widget types: sliders, encoders, rotaries, checkboxes, buttons, sockets,
+ *   textboxes, CRT displays, and nested nodes.
+ * - CPU-side @ref Frame pixel buffers and @ref Sprite multi-frame images.
+ * - Software draw primitives (rectangles, lines, circles, glyphs).
+ * - Dispatch tables for per-type init/set/draw/drag/scroll/enter/leave/release.
+ *
+ * The design is header-only: all functions are defined inline in this file.
+ * Rendering targets are @ref Frame buffers (32-bit RGBA pixel arrays); the
+ * caller is responsible for blitting the composited layers to the screen.
+ *
+ * @note The frame loop and graph evaluation are expected to be allocation-free;
+ *       this file allocates only during entity/field/node creation and teardown.
+ */
+
 #pragma  once
 #include <stdbool.h>
 #include <stddef.h>
@@ -11,470 +33,933 @@
 #include <sys/stat.h>
 #include <stdatomic.h>
 
+/** @brief Enables the debug overlay layer (extra @ref FieldLayer::DO frame). */
 #define DEBUG_OVERLAY
 #ifdef DEBUG_OVERLAY
+    /** @brief Atomic flag set by the debug overlay to request a forced repaint. */
     atomic_bool force_repaint = false;
 #endif
 
+/** @brief Atomic flag to trigger a stream update (e.g. CRT trace redraw). */
 atomic_bool trigger_stream_update = false;
+/** @brief Number of segments used when drawing Bezier spline cords between sockets. */
 constexpr uint_fast32_t SPLINE_SEGMENTS = 32;
+/** @brief Fixed size of the text buffer inside a @ref Textbox extension. */
 constexpr uint_fast32_t TEXTBOX_SIZE = 32;
 
+/** @brief Root field container — owns layers, nodes, and interaction state. */
 typedef struct Field Field;
+/** @brief A single widget/entity on the canvas (slider, socket, button, …). */
 typedef struct Entity Entity;
+/** @brief Extension data for checkbox entities. */
 typedef struct Checkbox Checkbox;
+/** @brief Extension data for slider entities. */
 typedef struct Slider Slider;
+/** @brief Extension data for encoder entities. */
 typedef struct Encoder Encoder;
+/** @brief Extension data for momentary button entities. */
 typedef struct Momentary Momentary;
+/** @brief Extension data for rotary / infinite-slider entities. */
 typedef struct Rotary Rotary;
+/** @brief Extension data for socket (patch-cable) entities. */
 typedef struct Socket Socket;
+/** @brief Extension data for CRT / oscillograph display entities. */
 typedef struct Oscillograph Oscillograph;
+/** @brief Extension data for textbox (label) entities. */
+typedef struct Textbox Textbox;
+/** @brief Extension data for nested-node entities. */
+typedef struct EntityNode EntityNode;
+/** @brief Extension data for sprite-button entities. */
+typedef struct SpriteButton SpriteButton;
+/** @brief A container node holding an array of entities. */
 typedef struct Node Node;
+/** @brief Blueprint used to instantiate an @ref Entity via ffCreateEntity(). */
 typedef struct SectorDescriptor SectorDescriptor;
 
+/**
+ * @brief Widget type — indexes into the dispatch tables.
+ * @note ST_LIMIT must remain the last entry; it is the table size.
+ */
 typedef enum {
-    ST_SLIDER,
-    ST_ENCODER,
-    ST_ROTARY,
-    ST_SPRITE_INF_SLIDER,
-    ST_SOCKET,
-    ST_CHECKBOX, 
-    ST_MOMENTARY, 
-    ST_SPRITE_CHECKBOX, 
-    ST_SPRITE_BUTTON, 
-    ST_CANVAS,
-    ST_TEXTBOX,
-    ST_CRT,
-    ST_NODE,
+    ST_SLIDER,          ///< Linear slider (horizontal or vertical).
+    ST_ENCODER,         ///< Endless rotary encoder with wrap-around.
+    ST_ROTARY,          ///< Rotary knob with sprite frames.
+    ST_SPRITE_INF_SLIDER, ///< Infinite slider rendered via sprite frames.
+    ST_SOCKET,          ///< Patch-cable socket (input or output).
+    ST_CHECKBOX,        ///< Toggle checkbox.
+    ST_MOMENTARY,       ///< Momentary push button.
+    ST_SPRITE_CHECKBOX, ///< Checkbox rendered with sprite frames.
+    ST_SPRITE_BUTTON,   ///< Button rendered with sprite frames.
+    ST_CANVAS,          ///< Background canvas (grid drawing).
+    ST_TEXTBOX,         ///< Read-only text label.
+    ST_CRT,             ///< CRT / oscillograph display.
+    ST_NODE,            ///< Nested node (sub-patch container).
 
-    ST_LIMIT
+    ST_LIMIT            ///< Sentinel — number of sector types.
 
 } SectorType;
 
+/**
+ * @brief Visual subtype for sliders and encoders.
+ */
 typedef enum {
-    SS_A, 
-    SS_B,
-    SS_C,
+    SS_A,       ///< Slider style A — filled bar from start to value.
+    SS_B,       ///< Slider style B — filled bar from value to end.
+    SS_C,       ///< Slider style C — bipolar, filled from zero to value.
 
-    SS_LIMIT
+    SS_LIMIT    ///< Sentinel — number of subtypes.
 
 } SubType;
 
+/**
+ * @brief Core role of an entity in the data-flow graph.
+ */
 typedef enum: uint8_t {
-    F_CT_STATIC,
-    F_CT_CONTROL,
-    F_CT_INPUT, 
-    F_CT_OUTPUT 
+    F_CT_STATIC,    ///< Purely visual; no data flow.
+    F_CT_CONTROL,   ///< User-adjustable control (slider, knob, …).
+    F_CT_INPUT,     ///< Data input (receives a value via a socket).
+    F_CT_OUTPUT     ///< Data output (provides a value via a socket).
 } CoreType;
 
+/**
+ * @brief Callback event types — indexes into Entity::callback and Entity::target.
+ */
 typedef enum {
-    F_CE_PRESS,
-    F_CE_RELEASE,
-    F_CE_VALUE,
-    F_CE_REPAINT,
+    F_CE_PRESS,     ///< Fired on mouse-button press.
+    F_CE_RELEASE,   ///< Fired on mouse-button release.
+    F_CE_VALUE,     ///< Fired when the entity value changes.
+    F_CE_REPAINT,   ///< Fired after the entity is redrawn.
 
-    F_CE_LIMIT
+    F_CE_LIMIT      ///< Sentinel — number of callback events.
 
 } CallbackEvent;
 
+/**
+ * @brief Index positions for hit-test results stored in Field::current / Field::prior.
+ */
 typedef enum {
-    IP_NODE,
-    IP_ENTITY,
+    IP_NODE,        ///< Index into the node array.
+    IP_ENTITY,      ///< Index into the entity array of that node.
 
-    IP_LIMIT
+    IP_LIMIT        ///< Sentinel — number of index positions.
 
 } IndexPosition;
-            
-typedef enum: uint32_t { 
-    LMB     = 1 << 0,
-    MMB     = 1 << 1,
-    RMB     = 1 << 2,
-    LCTRL   = 1 << 3,
-    RCTRL   = 1 << 4,
-    LSHIFT  = 1 << 5,
-    RSHIFT  = 1 << 6,
+
+/**
+ * @brief Mouse button and keyboard modifier bitmask values.
+ * @note Combine with bitwise OR to test for multiple modifiers.
+ */
+typedef enum: uint32_t {
+    LMB     = 1 << 0,   ///< Left mouse button.
+    MMB     = 1 << 1,   ///< Middle mouse button.
+    RMB     = 1 << 2,   ///< Right mouse button.
+    LCTRL   = 1 << 3,   ///< Left Ctrl key.
+    RCTRL   = 1 << 4,   ///< Right Ctrl key.
+    LSHIFT  = 1 << 5,   ///< Left Shift key.
+    RSHIFT  = 1 << 6,   ///< Right Shift key.
 
 } ControlModifier;
 
-typedef enum { 
-    CP_COARSE,
-    CP_FINE,
+/**
+ * @brief Value precision modes — coarse (integer) and fine (fractional).
+ * @note Entity::value and Slider::step / Encoder::step are indexed by this enum.
+ */
+typedef enum {
+    CP_COARSE,      ///< Coarse (integer) component of the value.
+    CP_FINE,        ///< Fine (fractional) component of the value.
 
-    CP_LIMIT
+    CP_LIMIT        ///< Sentinel — number of precision modes.
 
 } ControlPrecision;
 
-typedef enum { 
-    SP_CURSOR_PRESS,
-    SP_CURSOR_PRIOR,
-    SP_LT_PRESS,
+/**
+ * @brief Saved cursor positions in Field::memory — used during drag operations.
+ */
+typedef enum {
+    SP_CURSOR_PRESS,    ///< Cursor position at mouse-button press.
+    SP_CURSOR_PRIOR,    ///< Cursor position at the previous frame (drag delta source).
+    SP_LT_PRESS,        ///< Entity bounds left/top at press time (for snap-back).
 
-    SP_LIMIT
+    SP_LIMIT            ///< Sentinel — number of saved positions.
 
 } SavedPosition;
 
-typedef enum: uint32_t { 
-    BG,
-    NG,                         // nodes
-    TL,
-    FG,
-    SC,                         // controls stencil
-    SN,                         // nodes stencil
-    ST,                         // staging
+/**
+ * @brief Render layer indices — each layer is a full-field @ref Frame.
+ * @note Layer order (bottom to top): BG, NG, TL, FG, SC, SN, [DO], ST.
+ *       CC is the total count (sentinel).
+ */
+typedef enum: uint32_t {
+    BG,                         ///< Background grid.
+    NG,                         ///< Node backgrounds.
+    TL,                         ///< Text layer.
+    FG,                         ///< Foreground (widget drawing).
+    SC,                         ///< Stencil — entity hit-test IDs (controls).
+    SN,                         ///< Stencil — node hit-test IDs.
+    ST,                         ///< Staging layer (drag preview).
     #ifdef DEBUG_OVERLAY
-        DO,
+        DO,                     ///< Debug overlay layer.
     #endif
-    CC,                         // controls count
+    CC,                         ///< Sentinel — total layer count.
 
 } FieldLayer;
 
+/**
+ * @brief Per-entity behaviour flags — combine with bitwise OR.
+ */
 typedef enum: uint32_t {
-    VERTICAL    = 1 << 0,
-    MOVEABLE    = 1 << 1,
-    INTERCON    = 1 << 2,
-    TRANSPARENT = 1 << 3,
-    RADIO       = 1 << 4,
+    VERTICAL    = 1 << 0,   ///< Widget is oriented vertically.
+    MOVEABLE    = 1 << 1,   ///< Entity can be dragged to a new position.
+    INTERCON    = 1 << 2,   ///< Entity participates in socket connections.
+    TRANSPARENT = 1 << 3,   ///< Entity is transparent to hit-testing (no stencil fill).
+    RADIO       = 1 << 4,   ///< Entity is part of a radio group (checkbox).
 
 } SectorFlags;
 
+/**
+ * @brief Per-field behaviour flags.
+ */
 typedef enum {
-    ROOT        = 1 << 0,
+    ROOT        = 1 << 0,   ///< This field is the root field.
 
 } FieldFlags;
 
-/** Primitives ***************************************************************************************************************/
-
+/** @name Colour palette
+ * @brief 32-bit RGBA colour constants (0xRRGGBBAA) used throughout the renderer.
+ * @{ */
 typedef enum
 {
-    BACKGROUND          = 0x263238FF,
-    MINOR               = 0x232935FF,
-    MAJOR               = 0x162228FF,
-    FOREGROUND          = 0xB0BEC5FF,
-    TEXT                = 0x607D8BFF,
-    SELECTIONBACKGROUND = 0x546E7AFF,
-    SELECTIONFOREGROUND = 0xFFFFFFFF,
-    BUTTONS             = 0x2E3C43FF,
-    SECONDBACKGROUND    = 0x32424AFF,
-    DISABLED            = 0x415967FF,
-    CONTRAST            = 0x1E272CFF,
-    ACTIVE              = 0x314549FF,
-    BORDER              = 0x2A373EFF,
-    HIGHLIGHT           = 0x425B67FF,
-    NOTIFICATIONS       = 0x1E272CFF,
-    ACCENT              = 0x009688FF,
-    EXCLUDED            = 0x2E3C43FF,
-    GREEN               = 0xC3E88DFF,
-    YELLOW              = 0xFFCB6BFF,
-    BLUE                = 0x82AAFFFF,
-    RED                 = 0xF07178FF,
-    PURPLE              = 0xC792EAFF,
-    ORANGE              = 0xF78C6CFF,
-    CYAN                = 0x89DDFFFF,
-    GRAY                = 0x546E7AFF,
-    ERROR               = 0xFF5370FF,
-    COMMENTS            = 0x546E7AFF,
-    VARIABLES           = 0xEEFFFFFF,
-    LINKS               = 0x80CBC4FF,
-    FUNCTIONS           = 0x82AAFFFF,
-    KEYWORDS            = 0xC792EAFF,
-    TAGS                = 0xF07178FF,
-    STRINGS             = 0xC3E88DFF,
-    OPERATORS           = 0x89DDFFFF,
-    ATTRIBUTES          = 0xFFCB6BFF,
-    NUMBERS             = 0xF78C6CFF,
-    PARAMETERS          = 0xF78C6CFF,
-    SOCKET_IN           = 0x009688FF,
-    SOCKET_OUT          = 0xF07178FF,
+    BACKGROUND          = 0x263238FF,   ///< Default canvas background.
+    MINOR               = 0x232935FF,   ///< Minor grid lines.
+    MAJOR               = 0x162228FF,   ///< Major grid lines.
+    FOREGROUND          = 0xB0BEC5FF,   ///< Default foreground / widget body.
+    TEXT                = 0x607D8BFF,   ///< Text label colour.
+    SELECTIONBACKGROUND = 0x546E7AFF,   ///< Selected-item background.
+    SELECTIONFOREGROUND = 0xFFFFFFFF,   ///< Selected-item foreground.
+    BUTTONS             = 0x2E3C43FF,   ///< Button / widget background.
+    SECONDBACKGROUND    = 0x32424AFF,   ///< Secondary background (nodes).
+    DISABLED            = 0x415967FF,   ///< Disabled widget colour.
+    CONTRAST            = 0x1E272CFF,   ///< Contrast / shadow colour.
+    ACTIVE              = 0x314549FF,   ///< Active / pressed state.
+    BORDER              = 0x2A373EFF,   ///< Widget border colour.
+    HIGHLIGHT           = 0x425B67FF,   ///< Slider fill / highlight colour.
+    NOTIFICATIONS       = 0x1E272CFF,   ///< Notification background.
+    ACCENT              = 0x009688FF,   ///< Accent colour (teal).
+    EXCLUDED            = 0x2E3C43FF,   ///< Excluded / muted element.
+    GREEN               = 0xC3E88DFF,   ///< Syntax: green.
+    YELLOW              = 0xFFCB6BFF,   ///< Syntax: yellow.
+    BLUE                = 0x82AAFFFF,   ///< Syntax: blue.
+    RED                 = 0xF07178FF,   ///< Syntax: red.
+    PURPLE              = 0xC792EAFF,   ///< Syntax: purple.
+    ORANGE              = 0xF78C6CFF,   ///< Syntax: orange.
+    CYAN                = 0x89DDFFFF,   ///< Syntax: cyan.
+    GRAY                = 0x546E7AFF,   ///< Syntax: gray.
+    ERROR               = 0xFF5370FF,   ///< Error / overlap indicator.
+    COMMENTS            = 0x546E7AFF,   ///< Syntax: comments.
+    VARIABLES           = 0xEEFFFFFF,   ///< Syntax: variables.
+    LINKS               = 0x80CBC4FF,   ///< Syntax: links.
+    FUNCTIONS           = 0x82AAFFFF,   ///< Syntax: functions.
+    KEYWORDS            = 0xC792EAFF,   ///< Syntax: keywords.
+    TAGS                = 0xF07178FF,   ///< Syntax: tags.
+    STRINGS             = 0xC3E88DFF,   ///< Syntax: strings.
+    OPERATORS           = 0x89DDFFFF,   ///< Syntax: operators.
+    ATTRIBUTES          = 0xFFCB6BFF,   ///< Syntax: attributes.
+    NUMBERS             = 0xF78C6CFF,   ///< Syntax: numbers.
+    PARAMETERS          = 0xF78C6CFF,   ///< Syntax: parameters.
+    SOCKET_IN           = 0x009688FF,   ///< Input socket colour.
+    SOCKET_OUT          = 0xF07178FF,   ///< Output socket colour.
 
 } Palette;
+/** @} */
 
+/**
+ * @brief Layout constraint constants (pixel offsets).
+ */
 typedef enum {
-    GRIP    = 3,
-    GAP     = 2,
-    SOCKET_BORDER = 2,
+    GRIP    = 3,    ///< Slider grip half-height in pixels.
+    GAP     = 2,    ///< Inner padding between widget border and content.
+    SOCKET_BORDER = 2,  ///< Socket border thickness.
 
 } Constrain;
 
-/** Primitives ****************************************************************************************************************/
+/** @name Primitive types
+ * @{ */
 
-typedef struct 
+/** @brief 2-D point with float coordinates (normalised UV or screen space). */
+typedef struct
 {
-    float x;
-    float y;
-    
+    float x;    ///< X coordinate.
+    float y;    ///< Y coordinate.
+
 } point;
 
-typedef struct 
+/** @brief 2-D point with unsigned 32-bit integer coordinates (screen space). */
+typedef struct
 {
-    uint32_t x;
-    uint32_t y;
-    
+    uint32_t x; ///< X coordinate.
+    uint32_t y; ///< Y coordinate.
+
 } point32u;
 
-typedef struct 
+/** @brief 2-D point with signed 32-bit integer coordinates. */
+typedef struct
 {
-    int32_t x;
-    int32_t y;
-    
+    int32_t x;  ///< X coordinate.
+    int32_t y;  ///< Y coordinate.
+
 } point32s;
 
-typedef struct 
+/**
+ * @brief Axis-aligned bounding box in screen coordinates (left, top, right, bottom).
+ * @note @c r and @c b are inclusive pixel indices.
+ */
+typedef struct
 {
-    uint32_t l;
-    uint32_t t;
-    uint32_t r;
-    uint32_t b;
+    uint32_t l; ///< Left edge.
+    uint32_t t; ///< Top edge.
+    uint32_t r; ///< Right edge (inclusive).
+    uint32_t b; ///< Bottom edge (inclusive).
 
 } ltrb32u;
 
-typedef struct 
+/**
+ * @brief Rectangle defined by left, top, width, height.
+ */
+typedef struct
 {
-    uint32_t l;
-    uint32_t t;
-    uint32_t w;
-    uint32_t h;
+    uint32_t l; ///< Left edge.
+    uint32_t t; ///< Top edge.
+    uint32_t w; ///< Width in pixels.
+    uint32_t h; ///< Height in pixels.
 
 } ltwh32u;
 
+/**
+ * @brief A 2-D pixel buffer of 32-bit RGBA values.
+ * @details Pixels are stored row-major: @c data[x + y * width].
+ *          Use ff_frame_init() / ff_frame_flush() for allocation.
+ */
 typedef struct
 {
-    uint32_t* data;
-    uint32_t width;
-    uint32_t height;             
+    uint32_t* data;     ///< Pixel array (width × height entries).
+    uint32_t width;     ///< Buffer width in pixels.
+    uint32_t height;    ///< Buffer height in pixels.
 
 } Frame;
 
+/**
+ * @brief A sprite — an array of @ref Frame objects played back as animation frames.
+ */
 typedef struct
 {
-    Frame*   data;
-    uint32_t width;
-    uint32_t height;  
-    uint32_t nframes;           
+    Frame*   data;      ///< Array of @c nframes frames.
+    uint32_t width;     ///< Frame width in pixels.
+    uint32_t height;    ///< Frame height in pixels.
+    uint32_t nframes;   ///< Number of frames in the sprite.
 
 } Sprite;
+/** @} */
 
-/******************************************************************************************************************************/
-
+/**
+ * @brief Blueprint describing an entity to be created via ffCreateEntity().
+ * @details Fill this struct and pass it to ffCreateEntity() to instantiate
+ *          a widget inside a @ref Node. Most fields map directly to @ref Entity
+ *          or extension-struct fields.
+ */
 struct SectorDescriptor {
-    uint32_t    id;
-    uint32_t    node_id;
-    ltwh32u     bounds;
-    CoreType    core_type;
-    SectorType  type;
-    SubType     subtype;
-    float       default_value;
-    float       range[2];
-    float       step[CP_LIMIT];
-    uint32_t    radio_id;
-    char*       label;
-    uint32_t    flags;
-    uint32_t    callback_target_id;
-    uint32_t    input_x;
-    uint32_t    input_y;
-    CallbackEvent callback_event;
+    uint32_t    id;                 ///< Unique entity identifier (uid).
+    uint32_t    node_id;            ///< Target node identifier.
+    ltwh32u     bounds;             ///< Position and size within the node.
+    CoreType    core_type;          ///< Data-flow role (static / control / input / output).
+    SectorType  type;               ///< Widget type (determines extension struct).
+    SubType     subtype;            ///< Visual subtype (for sliders / encoders).
+    float       default_value;      ///< Initial value.
+    float       range[2];           ///< [0] = minimum, [1] = maximum.
+    float       step[CP_LIMIT];     ///< Step size per precision mode (coarse / fine).
+    uint32_t    radio_id;           ///< Radio group ID (only when RADIO flag is set).
+    char*       label;              ///< Label text (used by ST_TEXTBOX).
+    uint32_t    flags;              ///< Behaviour flags (@ref SectorFlags).
+    uint32_t    callback_target_id; ///< UID of the entity to receive callbacks.
+    uint32_t    input_x;            ///< UID of the X-input socket (ST_CRT only).
+    uint32_t    input_y;            ///< UID of the Y-input socket (ST_CRT only).
+    CallbackEvent callback_event;   ///< Which event triggers the callback.
 };
 
+/**
+ * @brief A single widget / entity on the canvas.
+ * @details Entities are stored in contiguous arrays inside @ref Node.
+ *          Type-specific data lives in the @c extension pointer (see the
+ *          extension structs below). The @c type field indexes into the
+ *          dispatch tables (init_entity, set_entity, …).
+ */
 struct Entity {
-    uint32_t    index;
-    uint32_t    uid;
-    ltrb32u     bounds;
-    uint32_t    width;
-    uint32_t    height;
-    CoreType    core_type;
-    SectorType  type;
-    void*       data;                   // Type dependent data
-    void*       extension;
-    float       value[CP_LIMIT];
-    float       memory[CP_LIMIT];
-    float       range[2];
-    bool        visible;
-    bool        hovered;
-    bool        repaint;
-    bool        staging;
-    bool        on;
-    bool        connected;
-    bool        has_data;
-    uint32_t    flags;
-    uint32_t    nodes;
-    uint32_t    capacity;
-    void        (*callback[F_CE_LIMIT])(Entity*, Entity*);
-    Entity*     target[F_CE_LIMIT];
-    Entity*     connection;
-    Node*       parent;
-    Entity*     root;
+    uint32_t    index;          ///< Position in parent node's entity array.
+    uint32_t    uid;            ///< Unique identifier.
+    ltrb32u     bounds;         ///< Screen-space bounding box.
+    uint32_t    width;          ///< Cached bounds width.
+    uint32_t    height;         ///< Cached bounds height.
+    CoreType    core_type;      ///< F_CT_STATIC / F_CT_CONTROL / F_CT_INPUT / F_CT_OUTPUT.
+    SectorType  type;           ///< Widget type (dispatch table index).
+    float       value[CP_LIMIT]; ///< Current value (coarse integer + fine fractional).
+    bool        visible;        ///< Render visibility.
+    bool        hovered;        ///< Cursor hover state.
+    bool        repaint;        ///< Dirty flag for redraw.
+    uint32_t    flags;          ///< VERTICAL, MOVEABLE, INTERCON, TRANSPARENT, RADIO.
+    void*       extension;      ///< Type-specific extension struct.
+    void        (*callback[F_CE_LIMIT])(Entity*, Entity*); ///< Event callbacks.
+    Entity*     target[F_CE_LIMIT]; ///< Callback target entities.
+    Node*       parent;         ///< Owning node.
 };
 
+/** @name Extension structs
+ * @brief Type-specific data lives here, not in Entity.
+ * @{ */
+
+/**
+ * @brief Extension data for checkbox entities (ST_CHECKBOX, ST_SPRITE_CHECKBOX).
+ */
 struct Checkbox {
-    uint32_t radio_id;  
+    uint32_t    radio_id;       ///< Radio group identifier (RADIO flag).
+    Sprite*     sprite;         ///< Sprite frames (ST_SPRITE_CHECKBOX only).
 };
 
+/**
+ * @brief Extension data for slider entities (ST_SLIDER).
+ */
 struct Slider {
-    SubType type;
-    float default_value;
-    float step[CP_LIMIT];
-    bool inverse;
+    SubType     type;           ///< Visual subtype (SS_A / SS_B / SS_C).
+    float       default_value;  ///< Default value at reset.
+    float       step[CP_LIMIT]; ///< Step size per precision mode.
+    float       memory[CP_LIMIT]; ///< Value snapshot at drag start.
+    float       range[2];       ///< Min / max value.
+    bool        inverse;        ///< Inverted drag direction.
 };
 
+/**
+ * @brief Extension data for encoder entities (ST_ENCODER).
+ * @details Unlike a slider, an encoder wraps around at range edges by
+ *          toggling the @c inverse flag.
+ */
 struct Encoder {
-    SubType type;
-    float default_value;
-    float step[CP_LIMIT];
-    bool inverse;
+    SubType     type;           ///< Visual subtype.
+    float       default_value;  ///< Default value at reset.
+    float       step[CP_LIMIT]; ///< Step size per precision mode.
+    float       memory[CP_LIMIT]; ///< Value snapshot at drag start.
+    float       range[2];       ///< Min / max value.
+    bool        inverse;        ///< Inverted drag direction (toggles at range edges).
 };
 
+/**
+ * @brief Extension data for rotary knob and infinite-slider entities
+ *        (ST_ROTARY, ST_SPRITE_INF_SLIDER).
+ */
 struct Rotary {
-    float default_value;
-    float step[CP_LIMIT];
+    float       default_value;  ///< Default value at reset.
+    float       step[CP_LIMIT]; ///< Step size per precision mode.
+    float       range[2];       ///< Min / max value.
+    Sprite*     sprite;         ///< Sprite frames for rendering.
 };
 
+/**
+ * @brief Extension data for socket entities (ST_SOCKET).
+ * @details Sockets form patch-cable connections between modules.
+ *          An input socket receives a pointer to the connected output's value.
+ */
 struct Socket {
-    float* input;
-    float* output;
+    float*      input;          ///< Input value pointer (from connected output socket).
+    float*      output;         ///< Output value pointer (owned by core module).
+    float*      cord;           ///< Bezier spline control points (SPLINE_SEGMENTS * 2 floats).
+    Entity*     connection;     ///< Connected socket entity.
+    bool        connected;      ///< Has active connection.
+    bool        has_data;       ///< Cord spline data is valid.
 };
 
+/**
+ * @brief Extension data for CRT / oscillograph display entities (ST_CRT).
+ * @details Plots an X-Y trace on a graticule using a ring buffer.
+ */
 struct Oscillograph {
-    float** x;
-    float** y;
-    void* data;
-    uint32_t r_head;
-    uint32_t w_head;
-    uint32_t fps;               // Target frames per second for streaming redraw
+    float**     x;              ///< X input source pointer (pointer to Socket::input).
+    float**     y;              ///< Y input source pointer (pointer to Socket::input).
+    void*       data;           ///< Internal float buffer for streaming.
+    Frame*      frame;          ///< CRT frame buffer (graticule + trace).
+    uint32_t    r_head;         ///< Ring buffer read head.
+    uint32_t    w_head;         ///< Ring buffer write head.
+    uint32_t    fps;            ///< Target frames per second for streaming redraw.
 };
 
+/**
+ * @brief Extension data for textbox / label entities (ST_TEXTBOX).
+ */
+struct Textbox {
+    char        text[TEXTBOX_SIZE]; ///< Display text buffer (fixed size).
+};
+
+/**
+ * @brief Extension data for nested-node entities (ST_NODE).
+ */
+struct EntityNode {
+    Frame*      frame;          ///< Node frame buffer (render target for child entities).
+    bool        staging;        ///< Drag staging state (rendered to staging layer).
+};
+
+/**
+ * @brief Extension data for sprite-button entities (ST_SPRITE_BUTTON).
+ */
+struct SpriteButton {
+    Sprite*     sprite;         ///< Sprite frames (on/off states).
+};
+
+/**
+ * @brief Extension data for momentary button entities (ST_MOMENTARY).
+ * @note Currently empty — reserved for future use.
+ */
 struct Momentary {
-
 };
 
-/*****************************************************************************************************************************/
+/** @} */
 
+/**
+ * @brief A container node holding a contiguous array of @ref Entity objects.
+ * @details Nodes are the patcher's modules. Each node has its own @ref Frame
+ *          buffer that child entities render into. Node 0 is the root canvas.
+ */
 struct Node {
-    uint32_t    index;
-    uint32_t    uid;
-    uint32_t    width;
-    uint32_t    height;
-    uint32_t    entities;           // Entity count in this node
-    uint32_t    capacity;
-    Entity*     at;
-    Field*      parent;
-    Frame       buffer;
-    bool        visible;
+    uint32_t    index;              ///< Position in the parent field's node array.
+    uint32_t    uid;                ///< Unique node identifier.
+    uint32_t    width;              ///< Node width in pixels.
+    uint32_t    height;             ///< Node height in pixels.
+    uint32_t    entities;           ///< Entity count in this node.
+    uint32_t    capacity;           ///< Allocated capacity of the @c at array.
+    Entity*     at;                 ///< Entity array (contiguous, index-based).
+    Field*      parent;             ///< Owning field.
+    Frame       buffer;             ///< Off-screen render target for child entities.
+    bool        visible;            ///< Whether the node is visible on the canvas.
 };
 
+/**
+ * @brief The root field — owns all layers, nodes, and global interaction state.
+ * @details A field is a rectangular canvas area. It maintains multiple
+ *          @ref Frame layers for compositing, a stencil-based hit-test
+ *          system, and the current drag / connection state.
+ */
 struct Field {
-    ltrb32u     bounds;
-    uint32_t    width;
-    uint32_t    height;
-    point32s    memory[SP_LIMIT];   // Saved cursor position
-    Frame*      layer[CC];
-    Node*       node;
-    Entity*     pressed;
-    Entity*     stream[3];
-    uint32_t    current[IP_LIMIT];  // HitTest return
-    uint32_t    prior[IP_LIMIT];    // Last HitTest
-    bool        repaint;            // Repaint flag
-    bool        drag;               // Sector drag flag
-    bool        move;               // Window drag flag
-    bool        staging;            // Draw staging layer
-    bool        connecting;         // Connection pending
-    uint32_t    nodes;
-    uint32_t    capacity;
-    uint32_t    flags;
-    uint32_t    step;
+    ltrb32u     bounds;             ///< Field bounding box in screen coordinates.
+    uint32_t    width;              ///< Field width in pixels.
+    uint32_t    height;             ///< Field height in pixels.
+    point32s    memory[SP_LIMIT];   ///< Saved cursor positions (see @ref SavedPosition).
+    Frame*      layer[CC];          ///< Render layers (see @ref FieldLayer).
+    Node*       node;               ///< Node array (node 0 is the root canvas).
+    Entity*     pressed;            ///< Currently pressed entity (drag source).
+    Entity*     stream[3];          ///< Streaming entities (e.g. CRT displays).
+    uint32_t    current[IP_LIMIT];  ///< Current hit-test result.
+    uint32_t    prior[IP_LIMIT];    ///< Previous hit-test result.
+    bool        repaint;            ///< Global repaint flag.
+    bool        drag;               ///< Sector (node) drag in progress.
+    bool        move;               ///< Window move in progress.
+    bool        staging;            ///< Staging layer is active.
+    bool        connecting;         ///< Socket connection drag in progress.
+    uint32_t    nodes;              ///< Number of nodes in the @c node array.
+    uint32_t    capacity;           ///< Allocated capacity of the @c node array.
+    uint32_t    flags;              ///< Field-level flags (@ref FieldFlags).
+    uint32_t    step;               ///< Grid snap step in pixels.
 };
 
+/** @brief Embedded 7×8 bitmap font (ASCII 32–127 + special glyphs). */
 extern const uint8_t gtFont[];
 
-/** Primitives ****************************************************************************************************************/
-static void ff_draw_glyph      (Frame*, const uint8_t*, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void ff_draw_text_label (Frame*, const uint8_t* , const char*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void ff_draw_rect_o     (Frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void ff_draw_rect_f     (Frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void ff_draw_line_v     (Frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void ff_draw_line_h     (Frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
-static void ff_draw_circle_f   (Frame*, uint32_t, uint32_t, uint32_t, uint32_t);
-static void ff_draw_circle_o   (Frame*, uint32_t, uint32_t, uint32_t, uint32_t);
-static void ff_draw_ltrb_o     (Frame*, ltrb32u*, const uint32_t);
-static void ff_draw_ltrb_f     (Frame*, ltrb32u*, const uint32_t);
-static uint32_t ff_frame_get   (Frame*, uint32_t, uint32_t);
-static void ff_frame_set       (Frame*, uint32_t, uint32_t, uint32_t);
-static void ff_frame_fill      (Frame*, uint32_t);
-static void ff_frame_clr       (Frame*);
-static void ff_frame_init      (Frame*, uint32_t, uint32_t);
-static void ff_frame_flush     (Frame*);
-static void ff_frame_copy      (Frame*, Frame*);
-static void ff_frame_copy_with_alpha(Frame*, Frame*, uint8_t);
-static void ff_frame_copy_at   (Frame*, Frame*, uint32_t, uint32_t);
-static void ff_sprite_init     (Sprite*, uint32_t, uint32_t, uint32_t);
-static void ff_sprite_flush    (Sprite*);
+/** @name Function prototypes
+ * @{ */
+
+/** @brief Extract a single byte from a 32-bit value.
+ *  @param value  The 32-bit source value.
+ *  @param byte   Byte index (0 = LSB, 3 = MSB).
+ *  @return The extracted 8-bit value.
+ */
+uint8_t     ff_extract_byte(uint32_t, uint_fast8_t);
+
+/** @brief Convert normalised UV coordinates to screen pixel coordinates.
+ *  @param x  Normalised X (0.0–1.0).
+ *  @param y  Normalised Y (0.0–1.0, top-down).
+ *  @param w  Target width in pixels.
+ *  @param h  Target height in pixels.
+ *  @return Screen-space pixel coordinates.
+ */
+point32u    ff_uv_to_screen(float, float, uint32_t, uint32_t);
+
+/** @brief Convert screen pixel coordinates to normalised UV coordinates.
+ *  @param x  Screen X pixel.
+ *  @param y  Screen Y pixel (top-down).
+ *  @param w  Source width in pixels.
+ *  @param h  Source height in pixels.
+ *  @return Normalised UV coordinates (Y flipped: 0 at bottom).
+ */
+point       ff_screen_to_uv(uint32_t, uint32_t, uint32_t, uint32_t);
+
+/** @brief Convert HSVA (0–255 each) to a packed 32-bit RGBA value.
+ *  @param h  Hue (0–255).
+ *  @param s  Saturation (0–255).
+ *  @param v  Value / brightness (0–255).
+ *  @param a  Alpha (0–255).
+ *  @return Packed 0xRRGGBBAA colour.
+ */
+static uint32_t ff_hsva_to_rgba(uint8_t, uint8_t, uint8_t, uint8_t);
+
+/** @brief Generate a deterministic colour from an index (golden-ratio hue spread).
+ *  @param index  Unique index (e.g. entity index).
+ *  @param alpha  Alpha value (0–255).
+ *  @return Packed 0xRRGGBBAA colour.
+ */
+uint32_t    ff_index_to_hsv(uint32_t, uint8_t);
+
+/** @brief Set a single pixel in a frame (bounds-checked).
+ *  @param frame  Target frame.
+ *  @param x      Pixel X.
+ *  @param y      Pixel Y.
+ *  @param value  32-bit RGBA value.
+ */
+static void     ff_frame_set(Frame*, uint32_t, uint32_t, uint32_t);
+
+/** @brief Get a single pixel from a frame (bounds-checked, returns pixel 0 on OOB).
+ *  @param frame  Source frame.
+ *  @param x      Pixel X.
+ *  @param y      Pixel Y.
+ *  @return 32-bit RGBA value.
+ */
+static uint32_t ff_frame_get(Frame*, uint32_t, uint32_t);
+
+/** @brief Clear the entire frame to zero (transparent black).
+ *  @param frame  Target frame.
+ */
+static void     ff_frame_clr(Frame*);
+
+/** @brief Fill the entire frame with a single colour.
+ *  @param frame  Target frame.
+ *  @param value  32-bit RGBA fill value.
+ */
+static void     ff_frame_fill(Frame*, uint32_t);
+
+/** @brief Allocate a frame buffer of the given dimensions.
+ *  @param frame  Frame to initialise.
+ *  @param x      Width in pixels.
+ *  @param y      Height in pixels.
+ */
+static void     ff_frame_init(Frame*, uint32_t, uint32_t);
+
+/** @brief Free a frame's pixel buffer.
+ *  @param frame  Frame to release.
+ */
+static void     ff_frame_flush(Frame*);
+
+/** @brief Copy all pixels from source to target (dimensions must match).
+ *  @param target  Destination frame.
+ *  @param source  Source frame.
+ */
+static void     ff_frame_copy(Frame*, Frame*);
+
+/** @brief Copy source to target, recoloring each non-zero pixel via ff_index_to_hsv.
+ *  @param target  Destination frame.
+ *  @param source  Source frame.
+ *  @param alpha   Alpha value for the recolored output.
+ */
+static void     ff_frame_copy_with_alpha(Frame*, Frame*, uint8_t);
+
+/** @brief Copy source to target at a pixel offset, skipping zero (transparent) pixels.
+ *  @param target  Destination frame.
+ *  @param source  Source frame.
+ *  @param xo      X offset in target.
+ *  @param yo      Y offset in target.
+ */
+static void     ff_frame_copy_at(Frame*, Frame*, uint32_t, uint32_t);
+
+/** @brief Allocate a sprite with @c nframes frames of size @c w × @c h.
+ *  @param sprite   Sprite to initialise.
+ *  @param w        Frame width in pixels.
+ *  @param h        Frame height in pixels.
+ *  @param nframes  Number of frames.
+ */
+static void ff_sprite_init(Sprite*, uint32_t, uint32_t, uint32_t);
+
+/** @brief Free all frames and the sprite's frame array.
+ *  @param sprite  Sprite to release.
+ */
+static void ff_sprite_flush(Sprite*);
+
+/** @brief Load a horizontal stripe image into sprite frames.
+ *  @details The source frame must be @c w × (h * nframes) pixels;
+ *           each frame is extracted from a vertical slice.
+ *  @param sprite  Target sprite.
+ *  @param frame   Source stripe image.
+ */
 static void ff_sprite_load_stripe(Sprite*, Frame*);
-/******************************************************************************************************************************/
-void ff_set_text_data(Entity*, const char*); 
+
+/** @brief Draw a single glyph from a 7×8 bitmap font.
+ *  @param frame  Target frame.
+ *  @param font   Font bitmap (7 bytes per glyph).
+ *  @param id     Glyph index.
+ *  @param l      Left pixel position.
+ *  @param t      Top pixel position.
+ *  @param colour 32-bit RGBA colour.
+ */
+static void ff_draw_glyph(Frame*, const uint8_t*, uint32_t, uint32_t, uint32_t, const uint32_t);
+
+/** @brief Draw a text string using the embedded bitmap font.
+ *  @param frame  Target frame.
+ *  @param font   Font bitmap.
+ *  @param text   Null-terminated string (ASCII 32–127).
+ *  @param l      Left pixel position.
+ *  @param t      Top pixel position.
+ *  @param _w     Unused (reserved).
+ *  @param _h     Unused (reserved).
+ *  @param colour 32-bit RGBA colour.
+ */
+static void ffDrawTextLabel(Frame*, const uint8_t*, const char*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+
+/** @brief Draw a rectangle outline (1-pixel border).
+ *  @param frame  Target frame.
+ *  @param l      Left edge.
+ *  @param t      Top edge.
+ *  @param r      Right edge.
+ *  @param b      Bottom edge.
+ *  @param colour 32-bit RGBA colour.
+ */
+static void ff_draw_rect_o(Frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+
+/** @brief Draw a filled rectangle.
+ *  @param frame  Target frame.
+ *  @param l      Left edge.
+ *  @param t      Top edge.
+ *  @param r      Right edge.
+ *  @param b      Bottom edge.
+ *  @param colour 32-bit RGBA colour.
+ */
+static void ff_draw_rect_f(Frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+
+/** @brief Draw a vertical line.
+ *  @param frame  Target frame.
+ *  @param x      X column.
+ *  @param yo     Start Y (inclusive).
+ *  @param ye     End Y (inclusive).
+ *  @param value  32-bit RGBA colour.
+ */
+static void ff_draw_line_v(Frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
+
+/** @brief Draw a horizontal line.
+ *  @param frame  Target frame.
+ *  @param y      Y row.
+ *  @param xo     Start X (inclusive).
+ *  @param xe     End X (inclusive).
+ *  @param value  32-bit RGBA colour.
+ */
+static void ff_draw_line_h(Frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
+
+/** @brief Draw a filled circle (midpoint algorithm).
+ *  @param frame  Target frame.
+ *  @param xc     Centre X.
+ *  @param yc     Centre Y.
+ *  @param r      Radius in pixels.
+ *  @param value  32-bit RGBA colour.
+ */
+static void ff_draw_circle_f(Frame*, uint32_t, uint32_t, uint32_t, uint32_t);
+
+/** @brief Draw a circle outline (midpoint algorithm).
+ *  @param frame  Target frame.
+ *  @param xc     Centre X.
+ *  @param yc     Centre Y.
+ *  @param r      Radius in pixels.
+ *  @param value  32-bit RGBA colour.
+ */
+static void ff_draw_circle_o(Frame*, uint32_t, uint32_t, uint32_t, uint32_t);
+
+/** @brief Draw a bounding-box outline from an @ref ltrb32u.
+ *  @param canvas  Target frame.
+ *  @param r       Bounding box.
+ *  @param colour  32-bit RGBA colour.
+ */
+static void ff_draw_ltrb_o(Frame*, ltrb32u*, const uint32_t);
+
+/** @brief Draw a filled bounding box from an @ref ltrb32u.
+ *  @param canvas  Target frame.
+ *  @param r       Bounding box.
+ *  @param colour  32-bit RGBA colour.
+ */
+static void ff_draw_ltrb_f(Frame*, ltrb32u*, const uint32_t);
+
+/** @brief Create an entity inside a node from a descriptor.
+ *  @param node        Target node.
+ *  @param descriptor  Entity blueprint (see @ref SectorDescriptor).
+ *  @return Pointer to the newly created entity, or @c NULL on failure.
+ */
+Entity* ffCreateEntity(Node* restrict, SectorDescriptor*);
+
+/** @brief Create a new field (canvas).
+ *  @param x      Left position in screen coordinates.
+ *  @param y      Top position in screen coordinates.
+ *  @param w      Width in pixels.
+ *  @param h      Height in pixels.
+ *  @param size   Initial node capacity.
+ *  @param flags  Field flags (@ref FieldFlags).
+ *  @return Pointer to the newly created field.
+ */
+Field*  ffCreateField(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+
+/** @brief Destroy a field and free all associated resources.
+ *  @param field  Field to destroy.
+ */
+void    ffDestroyField(Field* restrict);
+
+/** @brief Create a new node inside a field.
+ *  @param field  Owning field.
+ *  @param w      Node width in pixels.
+ *  @param h      Node height in pixels.
+ *  @param size   Initial entity capacity.
+ *  @return Pointer to the newly created node.
+ */
+static Node* ffCreateNode(Field* restrict, uint32_t, uint32_t, size_t);
+
+/** @brief Place a node on the canvas at the given position (makes it visible).
+ *  @param field  Owning field.
+ *  @param node   Node to place.
+ *  @param x      Left position in screen coordinates.
+ *  @param y      Top position in screen coordinates.
+ */
+static void  ffPlaceNode(Field* restrict, Node* restrict, uint32_t, uint32_t);
+
+/** @brief Find an entity by its unique ID across all nodes.
+ *  @param field  Field to search.
+ *  @param id     Entity UID to find (0 returns @c NULL).
+ *  @return Pointer to the entity, or @c NULL if not found.
+ */
+Entity* ff_find_entity_by_id(Field* restrict, uint32_t);
+
+/** @brief No-op placeholder (reserved). */
+void    ff_empty(void);
+
+/** @brief No-op callback — default link fuse for unused callback slots.
+ *  @param a  Ignored.
+ *  @param b  Ignored.
+ */
+void    ff_fuse_link(Entity*, Entity*);
+
+/** @brief Move an entity to new bounds, updating stencil layers.
+ *  @param entity  Entity to move.
+ *  @param bounds  New bounding box.
+ */
+void    ff_move_entity(Entity* restrict, ltrb32u* restrict);
+
+/** @brief Erase an entity (removes from stencil; does not free).
+ *  @param entity  Entity to erase.
+ */
+void    ff_erase_entity(Entity* restrict);
+
+/** @brief Register a modular link (callback) from source to target.
+ *  @param source  Source entity (fires the callback).
+ *  @param target  Target entity (receives the callback).
+ *  @param type    Callback event type (@ref CallbackEvent).
+ *  @param fn      Callback function.
+ */
+void    ff_add_mod_link(Entity*, Entity*, CallbackEvent, void (*)(Entity*, Entity*));
+
+/** @brief Set the text content of a textbox entity.
+ *  @param entity  Textbox entity.
+ *  @param text    Null-terminated text (truncated to TEXTBOX_SIZE-1).
+ */
+void    ff_set_text_data(Entity*, const char*);
+
+/** @brief Copy a slider's value into a textbox as a formatted string.
+ *  @param slider  Source slider entity.
+ *  @param tbox    Target textbox entity.
+ */
 static void ff_value_to_textbox(Entity*, Entity*);
+
+/** @brief Mark the target entity for repaint.
+ *  @param _src    Ignored source entity.
+ *  @param target  Entity to mark dirty.
+ */
 static void ff_set_repaint(Entity*, Entity*);
 
-void ff_fuse_link(Entity*, Entity*);
-void ff_draw_scene(Field* restrict);
+/** @brief Draw all dirty entities across all visible nodes.
+ *  @param field  Field to render.
+ */
+void    ff_draw_scene(Field* restrict);
 
-void ff_add_mod_link(Entity*, Entity*, CallbackEvent, void (*)(Entity*, Entity*));
-void ff_move_entity(Entity* restrict, ltrb32u* restrict);
-void ff_erase_entity(Entity* restrict);
-static void ff_disconnect(Entity* restrict);
-/** Contructors ***************************************************************************************************************/
-
-Entity* ffCreateEntity(Node* restrict, SectorDescriptor*);
-static inline Node* ffCreateNode(Field* restrict, uint32_t, uint32_t, size_t);
-Field* ffCreateField(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-void ffDestroyField(Field* restrict);
-
-/** Helpers *******************************************************************************************************************/
-
-static inline void ffPlaceNode(Field* restrict, Node* restrict, uint32_t, uint32_t);
-
-/*****************************************************************************************************************************/
-Entity* ff_find_entity_by_id(Field* restrict field, uint32_t id) {
-    if(!id) return nullptr;
-
-    for(uint32_t n = 0; n < field->nodes; ++n) {
-        for(uint32_t i = 0; i < field->node[n].entities; ++i) {
-            if(field->node[n].at[i].uid == id) return &field->node[n].at[i];
-        }
-    }
-    return nullptr;
-}
-
+/** @brief Handle mouse-button press (hit test + dispatch).
+ *  @param field   Target field.
+ *  @param x       Mouse X.
+ *  @param y       Mouse Y.
+ *  @param button  Button/modifier bitmask (@ref ControlModifier).
+ */
 void ff_hit_test_down(Field* restrict, int, int, uint32_t);
+
+/** @brief Handle mouse drag (forwarded to the pressed entity's drag handler).
+ *  @param field  Target field.
+ *  @param x      Mouse X.
+ *  @param y      Mouse Y.
+ */
 void ff_hit_test_drag(Field* restrict, int, int);
+
+/** @brief Handle mouse-button release.
+ *  @param field   Target field.
+ *  @param x       Mouse X.
+ *  @param y       Mouse Y.
+ *  @param button  Button/modifier bitmask (@ref ControlModifier).
+ */
 void ff_hit_test_up  (Field* restrict, int, int, uint32_t);
+
+/** @brief Handle mouse move (hover enter/leave detection).
+ *  @param field  Target field.
+ *  @param x      Mouse X.
+ *  @param y      Mouse Y.
+ */
 void ff_hit_test     (Field* restrict, int, int);
 
-/*****************************************************************************************************************************/
+/** @brief Disconnect a socket entity from its current connection.
+ *  @param entity  Socket entity to disconnect.
+ */
+static void ff_disconnect(Entity* restrict);
 
-extern void (*init_entity[])(Entity* restrict);
-extern void (*set_entity[])(Entity* restrict, int, int);
-extern void (*draw_entity[])(Entity* restrict);
-extern void (*drag_entity[])(Entity* restrict, int, int);
-extern void (*scroll_entity[])(Entity* restrict, int, int);
-extern void (*enter_entity[])(Entity* restrict, int, int);
-extern void (*leave_entity[])(Entity* restrict, int, int);
-extern void (*release_entity[])(Entity* restrict, int, int);
+#ifdef DEBUG_OVERLAY
+/** @brief Draw the debug overlay with entity diagnostic information.
+ *  @param field   Target field.
+ *  @param entity  Entity under the cursor (may be @c NULL).
+ */
+static void ff_draw_debug_overlay(Field*, Entity*);
+#endif
 
-/** Helpers *******************************************************************************************************************/
+/** @name Dispatch tables
+ * @brief Function pointer arrays indexed by @ref SectorType.
+ * @{ */
+extern void (*init_entity[])(Entity* restrict);             ///< Per-type initialisation.
+extern void (*set_entity[])(Entity* restrict, int, int);     ///< Per-type press handler.
+extern void (*draw_entity[])(Entity* restrict);              ///< Per-type draw handler.
+extern void (*drag_entity[])(Entity* restrict, int, int);    ///< Per-type drag handler.
+extern void (*scroll_entity[])(Entity* restrict, int, int);  ///< Per-type scroll handler.
+extern void (*enter_entity[])(Entity* restrict, int, int);   ///< Per-type hover-enter handler.
+extern void (*leave_entity[])(Entity* restrict, int, int);   ///< Per-type hover-leave handler.
+extern void (*release_entity[])(Entity* restrict, int, int); ///< Per-type release handler.
+/** @} */
+/** @} */
 
-uint8_t ff_extract_byte(uint32_t, uint_fast8_t);
-point32u ff_uv_to_screen(float, float, uint32_t, uint32_t);
-point ff_screen_to_uv(uint32_t, uint32_t, uint32_t, uint32_t);
-static uint32_t ff_hsva_to_rgba(uint8_t, uint8_t, uint8_t, uint8_t);
-uint32_t ff_index_to_hsv(uint32_t, uint8_t);
+/** Color & Utility ***********************************************************************************************************/
 
-/******************************************************************************************************************************
- * Returns 8-bit value
- * Data : 0x FF FF FF FF
- * index:     3  2  1  0     MSB->LSB
- * *****************************************************************************************************************************/
+/**
+ * @brief Extract a single byte from a 32-bit value.
+ * @details Data layout: 0x FF FF FF FF, index 3 2 1 0 (MSB→LSB).
+ * @param value  The 32-bit source value.
+ * @param byte   Byte index (0 = LSB, 3 = MSB).
+ * @return The extracted 8-bit value.
+ */
 uint8_t ff_extract_byte(uint32_t value, uint_fast8_t byte) {
     return (value >> (byte * 8)) & 0xFF;
 }
 
+/** @brief Convert normalised UV coordinates to screen pixel coordinates.
+ *  @param x  Normalised X (0.0–1.0).
+ *  @param y  Normalised Y (0.0–1.0, top-down).
+ *  @param w  Target width in pixels.
+ *  @param h  Target height in pixels.
+ *  @return Screen-space pixel coordinates.
+ */
 point32u ff_uv_to_screen(float x, float y, uint32_t w, uint32_t h) {
     point32u s = {
         .x = (uint32_t)(x * (float)w),
@@ -483,6 +968,13 @@ point32u ff_uv_to_screen(float x, float y, uint32_t w, uint32_t h) {
     return s;
 }
 
+/** @brief Convert screen pixel coordinates to normalised UV coordinates (Y flipped).
+ *  @param x  Screen X pixel.
+ *  @param y  Screen Y pixel (top-down).
+ *  @param w  Source width in pixels.
+ *  @param h  Source height in pixels.
+ *  @return Normalised UV coordinates (Y: 0 at bottom, 1 at top).
+ */
 point ff_screen_to_uv(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
     point n = {
         .x =  (float)x / (float)w,
@@ -491,6 +983,13 @@ point ff_screen_to_uv(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
     return n;
 }
 
+/** @brief Convert HSVA (0–255 each) to a packed 32-bit RGBA value.
+ *  @param h  Hue (0–255, wraps at 256).
+ *  @param s  Saturation (0–255).
+ *  @param v  Value / brightness (0–255).
+ *  @param a  Alpha (0–255).
+ *  @return Packed 0xRRGGBBAA colour.
+ */
 static uint32_t ff_hsva_to_rgba(uint8_t h, uint8_t s, uint8_t v, uint8_t a) {
     uint8_t region = h / 43;
     uint8_t remainder = (h - region * 43) * 6;
@@ -511,6 +1010,11 @@ static uint32_t ff_hsva_to_rgba(uint8_t h, uint8_t s, uint8_t v, uint8_t a) {
     return (r << 24) | (g << 16) | (b << 8) | a;
 }
 
+/** @brief Generate a deterministic colour from an index (golden-ratio hue spread).
+ *  @param index  Unique index (e.g. entity index for stencil colouring).
+ *  @param alpha  Alpha value (0–255).
+ *  @return Packed 0xRRGGBBAA colour.
+ */
 uint32_t ff_index_to_hsv(uint32_t index, uint8_t alpha) {
     uint8_t hue = (index * 137) & 0xFF;
     uint8_t sat = 204;
@@ -518,38 +1022,76 @@ uint32_t ff_index_to_hsv(uint32_t index, uint8_t alpha) {
     return ff_hsva_to_rgba(hue, sat, val, alpha);
 }
 
+/** Frame Operations **********************************************************************************************************/
+
+/** @brief Set a single pixel in a frame (bounds-checked, no-op if out of range).
+ *  @param frame  Target frame.
+ *  @param x      Pixel X coordinate.
+ *  @param y      Pixel Y coordinate.
+ *  @param value  32-bit RGBA pixel value.
+ */
 static inline void ff_frame_set(Frame* frame, uint32_t x, uint32_t y, uint32_t value) {
     if(x < frame->width && y < frame->height)
     frame->data[x + y * frame->width] = value;
 }
 
+/** @brief Get a single pixel from a frame (bounds-checked, returns pixel [0,0] if OOB).
+ *  @param frame  Source frame.
+ *  @param x      Pixel X coordinate.
+ *  @param y      Pixel Y coordinate.
+ *  @return 32-bit RGBA pixel value.
+ */
 static inline uint32_t ff_frame_get(Frame* frame, uint32_t x, uint32_t y) {
     if(x < frame->width && y < frame->height) return frame->data[x + y * frame->width];
     return frame->data[0];
 }
 
+/** @brief Clear the entire frame buffer to zero (transparent black).
+ *  @param frame  Target frame.
+ */
 static inline void ff_frame_clr(Frame* frame) {
     memset(frame->data, 0, frame->height * frame->width * sizeof(uint32_t));
 }
 
+/** @brief Fill the entire frame with a single colour value.
+ *  @param frame  Target frame.
+ *  @param value  32-bit RGBA fill value.
+ */
 static inline void ff_frame_fill(Frame* frame, uint32_t value) {
     for(uint32_t i = 0; i < (frame->height * frame->width); ++i) frame->data[i] = value;
 }
 
+/** @brief Allocate and zero-initialise a frame buffer.
+ *  @param frame  Frame to initialise.
+ *  @param x      Width in pixels.
+ *  @param y      Height in pixels.
+ */
 static inline void ff_frame_init(Frame* frame, uint32_t x, uint32_t y) {
     frame->width  = x;
     frame->height = y;
     frame->data   = (uint32_t*)calloc(frame->width * frame->height , sizeof(uint32_t));
 }
 
+/** @brief Free the frame's pixel buffer (does not free the Frame struct itself).
+ *  @param frame  Frame whose data to free.
+ */
 static inline void ff_frame_flush(Frame* frame) {
     free(frame->data);
 }
 
+/** @brief Copy all pixels from source to target (dimensions must match).
+ *  @param target  Destination frame.
+ *  @param source  Source frame.
+ */
 static inline void ff_frame_copy(Frame* target, Frame* source) {
     for(uint32_t i = 0; i < target->height * target->width; i++) target->data[i] = source->data[i];
 }
 
+/** @brief Copy source to target, recoloring each pixel via ff_index_to_hsv.
+ *  @param target  Destination frame.
+ *  @param source  Source frame (used as stencil index).
+ *  @param alpha   Alpha value for the recolored output.
+ */
 static void ff_frame_copy_with_alpha(Frame* target, Frame* source, uint8_t alpha) {
     for(uint32_t i = 0; i < target->height * target->width; ++i) {
         auto data = ff_index_to_hsv(source->data[i] + 0x2, alpha);
@@ -557,6 +1099,12 @@ static void ff_frame_copy_with_alpha(Frame* target, Frame* source, uint8_t alpha
     }
 }
 
+/** @brief Copy source to target at a pixel offset, skipping transparent (zero) pixels.
+ *  @param target  Destination frame.
+ *  @param source  Source frame.
+ *  @param xo      X offset in target.
+ *  @param yo      Y offset in target.
+ */
 static inline void ff_frame_copy_at(Frame* target, Frame* source, uint32_t xo, uint32_t yo) {
     for(uint32_t y = 0; y < source->height; y++) {
         for(uint32_t x = 0; x < source->width; x++) {
@@ -567,6 +1115,16 @@ static inline void ff_frame_copy_at(Frame* target, Frame* source, uint32_t xo, u
     }
 }
 
+/** Draw Primitives ***********************************************************************************************************/
+
+/** @brief Draw a rectangle outline (1-pixel border).
+ *  @param frame   Target frame.
+ *  @param l       Left edge.
+ *  @param t       Top edge.
+ *  @param r       Right edge (inclusive).
+ *  @param b       Bottom edge (inclusive).
+ *  @param colour  32-bit RGBA colour.
+ */
 static inline void ff_draw_rect_o(Frame* restrict frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour) {
     for(uint32_t i = l; i <= r; i++) {
         ff_frame_set(frame, i, t, colour);
@@ -579,6 +1137,14 @@ static inline void ff_draw_rect_o(Frame* restrict frame, uint32_t l, uint32_t t,
     }
 }
 
+/** @brief Draw a filled rectangle.
+ *  @param frame   Target frame.
+ *  @param l       Left edge.
+ *  @param t       Top edge.
+ *  @param r       Right edge (inclusive).
+ *  @param b       Bottom edge (inclusive).
+ *  @param colour  32-bit RGBA colour.
+ */
 static inline void ff_draw_rect_f(Frame* frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour) {
     for(uint32_t y = t; y <= b; ++y) {
         for(uint32_t x = l; x <= r; ++x) {
@@ -587,17 +1153,38 @@ static inline void ff_draw_rect_f(Frame* frame, uint32_t l, uint32_t t, uint32_t
     }
 }
 
+/** @brief Draw a vertical line.
+ *  @param frame  Target frame.
+ *  @param x      X column.
+ *  @param yo     Start Y (inclusive).
+ *  @param ye     End Y (inclusive).
+ *  @param value  32-bit RGBA colour.
+ */
 static inline void ff_draw_line_v(Frame* frame, uint32_t x, uint32_t yo, uint32_t ye, const uint32_t value) {
     for(uint32_t y = yo; y <= ye; ++y)
         ff_frame_set(frame, x, y, value);
 }
 
+/** @brief Draw a horizontal line.
+ *  @param frame  Target frame.
+ *  @param y      Y row.
+ *  @param xo     Start X (inclusive).
+ *  @param xe     End X (inclusive).
+ *  @param value  32-bit RGBA colour.
+ */
 static inline void ff_draw_line_h(Frame* frame, uint32_t y, uint32_t xo, uint32_t xe, const uint32_t value) {
     for(uint32_t x = xo; x <= xe; ++x)
         ff_frame_set(frame, x, y, value);
 }
 
-void ff_draw_circle_f(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
+/** @brief Draw a filled circle using the midpoint algorithm.
+ *  @param frame  Target frame.
+ *  @param xc     Centre X.
+ *  @param yc     Centre Y.
+ *  @param r      Radius in pixels.
+ *  @param value  32-bit RGBA colour.
+ */
+static void ff_draw_circle_f(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
     int x = 0;
     int y = r;
     int p = 1 - r;
@@ -621,6 +1208,13 @@ void ff_draw_circle_f(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32
     ff_draw_line_h(frame, yc, xc - r, xc + r, value);
 }
 
+/** @brief Draw a circle outline using the midpoint algorithm.
+ *  @param frame  Target frame.
+ *  @param xc     Centre X.
+ *  @param yc     Centre Y.
+ *  @param r      Radius in pixels.
+ *  @param value  32-bit RGBA colour.
+ */
 static inline void ff_draw_circle_o(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
     int x = 0;
     int y = r;
@@ -652,6 +1246,14 @@ static inline void ff_draw_circle_o(Frame* frame, uint32_t xc, uint32_t yc, uint
     ff_frame_set(frame, xc - r, yc, value);
 }
 
+/** @brief Draw a single 7×8 glyph from a bitmap font.
+ *  @param frame   Target frame.
+ *  @param font    Font bitmap (7 bytes per glyph, 1 bit per pixel, LSB = top).
+ *  @param id      Glyph index.
+ *  @param l       Left pixel position.
+ *  @param t       Top pixel position.
+ *  @param colour  32-bit RGBA colour.
+ */
 static inline void ff_draw_glyph(Frame* frame, const uint8_t* font, uint32_t id, uint32_t l, uint32_t t, const uint32_t colour) {
     uint32_t pos = id * 7;
     u_int8_t stencil = 0b1;
@@ -664,6 +1266,16 @@ static inline void ff_draw_glyph(Frame* frame, const uint8_t* font, uint32_t id,
     }
 }
 
+/** @brief Draw a text label using the embedded bitmap font.
+ *  @param frame   Target frame.
+ *  @param font    Font bitmap (7 bytes per glyph).
+ *  @param text    Null-terminated string (ASCII 32–127).
+ *  @param l       Left pixel position.
+ *  @param t       Top pixel position.
+ *  @param _w      Unused (reserved for future clipping).
+ *  @param _h      Unused (reserved for future clipping).
+ *  @param colour  32-bit RGBA colour.
+ */
 static inline void ffDrawTextLabel(Frame* frame, const uint8_t* font, const char* text, uint32_t l, uint32_t t, uint32_t, uint32_t, const uint32_t colour) {
     uint32_t n = strlen(text);
     for(uint32_t i = 0; i < n; i++) {
@@ -671,8 +1283,14 @@ static inline void ffDrawTextLabel(Frame* frame, const uint8_t* font, const char
     }
 }
 
-/******************************************************************************************************************************/
+/** Sprite Operations *********************************************************************************************************/
 
+/** @brief Allocate a sprite with @c nframes frames of size @c w × @c h.
+ *  @param sprite   Sprite to initialise.
+ *  @param w        Frame width in pixels.
+ *  @param h        Frame height in pixels.
+ *  @param nframes  Number of animation frames.
+ */
 static inline void ff_sprite_init(Sprite* sprite, uint32_t w, uint32_t h, uint32_t nframes) {
     Frame temp;
     ff_frame_init(&temp, w, h);
@@ -689,6 +1307,9 @@ static inline void ff_sprite_init(Sprite* sprite, uint32_t w, uint32_t h, uint32
     }
 }
 
+/** @brief Free all frame buffers and the sprite's frame array.
+ *  @param sprite  Sprite to release.
+ */
 static inline void ff_sprite_flush(Sprite* restrict sprite) {
     for(uint32_t i = 0; i < sprite->nframes; i++) {
         ff_frame_flush(&sprite->data[i]);
@@ -696,6 +1317,12 @@ static inline void ff_sprite_flush(Sprite* restrict sprite) {
     free(sprite->data);
 }
 
+/** @brief Load a horizontal stripe image into sprite frames.
+ *  @details The source frame must be @c w × (h * nframes); each frame
+ *           is extracted from a consecutive vertical slice.
+ *  @param sprite  Target sprite (must be pre-allocated with matching dimensions).
+ *  @param frame   Source stripe image.
+ */
 static inline void ff_sprite_load_stripe(Sprite* restrict sprite, Frame* restrict frame) {
     for(uint32_t i = 0; i < sprite->nframes; i++) {
         for(uint32_t y = 0; y < sprite->height; y++) {
@@ -706,6 +1333,11 @@ static inline void ff_sprite_load_stripe(Sprite* restrict sprite, Frame* restric
     }
 }
 
+/** @brief Draw a bounding-box outline from an @ref ltrb32u.
+ *  @param canvas  Target frame.
+ *  @param r       Bounding box (left, top, right, bottom).
+ *  @param colour  32-bit RGBA colour.
+ */
 static inline void ff_draw_ltrb_o(Frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour) {
     for(uint32_t i = r->l; i <= r->r; ++i) {
         ff_frame_set(canvas, i, r->t, colour);
@@ -717,6 +1349,11 @@ static inline void ff_draw_ltrb_o(Frame* restrict canvas, ltrb32u* restrict r, c
     }
 }
 
+/** @brief Draw a filled bounding box from an @ref ltrb32u.
+ *  @param canvas  Target frame.
+ *  @param r       Bounding box (left, top, right, bottom).
+ *  @param colour  32-bit RGBA colour.
+ */
 static inline void ff_draw_ltrb_f(Frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour)
 {
     for(uint32_t y = r->t; y <= r->b; ++y) {
@@ -726,6 +1363,17 @@ static inline void ff_draw_ltrb_f(Frame* restrict canvas, ltrb32u* restrict r, c
     }
 }
 
+/** Entity Lifecycle **********************************************************************************************************/
+
+/**
+ * @brief Create an entity inside a node from a @ref SectorDescriptor.
+ * @details Allocates the entity in the node's contiguous array, initialises
+ *          the type-specific extension struct, registers the entity in the
+ *          stencil layer, and wires up any callback links.
+ * @param node        Target node (must have capacity).
+ * @param descriptor  Entity blueprint.
+ * @return Pointer to the newly created entity.
+ */
 Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
     if (node->entities >= node->capacity) {
         node->capacity = node->capacity * 2 + 4;
@@ -746,55 +1394,73 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
     entity->height                   = descriptor->bounds.h;
     entity->value[CP_COARSE]         = (float)(int)descriptor->default_value;
     entity->value[CP_FINE]           = descriptor->default_value - (float)(int)descriptor->default_value;
-    entity->range[0]                 = descriptor->range[0];
-    entity->range[1]                 = descriptor->range[1];
     entity->repaint                  = true;
     entity->flags                    = descriptor->flags;
     entity->visible                  = true;
+    entity->extension                = nullptr;
     entity->parent                   = node;
 
-    //printf("Created entity : %u\n", entity->index);
-
     switch (descriptor->type) {
-        case ST_CHECKBOX: {
-            entity->extension = (Checkbox*)malloc(sizeof(Checkbox));
+        case ST_CHECKBOX:
+        case ST_SPRITE_CHECKBOX: {
+            entity->extension = (Checkbox*)calloc(1, sizeof(Checkbox));
             auto ext = (Checkbox*)entity->extension;
             ext->radio_id = descriptor->radio_id;
         }
         break;
 
         case ST_SLIDER: {
-            entity->extension = (Slider*)malloc(sizeof(Slider));
+            entity->extension = (Slider*)calloc(1, sizeof(Slider));
             auto ext = (Slider*)entity->extension;
             ext->type = descriptor->subtype;
-            ext->default_value = descriptor->default_value; 
+            ext->default_value = descriptor->default_value;
             ext->step[CP_COARSE] = descriptor->step[CP_COARSE];
             ext->step[CP_FINE] = descriptor->step[CP_FINE];
+            ext->range[0] = descriptor->range[0];
+            ext->range[1] = descriptor->range[1];
             ext->inverse = false;
         }
         break;
 
         case ST_ENCODER: {
-            entity->extension = (Encoder*)malloc(sizeof(Encoder));
+            entity->extension = (Encoder*)calloc(1, sizeof(Encoder));
             auto ext = (Encoder*)entity->extension;
             ext->type = descriptor->subtype;
-            ext->default_value = descriptor->default_value; 
+            ext->default_value = descriptor->default_value;
             ext->step[CP_COARSE] = descriptor->step[CP_COARSE];
             ext->step[CP_FINE] = descriptor->step[CP_FINE];
+            ext->range[0] = descriptor->range[0];
+            ext->range[1] = descriptor->range[1];
             ext->inverse = false;
         }
         break;
 
+        case ST_ROTARY:
+        case ST_SPRITE_INF_SLIDER: {
+            entity->extension = (Rotary*)calloc(1, sizeof(Rotary));
+            auto ext = (Rotary*)entity->extension;
+            ext->default_value = descriptor->default_value;
+            ext->step[CP_COARSE] = descriptor->step[CP_COARSE];
+            ext->step[CP_FINE] = descriptor->step[CP_FINE];
+            ext->range[0] = descriptor->range[0];
+            ext->range[1] = descriptor->range[1];
+        }
+        break;
+
         case ST_SOCKET: {
-            entity->extension = (Socket*)malloc(sizeof(Socket));
+            entity->extension = (Socket*)calloc(1, sizeof(Socket));
             auto ext = (Socket*)entity->extension;
             ext->input = nullptr;
             ext->output = nullptr;
+            ext->cord = nullptr;
+            ext->connection = nullptr;
+            ext->connected = false;
+            ext->has_data = false;
         }
         break;
 
         case ST_CRT: {
-            entity->extension = (Oscillograph*)malloc(sizeof(Oscillograph));
+            entity->extension = (Oscillograph*)calloc(1, sizeof(Oscillograph));
             auto ext = (Oscillograph*)entity->extension;
             auto xi = ff_find_entity_by_id(node->parent, descriptor->input_x);
             auto yi = ff_find_entity_by_id(node->parent, descriptor->input_y);
@@ -806,13 +1472,28 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
         break;
 
         case ST_TEXTBOX: {
-
+            entity->extension = (Textbox*)calloc(1, sizeof(Textbox));
         }
         break;
 
-        default: 
+        case ST_NODE: {
+            entity->extension = (EntityNode*)calloc(1, sizeof(EntityNode));
+        }
         break;
-    
+
+        case ST_MOMENTARY: {
+            entity->extension = (Momentary*)calloc(1, sizeof(Momentary));
+        }
+        break;
+
+        case ST_SPRITE_BUTTON: {
+            entity->extension = (SpriteButton*)calloc(1, sizeof(SpriteButton));
+        }
+        break;
+
+        default:
+        break;
+
     }
 
     for(uint32_t i = 0; i < F_CE_LIMIT; ++i) {
@@ -828,12 +1509,13 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
     }
 
     init_entity[entity->type](entity);
-    if(descriptor->type == ST_TEXTBOX) {
-        strncpy(entity->data, descriptor->label, TEXTBOX_SIZE);
+    if(descriptor->type == ST_TEXTBOX && descriptor->label) {
+        auto ext = (Textbox*)entity->extension;
+        strncpy(ext->text, descriptor->label, TEXTBOX_SIZE - 1);
+        ext->text[TEXTBOX_SIZE - 1] = '\0';
     }
 
     if(descriptor->callback_target_id) {
-        //printf("---- Set output : %d\n", descriptor->output);
         auto target = ff_find_entity_by_id(node->parent, descriptor->callback_target_id);
         if(target) {
 
@@ -841,15 +1523,25 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
                 ff_add_mod_link(entity, target, descriptor->callback_event, ff_set_repaint);
             else
                 ff_add_mod_link(entity, target, descriptor->callback_event, ff_value_to_textbox);
-            //printf("---- Target found...\n");
         }
-        // else
-        //     printf("---- NO Target found...\n");
     }
 
     return entity;
 }
 
+/**
+ * @brief Create a new field (canvas) with all render layers initialised.
+ * @details Allocates the field struct, all @ref FieldLayer frame buffers,
+ *          the node array (with node 0 as the root canvas entity), and
+ *          initialises interaction state.
+ * @param x      Left position in screen coordinates.
+ * @param y      Top position in screen coordinates.
+ * @param w      Width in pixels.
+ * @param h      Height in pixels.
+ * @param size   Initial node capacity.
+ * @param flags  Field flags (@ref FieldFlags).
+ * @return Pointer to the newly created field.
+ */
 Field* ffCreateField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags) {
     Field *field = malloc(sizeof(Field));
 
@@ -913,6 +1605,13 @@ Field* ffCreateField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t si
     return field;
 }
 
+/**
+ * @brief Destroy a field and free all associated resources.
+ * @details Frees all layer frames, all entity extensions (including
+ *          type-specific allocations like socket cords, CRT buffers),
+ *          node arrays, and the field struct itself.
+ * @param field  Field to destroy (must not be used after this call).
+ */
 void ffDestroyField(Field* restrict field) {
     for(uint32_t i = 0; i < CC; ++i) {
         ff_frame_flush(field->layer[i]);
@@ -921,13 +1620,39 @@ void ffDestroyField(Field* restrict field) {
     for(uint32_t n = 0; n < field->nodes; ++n) {
         for(uint32_t i = 0; i < field->node[n].entities; ++i) {
             auto s = &field->node[n].at[i];
-            if(s->extension) free(s->extension);
-            if(s->data) {
-                if(s->type == ST_NODE) {
-                    ff_frame_flush((Frame*)s->data);
+            if(!s->extension) continue;
+
+            switch(s->type) {
+                case ST_SOCKET: {
+                    auto ext = (Socket*)s->extension;
+                    if(ext->cord) free(ext->cord);
                 }
-                free(s->data);
+                break;
+
+                case ST_NODE: {
+                    auto ext = (EntityNode*)s->extension;
+                    if(ext->frame) {
+                        ff_frame_flush(ext->frame);
+                        free(ext->frame);
+                    }
+                }
+                break;
+
+                case ST_CRT: {
+                    auto ext = (Oscillograph*)s->extension;
+                    if(ext->frame) {
+                        ff_frame_flush(ext->frame);
+                        free(ext->frame);
+                    }
+                    if(ext->data) free(ext->data);
+                }
+                break;
+
+                default:
+                break;
             }
+
+            free(s->extension);
         }
         free(field->node[n].at);
     }
@@ -935,6 +1660,16 @@ void ffDestroyField(Field* restrict field) {
 }
 
 
+/**
+ * @brief Create a new (hidden) node inside a field.
+ * @details The node is created invisible; call ffPlaceNode() to position
+ *          and show it on the canvas.
+ * @param field  Owning field.
+ * @param w      Node width in pixels.
+ * @param h      Node height in pixels.
+ * @param size   Initial entity capacity.
+ * @return Pointer to the newly created node.
+ */
 static inline Node* ffCreateNode(Field* restrict field, uint32_t w, uint32_t h, size_t size) {
 
     auto index = field->nodes;
@@ -959,6 +1694,16 @@ static inline Node* ffCreateNode(Field* restrict field, uint32_t w, uint32_t h, 
     return &field->node[index];
 }
 
+/**
+ * @brief Place a node on the canvas at the given position (makes it visible).
+ * @details Copies the node's buffer into the stencil layers, translates
+ *          all child entity bounds to screen space, and marks everything
+ *          for repaint.
+ * @param field  Owning field.
+ * @param node   Node to place.
+ * @param x      Left position in screen coordinates.
+ * @param y      Top position in screen coordinates.
+ */
 static inline void ffPlaceNode(Field* restrict field, Node* restrict node, uint32_t x, uint32_t y) {
     node->visible = true;
     ff_draw_ltrb_f(node->parent->layer[SN], &(ltrb32u) { .l = x, .t = y, x + node->width, y + node->height }, node->index);
@@ -976,10 +1721,38 @@ static inline void ffPlaceNode(Field* restrict field, Node* restrict node, uint3
     field->repaint = true;
 }
 
+/** Entity Utility ************************************************************************************************************/
+
+/**
+ * @brief Find an entity by its unique ID across all nodes in a field.
+ * @param field  Field to search.
+ * @param id     Entity UID to find (0 returns @c NULL immediately).
+ * @return Pointer to the entity, or @c NULL if not found.
+ */
+Entity* ff_find_entity_by_id(Field* restrict field, uint32_t id) {
+    if(!id) return nullptr;
+
+    for(uint32_t n = 0; n < field->nodes; ++n) {
+        for(uint32_t i = 0; i < field->node[n].entities; ++i) {
+            if(field->node[n].at[i].uid == id) return &field->node[n].at[i];
+        }
+    }
+    return nullptr;
+}
+/** @brief No-op placeholder (reserved for future use). */
 void ff_empty() {}
 
+/** @brief No-op callback — default fuse for unused callback slots.
+ *  @param a  Ignored.
+ *  @param b  Ignored.
+ */
 void ff_fuse_link(Entity*, Entity*) {}
 
+/**
+ * @brief Move an entity to new bounds, updating the foreground and stencil layers.
+ * @param entity  Entity to move.
+ * @param bounds  New screen-space bounding box.
+ */
 void ff_move_entity(Entity* restrict entity, ltrb32u* restrict bounds) {
     auto field = entity->parent->parent;
     ff_draw_ltrb_f(field->layer[FG], &entity->bounds, 0x0);
@@ -990,28 +1763,63 @@ void ff_move_entity(Entity* restrict entity, ltrb32u* restrict bounds) {
     entity->bounds = *bounds;
 }
 
+/**
+ * @brief Register a modular link (callback) from source to target entity.
+ * @param source  Source entity (fires the callback).
+ * @param target  Target entity (receives the callback).
+ * @param type    Callback event type (@ref CallbackEvent).
+ * @param fn      Callback function pointer.
+ */
 void ff_add_mod_link(Entity* source, Entity* target, CallbackEvent type, void (*fn)(Entity*, Entity*)) {
     source->callback[type] = fn;
     source->target[type] = target;
 }
 
+/**
+ * @brief Set the text content of a textbox entity.
+ * @param entity  Textbox entity (must be of type ST_TEXTBOX).
+ * @param text    Null-terminated text (truncated to TEXTBOX_SIZE-1 chars).
+ */
 void ff_set_text_data(Entity* restrict entity, const char* restrict text) {
-    strncpy(entity->data, text, TEXTBOX_SIZE);
+    auto ext = (Textbox*)entity->extension;
+    strncpy(ext->text, text, TEXTBOX_SIZE - 1);
+    ext->text[TEXTBOX_SIZE - 1] = '\0';
     entity->repaint = true;
 }
 
+/** @brief Copy a slider's value into a textbox as a formatted string (2 decimal places).
+ *  @param slider  Source slider/encoder entity.
+ *  @param tbox    Target textbox entity.
+ */
 static inline void ff_value_to_textbox(Entity* slider, Entity* tbox) {
     int precision = 2;
-    char *text = tbox->data;
+    auto ext = (Textbox*)tbox->extension;
+    char *text = ext->text;
     float val = slider->value[CP_COARSE] + slider->value[CP_FINE];
     snprintf(text, TEXTBOX_SIZE, "%.*f", precision, val);
     tbox->repaint = true;
 }
 
+/** @brief Mark the target entity for repaint (callback helper).
+ *  @param _src    Ignored source entity.
+ *  @param target  Entity to mark dirty.
+ */
 static inline void ff_set_repaint(Entity*, Entity* target) {
     target->repaint = true;
 }
 
+/** Hit Test ******************************************************************************************************************/
+
+/**
+ * @brief Handle mouse-button press: hit-test, snapshot state, dispatch press.
+ * @details Reads the stencil layers to find the entity under the cursor,
+ *          stores cursor positions in Field::memory, snapshots slider/encoder
+ *          values, and dispatches the type-specific press handler.
+ * @param field   Target field.
+ * @param x       Mouse X coordinate.
+ * @param y       Mouse Y coordinate.
+ * @param button  Button/modifier bitmask (@ref ControlModifier).
+ */
 void ff_hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
     auto uide = ff_frame_get(field->layer[SC], x, y);
     auto uidn = ff_frame_get(field->layer[SN], x, y);
@@ -1031,8 +1839,23 @@ void ff_hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
     field->memory[SP_CURSOR_PRIOR].x = x;
     field->memory[SP_CURSOR_PRIOR].y = y;
 
-    p->memory[CP_COARSE] = p->value[CP_COARSE];
-    p->memory[CP_FINE] = p->value[CP_FINE];
+    // Snapshot value at drag start for slider/encoder types
+    switch(p->type) {
+        case ST_SLIDER: {
+            auto ext = (Slider*)p->extension;
+            ext->memory[CP_COARSE] = p->value[CP_COARSE];
+            ext->memory[CP_FINE] = p->value[CP_FINE];
+        }
+        break;
+        case ST_ENCODER: {
+            auto ext = (Encoder*)p->extension;
+            ext->memory[CP_COARSE] = p->value[CP_COARSE];
+            ext->memory[CP_FINE] = p->value[CP_FINE];
+        }
+        break;
+        default:
+        break;
+    }
 
     if(p->flags & INTERCON) {
         if(button == RMB) {
@@ -1045,12 +1868,12 @@ void ff_hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
     if (p->flags & MOVEABLE) {
         if (button == LMB) field->drag = true;
         field->staging = true;
-        p->staging = true;
-
         if(p->type == ST_NODE) {
+            auto ext = (EntityNode*)p->extension;
+            ext->staging = true;
             ff_draw_ltrb_f(
                 p->parent->parent->layer[SN],
-                &p->bounds, 
+                &p->bounds,
                 0x0
             );
         }
@@ -1066,7 +1889,15 @@ void ff_hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
     p->callback[F_CE_PRESS](p, p->target[F_CE_PRESS]);
 }
 
+/** Debug Overlay *************************************************************************************************************/
+
 #ifdef DEBUG_OVERLAY
+/** @brief Draw the debug overlay with entity diagnostic information.
+ *  @details Renders entity bounds, type, UID, value, flags, and socket/CRT
+ *           state as text on the DO layer.
+ *  @param field   Target field.
+ *  @param entity  Entity under the cursor (may be @c NULL).
+ */
 static inline void ff_draw_debug_overlay(Field* field, Entity* entity) {
     constexpr uint32_t colour = 0xFF'FF'FF'90;
     ff_frame_fill(field->layer[DO], 0);
@@ -1098,20 +1929,14 @@ static inline void ff_draw_debug_overlay(Field* field, Entity* entity) {
     ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "NODE UID     : %x", entity->parent->uid);
     ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
-    snprintf(buffer, 128, "IS CONNECTED : %d", entity->connected);
-    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
-    snprintf(buffer, 128, "CONNECTION   : %p", (void*)entity->connection);
-    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
-    snprintf(buffer, 128, "HAS DATA     : %d", entity->has_data);
-    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
-    snprintf(buffer, 128, "VALUE COARSE : %f", entity->value[0]);
-    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
-    snprintf(buffer, 128, "VALUE FINE   : %f", entity->value[1]);
-    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
-    snprintf(buffer, 128, "FLAGS        : %b", entity->flags);
-    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     if(entity->type == ST_SOCKET) {
         auto ext = (Socket*)entity->extension;
+        snprintf(buffer, 128, "IS CONNECTED : %d", ext->connected);
+        ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+        snprintf(buffer, 128, "CONNECTION   : %p", (void*)ext->connection);
+        ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+        snprintf(buffer, 128, "HAS DATA     : %d", ext->has_data);
+        ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
         if(ext->input) {
             snprintf(buffer, 128, "INPUT        : %f", *ext->input);
             ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
@@ -1121,7 +1946,13 @@ static inline void ff_draw_debug_overlay(Field* field, Entity* entity) {
             ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
         }
     }
-    else if(entity->type == ST_CRT) {
+    snprintf(buffer, 128, "VALUE COARSE : %f", entity->value[0]);
+    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    snprintf(buffer, 128, "VALUE FINE   : %f", entity->value[1]);
+    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    snprintf(buffer, 128, "FLAGS        : %b", entity->flags);
+    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    if(entity->type == ST_CRT) {
         auto ext = (Oscillograph*)entity->extension;
         if(ext->x && *ext->x) {
             snprintf(buffer, 128, "X            : %f", **ext->x);
@@ -1135,7 +1966,14 @@ static inline void ff_draw_debug_overlay(Field* field, Entity* entity) {
     atomic_store_explicit(&force_repaint, true, memory_order_release);
 }
 #endif
-
+/**
+ * @brief Handle mouse move: detect hover enter/leave and update cursor state.
+ * @details Compares the current stencil hit with the prior hit and dispatches
+ *          enter/leave handlers when the hovered entity changes.
+ * @param field  Target field.
+ * @param x      Mouse X coordinate.
+ * @param y      Mouse Y coordinate.
+ */
 void ff_hit_test(Field* restrict field, int x, int y) {
     auto uid_e = ff_frame_get(field->layer[SC], x, y);
     auto uid_n = ff_frame_get(field->layer[SN], x, y);
@@ -1169,11 +2007,24 @@ void ff_hit_test(Field* restrict field, int x, int y) {
     }
 }
 
+/**
+ * @brief Handle mouse drag: forward to the pressed entity's drag handler.
+ * @param field  Target field.
+ * @param x      Mouse X coordinate.
+ * @param y      Mouse Y coordinate.
+ */
 void ff_hit_test_drag(Field* restrict field, int x, int y) {
     drag_entity[field->pressed->type](field->pressed, x, y);
     field->repaint = true;
 }
 
+/**
+ * @brief Handle mouse-button release: dispatch release handler and clear drag state.
+ * @param field   Target field.
+ * @param x       Mouse X coordinate.
+ * @param y       Mouse Y coordinate.
+ * @param button  Button/modifier bitmask (@ref ControlModifier).
+ */
 void ff_hit_test_up(Field* restrict field, int x, int y, uint32_t button) {
     auto uid_e = ff_frame_get(field->layer[SC], x, y);
     auto uid_n = ff_frame_get(field->layer[SN], x, y);
@@ -1208,8 +2059,11 @@ void ff_hit_test_up(Field* restrict field, int x, int y, uint32_t button) {
     } 
 }
 
-/*****************************************************************************************************************************/
+/** Entity Handlers ***********************************************************************************************************/
 
+/** @brief Draw a checkbox widget (filled when checked).
+ *  @param entity  Checkbox entity to draw.
+ */
 static void ff_draw_checkbox(Entity* restrict entity) {
     auto field = entity->parent->parent;
     ff_draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
@@ -1219,6 +2073,13 @@ static void ff_draw_checkbox(Entity* restrict entity) {
     entity->repaint = false;
 }
 
+/**
+ * @brief Draw all dirty entities across all visible nodes.
+ * @details Iterates every node and entity, calling the type-specific draw
+ *          handler for entities with the repaint flag set, then fires the
+ *          F_CE_REPAINT callback. Clears the global repaint flag afterwards.
+ * @param field  Field to render.
+ */
 void ff_draw_scene(Field* restrict field) {
     for(uint32_t n = 0; n < field->nodes; ++n) {
         if(!field->node[n].visible) continue;
@@ -1233,8 +2094,11 @@ void ff_draw_scene(Field* restrict field) {
     field->repaint = false;
 }
 
-/*****************************************************************************************************************************/
-
+/** @brief Toggle a checkbox on press (handles radio-group exclusivity).
+ *  @param entity  Checkbox entity.
+ *  @param x       Mouse X (unused).
+ *  @param y       Mouse Y (unused).
+ */
 static void ff_set_checkbox(Entity* restrict entity, int, int) {
     auto coarse = &entity->value[CP_COARSE];
     auto ext = (Checkbox*)entity->extension;
@@ -1266,6 +2130,13 @@ static void ff_set_checkbox(Entity* restrict entity, int, int) {
 
 /*** Slider *******************************************************************************************************************/
 
+/** @brief Set a slider's value from a mouse drag position.
+ *  @details Uses the cursor delta since the last event, scaled by the step size,
+ *          and clamps to the configured range.
+ *  @param entity  Slider entity.
+ *  @param x       Mouse X coordinate.
+ *  @param y       Mouse Y coordinate.
+ */
 static void ff_set_slider(Entity* restrict entity, int x, int y) {
     const float v = 0.1f;
     const auto coarse = &entity->value[CP_COARSE];
@@ -1278,22 +2149,22 @@ static void ff_set_slider(Entity* restrict entity, int x, int y) {
     if(entity->flags & VERTICAL) {
         const int dy = field->memory[SP_CURSOR_PRIOR].y - y;
         float inverse = ext->inverse ? -1.0f : 1.0f;
-        const auto step = ext->step[CP_COARSE] * inverse; 
-        value = step * roundf((float)dy * v) + entity->memory[CP_COARSE];
+        const auto step = ext->step[CP_COARSE] * inverse;
+        value = step * roundf((float)dy * v) + ext->memory[CP_COARSE];
     }
     else {
         const int dx = field->memory[SP_CURSOR_PRIOR].x - x;
         float inverse = ext->inverse ? -1.0f : 1.0f;
-        const auto step = ext->step[CP_COARSE] * inverse; 
-        value = - step * roundf((float)dx * v) + entity->memory[CP_COARSE];
+        const auto step = ext->step[CP_COARSE] * inverse;
+        value = - step * roundf((float)dx * v) + ext->memory[CP_COARSE];
     }
 
-    if(value < entity->range[0]) {
-        *coarse = entity->range[0];
+    if(value < ext->range[0]) {
+        *coarse = ext->range[0];
         *fine = 0.0f;
     }
-    else if(value > entity->range[1]) {
-        *coarse = entity->range[1];
+    else if(value > ext->range[1]) {
+        *coarse = ext->range[1];
         *fine = 0.0f;
     }
     else *coarse = value;
@@ -1302,6 +2173,9 @@ static void ff_set_slider(Entity* restrict entity, int x, int y) {
     entity->callback[F_CE_VALUE](entity, entity->target[F_CE_VALUE]);
 }
 
+/** @brief Draw a slider widget (supports subtypes SS_A, SS_B, SS_C).
+ *  @param entity  Slider entity to draw.
+ */
 static void ff_draw_slider(Entity* restrict entity) {
     auto ext = (Slider*)entity->extension;
     auto coarse = &entity->value[CP_COARSE];
@@ -1310,7 +2184,7 @@ static void ff_draw_slider(Entity* restrict entity) {
     ff_draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
     ff_draw_ltrb_o(field->layer[FG], &entity->bounds, BORDER);
 
-    float frac = (*coarse - entity->range[0]) / (entity->range[1] - entity->range[0]);
+    float frac = (*coarse - ext->range[0]) / (ext->range[1] - ext->range[0]);
 
     switch(ext->type) {
         case SS_A:
@@ -1342,9 +2216,9 @@ static void ff_draw_slider(Entity* restrict entity) {
             break;
 
         case SS_C: {
-            float range_span = entity->range[1] - entity->range[0];
-            float zero_frac = (0.0f - entity->range[0]) / range_span;
-            float frac = (*coarse - entity->range[0]) / range_span;
+            float range_span = ext->range[1] - ext->range[0];
+            float zero_frac = (0.0f - ext->range[0]) / range_span;
+            float frac = (*coarse - ext->range[0]) / range_span;
             if(entity->flags & VERTICAL) {
                 int h   = entity->bounds.b - entity->bounds.t - GAP * 2;
                 int cy = entity->bounds.t + GAP + (int)((1.0f - zero_frac) * (float)h);
@@ -1381,6 +2255,11 @@ static void ff_draw_slider(Entity* restrict entity) {
     entity->repaint = false;
 }
 
+/** @brief Adjust a slider's fine value via mouse scroll.
+ *  @param entity  Slider entity.
+ *  @param x       Scroll delta X (unused).
+ *  @param y       Scroll delta Y.
+ */
 static void ff_scroll_slider(Entity* restrict entity, int x, int y) {
     auto fine = &entity->value[CP_FINE];
     auto coarse = &entity->value[CP_COARSE];
@@ -1388,7 +2267,7 @@ static void ff_scroll_slider(Entity* restrict entity, int x, int y) {
     float inverse = ext->inverse ? -1.0f : 1.0f;
     auto df = (float)y * ext->step[CP_FINE] * inverse;
 
-    if((*coarse + df < entity->range[1]) && (*coarse + df > entity->range[0])) {
+    if((*coarse + df < ext->range[1]) && (*coarse + df > ext->range[0])) {
         *fine += df;
     }
 
@@ -1403,11 +2282,16 @@ static void ff_scroll_slider(Entity* restrict entity, int x, int y) {
 
 /*** Slider *******************************************************************************************************************/
 
+/** @brief Set an encoder's value from a mouse drag (wraps at range edges).
+ *  @param entity  Encoder entity.
+ *  @param x       Mouse X coordinate.
+ *  @param y       Mouse Y coordinate.
+ */
 static void ff_set_encoder(Entity* restrict entity, int x, int y) {
     const float v = 0.1f;
     const auto coarse = &entity->value[CP_COARSE];
     const auto fine = &entity->value[CP_FINE];
-    auto ext = (Slider*)entity->extension;
+    auto ext = (Encoder*)entity->extension;
     auto field = entity->parent->parent;
 
     float value = {};
@@ -1415,29 +2299,29 @@ static void ff_set_encoder(Entity* restrict entity, int x, int y) {
     if(entity->flags & VERTICAL) {
         const int dy = field->memory[SP_CURSOR_PRIOR].y - y;
         float inverse = ext->inverse ? -1.0f : 1.0f;
-        const auto step = ext->step[CP_COARSE] * inverse; 
-        value = step * roundf((float)dy * v) + entity->memory[CP_COARSE];
+        const auto step = ext->step[CP_COARSE] * inverse;
+        value = step * roundf((float)dy * v) + ext->memory[CP_COARSE];
     }
     else {
         const int dx = field->memory[SP_CURSOR_PRIOR].x - x;
         float inverse = ext->inverse ? -1.0f : 1.0f;
-        const auto step = ext->step[CP_COARSE] * inverse; 
-        value = - step * roundf((float)dx * v) + entity->memory[CP_COARSE];
+        const auto step = ext->step[CP_COARSE] * inverse;
+        value = - step * roundf((float)dx * v) + ext->memory[CP_COARSE];
     }
 
-    if(value < entity->range[0]) {
+    if(value < ext->range[0]) {
         ext->inverse = !ext->inverse;
-        entity->memory[CP_COARSE] = entity->range[0];
+        ext->memory[CP_COARSE] = ext->range[0];
         field->memory[SP_CURSOR_PRIOR].x = x;
         field->memory[SP_CURSOR_PRIOR].y = y;
-        *coarse = entity->range[0];
+        *coarse = ext->range[0];
     }
-    else if(value > entity->range[1]) {
+    else if(value > ext->range[1]) {
         ext->inverse = !ext->inverse;
-        entity->memory[CP_COARSE] = entity->range[1];
+        ext->memory[CP_COARSE] = ext->range[1];
         field->memory[SP_CURSOR_PRIOR].x = x;
         field->memory[SP_CURSOR_PRIOR].y = y;
-        *coarse = entity->range[1];
+        *coarse = ext->range[1];
     }
     else *coarse = value;
 
@@ -1445,15 +2329,18 @@ static void ff_set_encoder(Entity* restrict entity, int x, int y) {
     entity->callback[F_CE_VALUE](entity, entity->target[F_CE_VALUE]);
 }
 
+/** @brief Draw an encoder widget (bar fill, respecting inverse state).
+ *  @param entity  Encoder entity to draw.
+ */
 static void ff_draw_encoder(Entity* restrict entity) {
-    auto ext = (Slider*)entity->extension;
+    auto ext = (Encoder*)entity->extension;
     auto coarse = &entity->value[CP_COARSE];
     auto fine = &entity->value[CP_FINE];
     auto field = entity->parent->parent;
     ff_draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
     ff_draw_ltrb_o(field->layer[FG], &entity->bounds, BORDER);
 
-    float frac = (*coarse - entity->range[0]) / (entity->range[1] - entity->range[0]);
+    float frac = (*coarse - ext->range[0]) / (ext->range[1] - ext->range[0]);
 
     if(entity->flags & VERTICAL) {
         int h   = entity->bounds.b - entity->bounds.t - GAP * 2;
@@ -1494,10 +2381,15 @@ static void ff_draw_encoder(Entity* restrict entity) {
     entity->repaint = false;
 }
 
+/** @brief Adjust an encoder's value via mouse scroll (wraps at range edges).
+ *  @param entity  Encoder entity.
+ *  @param x       Mouse X (used for cursor tracking).
+ *  @param y       Scroll delta.
+ */
 static void ff_scroll_encoder(Entity* restrict entity, int x, int y) {
     const auto coarse = &entity->value[CP_COARSE];
     const auto fine = &entity->value[CP_FINE];
-    auto ext = (Slider*)entity->extension;
+    auto ext = (Encoder*)entity->extension;
     auto field = entity->parent->parent;
 
     float value = {};
@@ -1505,29 +2397,29 @@ static void ff_scroll_encoder(Entity* restrict entity, int x, int y) {
     if(entity->flags & VERTICAL) {
         const int dy = y;
         float inverse = ext->inverse ? -1.0f : 1.0f;
-        const auto step = ext->step[CP_FINE] * inverse; 
+        const auto step = ext->step[CP_FINE] * inverse;
         value = step * dy + *coarse;
     }
     else {
         const int dx = y;
         float inverse = ext->inverse ? -1.0f : 1.0f;
-        const auto step = ext->step[CP_FINE] * inverse; 
+        const auto step = ext->step[CP_FINE] * inverse;
         value = step * dx + *coarse;
     }
 
-    if(value < entity->range[0]) {
+    if(value < ext->range[0]) {
         ext->inverse = !ext->inverse;
-        entity->memory[CP_COARSE] = entity->range[0];
+        ext->memory[CP_COARSE] = ext->range[0];
         field->memory[SP_CURSOR_PRIOR].x = x;
         field->memory[SP_CURSOR_PRIOR].y = y;
-        *coarse = entity->range[0];
+        *coarse = ext->range[0];
     }
-    else if(value > entity->range[1]) {
+    else if(value > ext->range[1]) {
         ext->inverse = !ext->inverse;
-        entity->memory[CP_COARSE] = entity->range[1];
+        ext->memory[CP_COARSE] = ext->range[1];
         field->memory[SP_CURSOR_PRIOR].x = x;
         field->memory[SP_CURSOR_PRIOR].y = y;
-        *coarse = entity->range[1];
+        *coarse = ext->range[1];
     }
     else *coarse = value;
 
@@ -1535,6 +2427,9 @@ static void ff_scroll_encoder(Entity* restrict entity, int x, int y) {
     entity->callback[F_CE_VALUE](entity, entity->target[F_CE_VALUE]);
 }
 
+/** @brief Draw a button widget (highlights on hover, accent when active).
+ *  @param entity  Button entity to draw.
+ */
 static void ff_draw_button(Entity* restrict entity) {
     auto field = entity->parent->parent;
     ff_draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
@@ -1549,18 +2444,25 @@ static void ff_draw_button(Entity* restrict entity) {
     entity->repaint = false;
 }
 
-/******************************************************************************************************************************/
-
+/** @brief Draw a rotary knob (selects sprite frame based on value).
+ *  @param entity  Rotary entity to draw.
+ */
 static void ff_draw_rotary(Entity* restrict entity) {
     auto field = entity->parent->parent;
-    auto range = entity->range[1] - entity->range[0];
-    Sprite* spr = (Sprite*)entity->data;
-    int f = ((entity->value[CP_COARSE] - entity->range[0]) / range) * spr->nframes;
+    auto ext = (Rotary*)entity->extension;
+    auto range = ext->range[1] - ext->range[0];
+    Sprite* spr = ext->sprite;
+    int f = ((entity->value[CP_COARSE] - ext->range[0]) / range) * spr->nframes;
     ff_frame_copy_at(field->layer[FG], &spr->data[f], entity->bounds.l, entity->bounds.t);
 
     entity->repaint = false;
 }
 
+/** @brief Set a rotary knob's value from mouse drag (clamped to range).
+ *  @param entity  Rotary entity.
+ *  @param x       Mouse X coordinate.
+ *  @param y       Mouse Y coordinate.
+ */
 static void ff_set_rotary(Entity* restrict entity, int x, int y) {
     auto field = entity->parent->parent;
     auto coarse = &entity->value[CP_COARSE];
@@ -1570,16 +2472,19 @@ static void ff_set_rotary(Entity* restrict entity, int x, int y) {
 
     *coarse += (dy + dx);
 
-    if(*coarse < entity->range[0]) *coarse = entity->range[0];
-    else if(*coarse > entity->range[1]) *coarse = entity->range[1];
+    if(*coarse < ext->range[0]) *coarse = ext->range[0];
+    else if(*coarse > ext->range[1]) *coarse = ext->range[1];
     entity->repaint = true;
 
     field->memory[SP_CURSOR_PRIOR].x = (float)x;
     field->memory[SP_CURSOR_PRIOR].y = (float)y;
 }
 
-/******************************************************************************************************************************/
-
+/** @brief Set an infinite slider's value from mouse drag (wraps around range).
+ *  @param entity  Infinite-slider entity.
+ *  @param x       Mouse X coordinate.
+ *  @param y       Mouse Y coordinate.
+ */
 static void ff_set_sprite_inf_slider(Entity* restrict entity, int x, int y) {
     auto field = entity->parent->parent;
     auto coarse = &entity->value[CP_COARSE];
@@ -1589,17 +2494,19 @@ static void ff_set_sprite_inf_slider(Entity* restrict entity, int x, int y) {
 
     *coarse += (dy + dx);
 
-    if(*coarse < entity->range[0]) *coarse += entity->range[0];
-    else if(*coarse > entity->range[1]) *coarse -= entity->range[1];
-
-    // if (o->at[o->current].value <= 0.0f) o->at[o->current].value = o->at[o->current].range;
-    // else if (o->at[o->current].value >= o->at[o->current].range) o->at[o->current].value = 0.0f;
+    if(*coarse < ext->range[0]) *coarse += ext->range[0];
+    else if(*coarse > ext->range[1]) *coarse -= ext->range[1];
 
     entity->repaint = true;
     field->memory[SP_CURSOR_PRIOR].x = (float)x;
     field->memory[SP_CURSOR_PRIOR].y = (float)y;
 }
 
+/** @brief Toggle a momentary/sprite button on press.
+ *  @param entity  Button entity.
+ *  @param x       Mouse X (unused).
+ *  @param y       Mouse Y (unused).
+ */
 static void ff_set_button(Entity* restrict entity, int, int) {
     auto field = entity->parent->parent;
     auto coarse = &entity->value[CP_COARSE];
@@ -1611,6 +2518,11 @@ static void ff_set_button(Entity* restrict entity, int, int) {
     field->prior[IP_NODE] = field->current[IP_NODE];
 }
 
+/** @brief Handle button release (only fires if the same button was pressed).
+ *  @param entity  Button entity under the cursor at release.
+ *  @param x       Mouse X (unused).
+ *  @param y       Mouse Y (unused).
+ */
 static void ff_release_button(Entity* restrict entity, int, int) {
     auto field = entity->parent->parent;
     auto pressed = field->pressed; 
@@ -1626,9 +2538,16 @@ static void ff_release_button(Entity* restrict entity, int, int) {
     }
 }
 
+/** @brief Draw a sprite button (selects frame based on on/off state).
+ *  @param entity  Sprite-button or sprite-checkbox entity.
+ */
 static void ff_draw_sprite_button(Entity* restrict entity) {
     auto field = entity->parent->parent;
-    Sprite* spr = (Sprite*)entity->data;
+    Sprite* spr;
+    if(entity->type == ST_SPRITE_CHECKBOX)
+        spr = ((Checkbox*)entity->extension)->sprite;
+    else
+        spr = ((SpriteButton*)entity->extension)->sprite;
 
     if(entity->value[CP_COARSE] > 0.5f)
         ff_frame_copy_at(field->layer[FG], &spr->data[1], entity->bounds.l, entity->bounds.t);
@@ -1638,10 +2557,19 @@ static void ff_draw_sprite_button(Entity* restrict entity) {
     entity->repaint = false;
 }
 
+/** @brief Initialise a socket entity (allocates the Bezier cord buffer).
+ *  @param entity  Socket entity to initialise.
+ */
 static void ff_init_socket(Entity* restrict entity) {
-    entity->data = (float*)calloc(SPLINE_SEGMENTS * 2, sizeof(float));
+    auto ext = (Socket*)entity->extension;
+    ext->cord = (float*)calloc(SPLINE_SEGMENTS * 2, sizeof(float));
 }
 
+/** @brief Toggle a socket on press (starts a connection drag).
+ *  @param entity  Socket entity.
+ *  @param x       Mouse X (unused).
+ *  @param y       Mouse Y (unused).
+ */
 static void ff_set_socket(Entity* restrict entity, int, int) {
     auto field = entity->parent->parent;
     auto coarse = &entity->value[CP_COARSE];
@@ -1653,6 +2581,9 @@ static void ff_set_socket(Entity* restrict entity, int, int) {
     field->prior[IP_NODE] = field->current[IP_NODE];
 }
 
+/** @brief Draw a socket as a coloured circle (teal=input, red=output).
+ *  @param entity  Socket entity to draw.
+ */
 static void ff_draw_socket(Entity* restrict entity) {
     auto field = entity->parent->parent;
     auto r = entity->width / 2;
@@ -1668,6 +2599,14 @@ static void ff_draw_socket(Entity* restrict entity) {
     entity->repaint = false;
 }
 
+/** @brief Evaluate a cubic Bezier curve at parameter @c t.
+ *  @param a  Start point (t=0).
+ *  @param b  First control point.
+ *  @param c  Second control point.
+ *  @param d  End point (t=1).
+ *  @param t  Parameter (0.0–1.0).
+ *  @return Interpolated point on the curve.
+ */
 static inline point ff_interpolate_bezier(point a, point b, point c, point d, float t)
 {
     float ti = 1.0f - t;
@@ -1687,28 +2626,37 @@ static inline point ff_interpolate_bezier(point a, point b, point c, point d, fl
     return o;
 }
 
+/** @brief Drag a socket: update the Bezier cord spline to the cursor.
+ *  @details If the socket is already connected, disconnects first.
+ *           Computes a cubic Bezier from the socket centre to the cursor.
+ *  @param entity  Socket entity being dragged.
+ *  @param x       Mouse X coordinate.
+ *  @param y       Mouse Y coordinate.
+ */
 static void ff_drag_socket(Entity* entity, int x, int y)
 {
     auto field = entity->parent->parent;
-    if(entity->connected) {
-        entity = entity->connection;
+    auto ext = (Socket*)entity->extension;
+    if(ext->connected) {
+        entity = ext->connection;
+        ext = (Socket*)entity->extension;
         field->pressed = entity;
         field->current[IP_ENTITY] = entity->index;
         field->current[IP_NODE] = entity->parent->index;
 
-        auto entity_has_data = entity->has_data;
-        auto conn_has_data = entity->connection->has_data;
+        auto entity_ext = (Socket*)entity->extension;
+        auto conn_ext = (Socket*)entity_ext->connection->extension;
 
-        if(entity_has_data) {
-            memset(entity->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+        if(entity_ext->has_data) {
+            memset(entity_ext->cord, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
         }
-        if(conn_has_data) {
-            memset(entity->connection->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+        if(conn_ext->has_data) {
+            memset(conn_ext->cord, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
         }
-        entity->has_data = false;
-        entity->connection->has_data = false;
-        entity->connection->connected = false;
-        entity->connected = false;
+        entity_ext->has_data = false;
+        conn_ext->has_data = false;
+        conn_ext->connected = false;
+        entity_ext->connected = false;
 
     }
 
@@ -1757,25 +2705,33 @@ static void ff_drag_socket(Entity* entity, int x, int y)
     for(uint32_t i = 0, j = 0; i < SPLINE_SEGMENTS; i++) {
         point uvp = ff_interpolate_bezier(uva, uvb, uvc, uvd, t);
 
-        ((float*)entity->data)[j++] = uvp.x;
-        ((float*)entity->data)[j++] = uvp.y;
+        ext->cord[j++] = uvp.x;
+        ext->cord[j++] = uvp.y;
 
         t += inc;
     }
 
-    entity->has_data = true;
+    ext->has_data = true;
 }
 
+/** @brief Drag a connected socket's cord to a new target position.
+ *  @details Recomputes the Bezier spline for an already-connected socket pair.
+ *  @param entity  Socket entity (one end of the connection).
+ *  @param x       Target X coordinate.
+ *  @param y       Target Y coordinate.
+ */
 static void ff_drag_cord(Entity* restrict entity, int x, int y)
 {
-    if(entity->connected) {
-        if(entity->has_data) {
-            memset(entity->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+    auto ext = (Socket*)entity->extension;
+    if(ext->connected) {
+        if(ext->has_data) {
+            memset(ext->cord, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
         }
-        if(entity->connection->has_data) {
-            memset(entity->connection->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
-            entity->connection->has_data = false;
-            entity->connection->connected = false;
+        auto conn_ext = (Socket*)ext->connection->extension;
+        if(conn_ext->has_data) {
+            memset(conn_ext->cord, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+            conn_ext->has_data = false;
+            conn_ext->connected = false;
         }
     }
 
@@ -1824,15 +2780,24 @@ static void ff_drag_cord(Entity* restrict entity, int x, int y)
     for(uint32_t i = 0, j = 0; i < SPLINE_SEGMENTS; i++) {
         point uvp = ff_interpolate_bezier(uva, uvb, uvc, uvd, t);
 
-        ((float*)entity->data)[j++] = uvp.x;
-        ((float*)entity->data)[j++] = uvp.y;
+        ext->cord[j++] = uvp.x;
+        ext->cord[j++] = uvp.y;
 
         t += inc;
     }
 
-    entity->has_data = true;
+    ext->has_data = true;
 }
 
+/** @brief Connect two socket entities (input ↔ output).
+ *  @details Wires the input socket's @c input pointer to the output socket's
+ *           @c output pointer. If the target was already connected, the old
+ *           connection is cleaned up first.
+ *  @param source  Source socket entity.
+ *  @param target  Target socket entity.
+ *  @return @c true if the connection was established, @c false if the
+ *          core types are incompatible (e.g. input→input).
+ */
 inline static bool ff_connect(Entity* restrict source, Entity* restrict target) {
     auto ext_s = (Socket*)source->extension;
     auto ext_t = (Socket*)target->extension;
@@ -1845,23 +2810,24 @@ inline static bool ff_connect(Entity* restrict source, Entity* restrict target) 
     }
     else return false;
 
-    if(target->connected) {
-        if(target->has_data) {
-            memset(target->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
-            target->has_data = false;
-            target->connected = false;
+    if(ext_t->connected) {
+        if(ext_t->has_data) {
+            memset(ext_t->cord, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+            ext_t->has_data = false;
+            ext_t->connected = false;
         }
-        if(target->connection->has_data) {
-            memset(source->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
-            target->connection->has_data = false;
-            target->connection->connected = false;
+        auto prev_conn_ext = (Socket*)ext_t->connection->extension;
+        if(prev_conn_ext->has_data) {
+            memset(ext_s->cord, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+            prev_conn_ext->has_data = false;
+            prev_conn_ext->connected = false;
         }
     }
     ff_drag_cord(source, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
-    source->connected = true;
-    target->connected = true;
-    source->connection = target;
-    target->connection = source;
+    ext_s->connected = true;
+    ext_t->connected = true;
+    ext_s->connection = target;
+    ext_t->connection = source;
     source->hovered = false;
     target->hovered = true;
     source->parent->parent->connecting = false;
@@ -1869,55 +2835,74 @@ inline static bool ff_connect(Entity* restrict source, Entity* restrict target) 
     return true;
 }
 
+/** @brief Disconnect a socket entity from its current connection.
+ *  @details Clears the input pointer (if input socket), resets connection
+ *           state on both ends, and frees cord spline data.
+ *  @param entity  Socket entity to disconnect.
+ */
 inline static void ff_disconnect(Entity* restrict entity) {
-    auto target = entity->connection;
+    auto ext = (Socket*)entity->extension;
+    auto target = ext->connection;
 
     if(entity->core_type == F_CT_INPUT) {
-        auto ext = (Socket*)entity->extension;
         ext->input = nullptr;
     }
     else if(target && target->core_type == F_CT_INPUT) {
-        auto ext = (Socket*)target->extension;
-        ext->input = nullptr;
+        auto target_ext = (Socket*)target->extension;
+        target_ext->input = nullptr;
     }
 
-    if(entity->has_data) {
-        memset(entity->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
-        entity->has_data = false;
+    if(ext->has_data) {
+        memset(ext->cord, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+        ext->has_data = false;
     }
-    entity->connected = false;
+    ext->connected = false;
 
     if(target) {
-        if(target->has_data) {
-            memset(target->data, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
+        auto target_ext = (Socket*)target->extension;
+        if(target_ext->has_data) {
+            memset(target_ext->cord, 0, SPLINE_SEGMENTS * 2 * sizeof(float));
         }
 
-        target->connected = false;
-        target->has_data = false;
-        entity->connection->connection = nullptr;
-        entity->connection = nullptr;
+        target_ext->connected = false;
+        target_ext->has_data = false;
+        target_ext->connection = nullptr;
+        ext->connection = nullptr;
     }
 }
 
+/** @brief Handle socket release: attempt to connect to the entity under the cursor.
+ *  @param entity  Socket entity being released.
+ *  @param x       Mouse X coordinate.
+ *  @param y       Mouse Y coordinate.
+ */
 static void ff_release_socket(Entity* restrict entity, int x, int y) {
     auto field = entity->parent->parent;
     auto target_uid = ff_frame_get(field->layer[SC], x, y);
     auto target_nid = ff_frame_get(field->layer[SN], x, y);
     if(target_nid >= field->nodes || target_uid >= field->node[target_nid].entities) return;
     auto target = &field->node[target_nid].at[target_uid];
-    
-    if(target->connected) ff_disconnect(target);
+
+    auto target_ext = (Socket*)target->extension;
+    if(target_ext->connected) ff_disconnect(target);
     if(ff_connect(entity, target)) return;
     ff_disconnect(entity);
 }
 
-/*****************************************************************************************************************************/
-
+/** @brief Initialise a nested-node entity (allocates the node's frame buffer).
+ *  @param entity  Node entity to initialise.
+ */
 static void ff_init_node(Entity* restrict entity) {
-    entity->data = (Frame*)calloc(1, sizeof(Frame));
-    ff_frame_init((Frame*)entity->data, entity->width, entity->height);
+    auto ext = (EntityNode*)entity->extension;
+    ext->frame = (Frame*)calloc(1, sizeof(Frame));
+    ff_frame_init(ext->frame, entity->width, entity->height);
 }
 
+/** @brief Handle node press (prepares for potential drag).
+ *  @param entity  Node entity.
+ *  @param x       Mouse X (unused).
+ *  @param y       Mouse Y (unused).
+ */
 static void ff_set_node(Entity* restrict entity, int, int) {
     entity->repaint = true;
     auto field = entity->parent->parent;
@@ -1925,6 +2910,10 @@ static void ff_set_node(Entity* restrict entity, int, int) {
     field->prior[IP_NODE] = field->current[IP_NODE];
 }
 
+/** @brief Check whether an entity's bounds overlap another node in the stencil.
+ *  @param entity  Entity to test.
+ *  @return @c true if any pixel in the entity's bounds belongs to a different node.
+ */
 static inline bool ff_has_overlap(const Entity* restrict entity) {
     auto field = entity->parent->parent;
     const auto l = field->layer[SN];
@@ -1938,10 +2927,14 @@ static inline bool ff_has_overlap(const Entity* restrict entity) {
     return false;
 }
 
+/** @brief Draw a node background (filled rect with border, or staging outline).
+ *  @param entity  Node entity to draw.
+ */
 static void ff_draw_node(Entity* restrict entity) {
     if(entity->visible) {
         auto field = entity->parent->parent;
-        auto l = entity->staging ? ST : NG;
+        auto ext = (EntityNode*)entity->extension;
+        auto l = ext->staging ? ST : NG;
 
         if(l == ST) {
             ff_frame_clr(field->layer[l]);
@@ -1955,6 +2948,11 @@ static void ff_draw_node(Entity* restrict entity) {
     }
 }
 
+/** @brief Drag a node on the canvas (grid-snapped movement).
+ *  @param entity  Node entity being dragged.
+ *  @param x       Mouse X coordinate.
+ *  @param y       Mouse Y coordinate.
+ */
 static void ff_drag_node(Entity* restrict entity, int x, int y)
 {
     auto field = entity->parent->parent;
@@ -1990,7 +2988,15 @@ static void ff_drag_node(Entity* restrict entity, int x, int y)
     }
 }
 
-static void ff_release_node(Entity* restrict entity, int, int) 
+/** @brief Handle node release: snap back if overlapping, otherwise commit move.
+ *  @details If the node overlaps another node, it snaps back to its original
+ *           position. Otherwise, all child entities are translated to the
+ *           new position and the move is committed.
+ *  @param entity  Node entity being released.
+ *  @param x       Mouse X (unused).
+ *  @param y       Mouse Y (unused).
+ */
+static void ff_release_node(Entity* restrict entity, int, int)
 {
     auto field = entity->parent->parent;
     auto overlap = ff_has_overlap(entity);
@@ -2007,7 +3013,7 @@ static void ff_release_node(Entity* restrict entity, int, int)
         ff_draw_ltrb_f(field->layer[SN], &ir, entity->parent->index);
         ff_draw_ltrb_f(field->layer[NG], &ir, 0x0);
 
-        for(uint32_t i = 0; i < entity->nodes; ++i) {
+        for(uint32_t i = 0; i < entity->parent->entities; ++i) {
             entity->parent->at[i].repaint = true;
         }
     }
@@ -2034,13 +3040,17 @@ static void ff_release_node(Entity* restrict entity, int, int)
 
             ff_move_entity(child, &r); 
 
-            if(child->connected) {
-                auto target = child->connection;
-                if(child->has_data) {
-                    ff_drag_cord(child, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
-                }
-                else if(target->has_data) {
-                    ff_drag_cord(target, child->bounds.l + child->width / 2, child->bounds.t + child->height / 2);
+            if(child->type == ST_SOCKET) {
+                auto child_ext = (Socket*)child->extension;
+                if(child_ext->connected) {
+                    auto target = child_ext->connection;
+                    auto target_ext = (Socket*)target->extension;
+                    if(child_ext->has_data) {
+                        ff_drag_cord(child, target->bounds.l + target->width / 2, target->bounds.t + target->height / 2);
+                    }
+                    else if(target_ext->has_data) {
+                        ff_drag_cord(target, child->bounds.l + child->width / 2, child->bounds.t + child->height / 2);
+                    }
                 }
             }
 
@@ -2050,27 +3060,37 @@ static void ff_release_node(Entity* restrict entity, int, int)
 
     ff_frame_clr(field->layer[ST]);
     field->staging = false;
-    entity->staging = false;
+    auto ext = (EntityNode*)entity->extension;
+    ext->staging = false;
     entity->repaint = true;
     field->repaint = true;
 }
 
-/*****************************************************************************************************************************/
-
+/** @brief Initialise a textbox entity (no-op — buffer is embedded in the struct).
+ *  @param entity  Textbox entity (unused).
+ */
 static void ff_init_textbox(Entity* restrict entity) {
-    entity->data = (char*)calloc(TEXTBOX_SIZE, sizeof(char)); 
+    // Text buffer is embedded in the Textbox extension, nothing to allocate
+    (void)entity;
 }
 
+/** @brief Handle textbox press (marks for repaint).
+ *  @param entity  Textbox entity.
+ *  @param x       Mouse X (unused).
+ *  @param y       Mouse Y (unused).
+ */
 static void ff_set_textbox(Entity* restrict entity, int, int) {
     entity->repaint = true;
 }
 
+/** @brief Draw a textbox: renders the text label on the text layer.
+ *  @param entity  Textbox entity to draw.
+ */
 static void ff_draw_textbox(Entity* restrict entity) {
     auto field = entity->parent->parent;
     ff_draw_ltrb_f(field->layer[TL], &entity->bounds, 0);
-    char *text = entity->data;
-    //auto len = strlen(text);
-    //auto offset_x = (entity->width - 10 * len) / 2;
+    auto ext = (Textbox*)entity->extension;
+    char *text = ext->text;
     auto offset_y = (entity->height - 8) / 2;
 
     ffDrawTextLabel(
@@ -2087,8 +3107,12 @@ static void ff_draw_textbox(Entity* restrict entity) {
     entity->repaint = false;
 }
 
-/*****************************************************************************************************************************/
-
+/** @brief Draw a CRT graticule (grid lines, minor ticks, and dotted reference lines).
+ *  @param frame   Target frame.
+ *  @param colour  32-bit RGBA colour for the grid.
+ *  @param vdiv    Number of major vertical divisions.
+ *  @param hdiv    Number of major horizontal divisions.
+ */
 static void ff_draw_graticule(Frame* frame, uint32_t colour, uint32_t vdiv, uint32_t hdiv) {
     const float W = (float)frame->width;
     const float H = (float)frame->height;
@@ -2159,12 +3183,15 @@ static void ff_draw_graticule(Frame* frame, uint32_t colour, uint32_t vdiv, uint
     }
 }
 
+/** @brief Initialise a CRT entity (allocates frame, draws graticule, registers stream).
+ *  @param entity  CRT entity to initialise.
+ */
 static void ff_init_crt(Entity* restrict entity) {
-    entity->data = malloc(sizeof(Frame));
-    ff_frame_init((Frame*)entity->data, entity->width, entity->height);
-    ff_draw_graticule((Frame*)entity->data, BACKGROUND, 10, 8);
-    
     auto ext = (Oscillograph*)entity->extension;
+    ext->frame = (Frame*)malloc(sizeof(Frame));
+    ff_frame_init(ext->frame, entity->width, entity->height);
+    ff_draw_graticule(ext->frame, BACKGROUND, 10, 8);
+
     ext->data = (float*)calloc(SPLINE_SEGMENTS * 2, sizeof(float));
     ext->r_head = 0;
     ext->w_head = 0;
@@ -2172,21 +3199,31 @@ static void ff_init_crt(Entity* restrict entity) {
     entity->parent->parent->stream[0] = entity;
 }
 
+/** @brief Handle CRT press (marks for repaint).
+ *  @param entity  CRT entity.
+ *  @param x       Mouse X (unused).
+ *  @param y       Mouse Y (unused).
+ */
 static void ff_set_crt(Entity* restrict entity, int, int) {
     entity->repaint = true;
 }
 
+/** @brief Draw a CRT display (copies the CRT frame buffer to the foreground layer).
+ *  @param entity  CRT entity to draw.
+ */
 static void ff_draw_crt(Entity* restrict entity) {
     auto field = entity->parent->parent;
+    auto ext = (Oscillograph*)entity->extension;
     ff_draw_ltrb_f(field->layer[FG], &entity->bounds, BUTTONS);
-    ff_frame_copy_at(field->layer[FG], (Frame*)entity->data, entity->bounds.l, entity->bounds.t);
+    ff_frame_copy_at(field->layer[FG], ext->frame, entity->bounds.l, entity->bounds.t);
 
     entity->repaint = false;
 }
 
-/*****************************************************************************************************************************/
-
-static void ff_draw_canvas(Entity* restrict entity) 
+/** @brief Draw the canvas background grid (minor and major lines).
+ *  @param entity  Canvas entity (node 0, entity 0).
+ */
+static void ff_draw_canvas(Entity* restrict entity)
 {
     auto field = entity->parent->parent;
     ff_frame_fill(field->layer[BG], BACKGROUND);
@@ -2211,10 +3248,15 @@ static void ff_draw_canvas(Entity* restrict entity)
     }
 }
 
-/*****************************************************************************************************************************/
+/** Dispatch Tables ***********************************************************************************************************/
 
+/** @brief No-op init handler for entity types that need no initialisation. */
 static inline void ff_init_none(Entity* restrict) {}
 
+/**
+ * @brief Dispatch table: per-type entity initialisation handlers.
+ * @details Indexed by @ref SectorType. Called once when the entity is created.
+ */
 void (*init_entity[])(Entity* restrict)  = {
     [ST_SLIDER]                 = ff_init_none,
     [ST_ENCODER]                = ff_init_none,
@@ -2231,8 +3273,13 @@ void (*init_entity[])(Entity* restrict)  = {
     [ST_CRT]                    = ff_init_crt,  
 };
 
+/** @brief No-op set handler for entity types without press behaviour. */
 static inline void ff_set_none(Entity* restrict, int, int) {}
 
+/**
+ * @brief Dispatch table: per-type press (mouse-down) handlers.
+ * @details Indexed by @ref SectorType.
+ */
 void (*set_entity[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = ff_set_slider,   
     [ST_ENCODER]                = ff_set_encoder,   
@@ -2249,6 +3296,10 @@ void (*set_entity[])(Entity* restrict, int, int) = {
     [ST_CRT]                    = ff_set_crt        
 };
 
+/**
+ * @brief Dispatch table: per-type draw handlers.
+ * @details Indexed by @ref SectorType. Called during ff_draw_scene() for dirty entities.
+ */
 void (*draw_entity[])(Entity* restrict) = {
     [ST_SLIDER]                 = ff_draw_slider,        
     [ST_ENCODER]                = ff_draw_encoder,        
@@ -2265,8 +3316,13 @@ void (*draw_entity[])(Entity* restrict) = {
     [ST_CRT]                    = ff_draw_crt
 };
 
+/** @brief No-op drag handler for entity types that don't support dragging. */
 static inline void ff_drag_none(Entity* restrict, int, int) {}
 
+/**
+ * @brief Dispatch table: per-type drag handlers.
+ * @details Indexed by @ref SectorType. Called during ff_hit_test_drag().
+ */
 void (*drag_entity[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = ff_set_slider,           
     [ST_ENCODER]                = ff_set_encoder,           
@@ -2283,8 +3339,13 @@ void (*drag_entity[])(Entity* restrict, int, int) = {
     [ST_CRT]                    = ff_drag_none,  
 };
 
+/** @brief No-op scroll handler for entity types that don't support scroll. */
 static inline void ff_scroll_none(Entity* restrict, int, int) {}
 
+/**
+ * @brief Dispatch table: per-type scroll (mouse wheel) handlers.
+ * @details Indexed by @ref SectorType.
+ */
 void (*scroll_entity[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = ff_scroll_slider,     
     [ST_ENCODER]                = ff_scroll_encoder,     
@@ -2301,8 +3362,13 @@ void (*scroll_entity[])(Entity* restrict, int, int) = {
     [ST_CRT]                    = ff_scroll_none,
 };
 
+/** @brief No-op hover-enter handler for entity types without hover behaviour. */
 static inline void ff_enter_none(Entity* restrict, int, int) {}
 
+/**
+ * @brief Dispatch table: per-type hover-enter handlers.
+ * @details Indexed by @ref SectorType. Called when the cursor enters an entity.
+ */
 void (*enter_entity[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = ff_enter_none,         
     [ST_ENCODER]                = ff_enter_none,         
@@ -2319,8 +3385,13 @@ void (*enter_entity[])(Entity* restrict, int, int) = {
     [ST_CRT]                    = ff_enter_none,
 };
 
+/** @brief No-op hover-leave handler for entity types without hover behaviour. */
 static inline void ff_leave_none(Entity* restrict, int, int) {}
 
+/**
+ * @brief Dispatch table: per-type hover-leave handlers.
+ * @details Indexed by @ref SectorType. Called when the cursor leaves an entity.
+ */
 void (*leave_entity[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = ff_leave_none,         
     [ST_ENCODER]                = ff_leave_none,         
@@ -2337,8 +3408,13 @@ void (*leave_entity[])(Entity* restrict, int, int) = {
     [ST_CRT]                    = ff_leave_none  
 };
 
+/** @brief No-op release handler for entity types without release behaviour. */
 static inline void ff_release_none(Entity* restrict, int, int) {}
 
+/**
+ * @brief Dispatch table: per-type release (mouse-up) handlers.
+ * @details Indexed by @ref SectorType. Called during ff_hit_test_up().
+ */
 void (*release_entity[])(Entity* restrict, int, int) = {
     [ST_SLIDER]                 = ff_release_none,
     [ST_ENCODER]                = ff_release_none,
@@ -2355,6 +3431,15 @@ void (*release_entity[])(Entity* restrict, int, int) = {
     [ST_CRT]                    = ff_release_node,
 }; 
 
+/** Font Data *****************************************************************************************************************/
+
+/**
+ * @brief Embedded 7×8 bitmap font.
+ * @details 7 bytes per glyph, 1 bit per pixel (LSB = top row).
+ *          Glyphs 0–95 map to ASCII 32–127. Glyphs 96+ are special symbols
+ *          (squares, ramps, progress bars, etc.).
+ *          Used by ff_draw_glyph() and ffDrawTextLabel().
+ */
 const uint8_t gtFont[] = {
   0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 0  = space
   0x00,0x00,0x00,0x5F,0x00,0x00,0x00, // 1  = !
