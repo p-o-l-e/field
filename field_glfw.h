@@ -297,12 +297,6 @@ void* draw_field(void* arg)
     constexpr uint32_t CORD_NORMAL = GRAY;
     constexpr uint32_t CORD_SELECT = GREEN;
 
-    /* Oscillograph stream ring buffer — accumulates XY points across frames. */
-    constexpr size_t STREAM_BUF_SIZE = 128;
-    static float stream_buf[STREAM_BUF_SIZE * 2];
-    static size_t stream_w = 0; /* ring write cursor (float index) */
-    static size_t stream_n = 0; /* valid points — saturates at STREAM_BUF_SIZE */
-
     pthread_barrier_wait(&_init_barrier);
     printf("GLFW Initialized...\n");
 
@@ -349,7 +343,7 @@ void* draw_field(void* arg)
             scene_dirty = true;
         }
 
-        /* Feed the stream ring buffer with the latest XY sample */
+        /* Feed the oscillograph's ring buffer with the latest XY sample */
         if (stream_updated && context->stream[0]) {
             auto ext = (Oscillograph*)context->stream[0]->extension;
             if (ext->x && *ext->x && ext->y && *ext->y) {
@@ -357,10 +351,11 @@ void* draw_field(void* arg)
                 float cx = (float)(context->stream[0]->bounds.l + context->stream[0]->width / 2) / (float)context->width;
                 float cy = 1.0f - (float)(context->stream[0]->bounds.t + context->stream[0]->height / 2) / (float)context->height;
 
-                stream_buf[stream_w++] = **ext->x * scale + cx;
-                stream_buf[stream_w++] = **ext->y * scale + cy;
-                if (stream_w >= STREAM_BUF_SIZE * 2) stream_w = 0;
-                if (stream_n < STREAM_BUF_SIZE) ++stream_n;
+                auto buf = (float*)ext->data;
+                buf[ext->w_head++] = **ext->x * scale + cx;
+                buf[ext->w_head++] = **ext->y * scale + cy;
+                if (ext->w_head >= ext->size * 2) ext->w_head = 0;
+                if (ext->r_head < ext->size) ++ext->r_head;
             }
         }
 
@@ -426,27 +421,30 @@ void* draw_field(void* arg)
         #endif
 
         /* Draw oscillograph stream line (scissored to widget bounds).
-         * Gating on stream_w blanks the trace for two frames after every ring
-         * wrap (the cursor resets to 0) — that was the periodic blink. And once
-         * the ring has wrapped, chronological order starts at the write cursor,
-         * not at index 0, so draw the two contiguous segments in chronological
-         * order. Both backends skip draws with count < 2. */
-        if (context->stream[0] && stream_n >= 2) {
+         * Gating on the valid-point count avoids blanking the trace for two
+         * frames after every ring wrap (the write cursor resets to 0) — that
+         * was the periodic blink. And once the ring has wrapped, chronological
+         * order starts at the write cursor, not at index 0, so draw the two
+         * contiguous segments in chronological order. Both backends skip draws
+         * with count < 2. */
+        if (context->stream[0] && ((Oscillograph*)context->stream[0]->extension)->r_head >= 2) {
             auto s = context->stream[0];
-            if (stream_n < STREAM_BUF_SIZE) {
+            auto ext = (Oscillograph*)s->extension;
+            auto buf = (const float*)ext->data;
+            if (ext->r_head < ext->size) {
                 /* Still filling — points are contiguous from the start. */
-                renderer_draw_line(&g_renderer, stream_buf, (uint32_t)stream_n,
+                renderer_draw_line(&g_renderer, buf, ext->r_head,
                                    0x40A090FF,
                                    (int32_t)s->bounds.l, (int32_t)s->bounds.t,
                                    s->width, s->height);
             } else {
                 /* Ring full — oldest point sits at the write cursor. */
-                renderer_draw_line(&g_renderer, stream_buf + stream_w,
-                                   (uint32_t)((STREAM_BUF_SIZE * 2 - stream_w) / 2),
+                renderer_draw_line(&g_renderer, buf + ext->w_head,
+                                   (ext->size * 2 - ext->w_head) / 2,
                                    0x40A090FF,
                                    (int32_t)s->bounds.l, (int32_t)s->bounds.t,
                                    s->width, s->height);
-                renderer_draw_line(&g_renderer, stream_buf, (uint32_t)(stream_w / 2),
+                renderer_draw_line(&g_renderer, buf, ext->w_head / 2,
                                    0x40A090FF,
                                    (int32_t)s->bounds.l, (int32_t)s->bounds.t,
                                    s->width, s->height);

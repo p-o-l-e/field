@@ -484,10 +484,11 @@ struct Socket {
 struct Oscillograph {
     float**     x;              ///< X input source pointer (pointer to Socket::input).
     float**     y;              ///< Y input source pointer (pointer to Socket::input).
-    void*       data;           ///< Internal float buffer for streaming.
+    void*       data;           ///< Stream ring buffer (size * 2 floats).
     Frame*      frame;          ///< CRT frame buffer (graticule + trace).
-    uint32_t    r_head;         ///< Ring buffer read head.
-    uint32_t    w_head;         ///< Ring buffer write head.
+    uint32_t    r_head;         ///< Ring buffer valid point count (saturates at size).
+    uint32_t    w_head;         ///< Ring buffer write cursor (float index, wraps at size * 2).
+    uint32_t    size;           ///< Ring buffer capacity in points (default 256).
     uint32_t    fps;            ///< Target frames per second for streaming redraw.
 };
 
@@ -1657,7 +1658,9 @@ static inline void ff_draw_ltrb_f(Frame* restrict canvas, const ltrb32u* restric
         ff_frame_fill(field->layer[BG], BACKGROUND);
     }
 
-    field->node = malloc(size * sizeof(Node));
+    /* capacity is size + 1 (root node + size module nodes) — allocate to match,
+       otherwise ffCreateNode writes past the array once all slots are used. */
+    field->node = malloc(field->capacity * sizeof(Node));
     ff_frame_init(&field->node->buffer, w, h);
     field->nodes = 1;
     field->node[0].entities = 1;
@@ -3276,7 +3279,8 @@ static void ff_init_crt(Entity* restrict entity) {
     ff_frame_init(ext->frame, entity->width, entity->height);
     ff_draw_graticule(ext->frame, BACKGROUND, 10, 8);
 
-    ext->data = (float*)calloc(SPLINE_SEGMENTS * 2, sizeof(float));
+    ext->size = 256;
+    ext->data = (float*)calloc(ext->size * 2, sizeof(float));
     ext->r_head = 0;
     ext->w_head = 0;
 
