@@ -470,6 +470,7 @@ struct Rotary {
 struct Socket {
     float*      input;          ///< Input value pointer (from connected output socket).
     float*      output;         ///< Output value pointer (owned by core module).
+    float const** input_link;   ///< Bound module's icv slot for this input (set by bridge, updated on connect/disconnect).
     float*      cord;           ///< Bezier spline control points (SPLINE_SEGMENTS * 2 floats).
     Entity*     connection;     ///< Connected socket entity.
     bool        connected;      ///< Has active connection.
@@ -2879,9 +2880,11 @@ static void ff_drag_cord(Entity* restrict entity, int x, int y)
 
     if(source->core_type == F_CT_INPUT && target->core_type == F_CT_OUTPUT) {
         ext_s->input = ext_t->output;
+        if(ext_s->input_link) *ext_s->input_link = ext_t->output;
     }
     else if(source->core_type == F_CT_OUTPUT && target->core_type == F_CT_INPUT) {
         ext_t->input = ext_s->output;
+        if(ext_t->input_link) *ext_t->input_link = ext_s->output;
     }
     else return false;
 
@@ -2921,10 +2924,12 @@ inline static void ff_disconnect(Entity* restrict entity) {
 
     if(entity->core_type == F_CT_INPUT) {
         ext->input = nullptr;
+        if(ext->input_link) *ext->input_link = nullptr;
     }
     else if(target && target->core_type == F_CT_INPUT) {
         auto target_ext = (Socket*)target->extension;
         target_ext->input = nullptr;
+        if(target_ext->input_link) *target_ext->input_link = nullptr;
     }
 
     if(ext->has_data) {
