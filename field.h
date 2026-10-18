@@ -770,23 +770,40 @@ static void ff_draw_line_v(Frame* restrict, uint32_t, uint32_t, uint32_t, const 
  */
 static void ff_draw_line_h(Frame* restrict, uint32_t, uint32_t, uint32_t, const uint32_t);
 
-/** @brief Draw a filled circle (midpoint algorithm).
- *  @param frame  Target frame.
- *  @param xc     Centre X.
- *  @param yc     Centre Y.
- *  @param r      Radius in pixels.
- *  @param value  32-bit RGBA colour.
+/** @brief Alpha-blend a source colour over a destination pixel by coverage.
+ *  @param dst       Destination pixel value (0xRRGGBBAA).
+ *  @param src       Source colour (0xRRGGBBAA).
+ *  @param coverage  Blend factor (0.0 = fully dst, 1.0 = fully src).
+ *  @return Blended pixel value (0xRRGGBBAA).
+ *  @note Assumes source is opaque (alpha = 0xFF); result alpha is 0xFF.
+ *        All palette colours are opaque, so this covers every UI use case.
  */
-static void ff_draw_circle_f(Frame* restrict, uint32_t, uint32_t, uint32_t, uint32_t);
+[[nodiscard]] static inline uint32_t ff_blend_coverage(uint32_t dst, uint32_t src, float coverage) [[reproducible]];
 
-/** @brief Draw a circle outline (midpoint algorithm).
+/** @brief Draw a filled antialiased circle (analytic SDF coverage).
  *  @param frame  Target frame.
- *  @param xc     Centre X.
- *  @param yc     Centre Y.
+ *  @param xc     Centre X (sub-pixel precision).
+ *  @param yc     Centre Y (sub-pixel precision).
  *  @param r      Radius in pixels.
  *  @param value  32-bit RGBA colour.
+ *  @note Uses a signed-distance field: interior pixels are written directly
+ *        (squared-distance early-out, no sqrt); only the ~2πr boundary pixels
+ *        compute sqrtf + alpha blend for perfect box-filtered antialiasing.
  */
-static void ff_draw_circle_o(Frame* restrict, uint32_t, uint32_t, uint32_t, uint32_t);
+static void ff_draw_sdf_circle_fill(Frame* restrict, float, float, float, uint32_t);
+
+/** @brief Draw an antialiased circle outline (analytic SDF ring).
+ *  @param frame     Target frame.
+ *  @param xc        Centre X (sub-pixel precision).
+ *  @param yc        Centre Y (sub-pixel precision).
+ *  @param r         Radius to the ring centreline in pixels.
+ *  @param thickness Stroke thickness in pixels (1.0 = hairline).
+ *  @param value     32-bit RGBA colour.
+ *  @note Same SDF approach as ff_draw_sdf_circle_fill; coverage falls off linearly
+ *        across the ring band. Pixels in the hole (dist < r - thickness/2)
+ *        and outside the outer edge are skipped via squared-distance tests.
+ */
+static void ff_draw_sdf_circle_stroke(Frame* restrict, float, float, float, float, uint32_t);
 
 /** @brief Draw a bounding-box outline from an @ref ltrb32u.
  *  @param canvas  Target frame.
@@ -1248,77 +1265,154 @@ static inline void ff_draw_line_h(Frame* restrict frame, uint32_t y, uint32_t xo
         ff_frame_set(frame, x, y, value);
 }
 
-/** @brief Draw a filled circle using the midpoint algorithm.
- *  @param frame  Target frame.
- *  @param xc     Centre X.
- *  @param yc     Centre Y.
- *  @param r      Radius in pixels.
- *  @param value  32-bit RGBA colour.
+/** @brief Alpha-blend a source colour over a destination pixel by coverage.
+ *  @param dst       Destination pixel value (0xRRGGBBAA).
+ *  @param src       Source colour (0xRRGGBBAA).
+ *  @param coverage  Blend factor (0.0 = fully dst, 1.0 = fully src).
+ *  @return Blended pixel value (0xRRGGBBAA).
+ *  @note Assumes source is opaque (alpha = 0xFF); result alpha is 0xFF.
+ *        All palette colours are opaque, so this covers every UI use case.
  */
-static void ff_draw_circle_f(Frame* restrict frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
-    ff_frame_mark(frame, (int32_t)xc - (int32_t)r, (int32_t)yc - (int32_t)r,
-                  (int32_t)xc + (int32_t)r, (int32_t)yc + (int32_t)r);
-    int x = 0;
-    int y = r;
-    int p = 1 - r;
-
-    while (x <= y) {
-        ++x;
-        if (p < 0) {
-            p = p + 2 * x + 1;
-        } 
-        else{
-            --y;
-            p = p + 2 * (x - y) + 1;
-        }
-
-        ff_draw_line_h(frame, yc + x, xc - y, xc + y, value);
-        ff_draw_line_h(frame, yc - x, xc - y, xc + y, value);
-        ff_draw_line_h(frame, yc + y, xc - x, xc + x, value);
-        ff_draw_line_h(frame, yc - y, xc - x, xc + x, value);
-    }
-
-    ff_draw_line_h(frame, yc, xc - r, xc + r, value);
+[[nodiscard]] static inline uint32_t ff_blend_coverage(uint32_t dst, uint32_t src, float coverage) [[reproducible]] {
+    const float inv = 1.0f - coverage;
+    // Unpack RGB channels (pixel format: 0xRRGGBBAA)
+    const float sr = (float)((src >> 24) & 0xFFu);
+    const float sg = (float)((src >> 16) & 0xFFu);
+    const float sb = (float)((src >>  8) & 0xFFu);
+    const float dr = (float)((dst >> 24) & 0xFFu);
+    const float dg = (float)((dst >> 16) & 0xFFu);
+    const float db = (float)((dst >>  8) & 0xFFu);
+    // Linear blend per channel, repack with opaque alpha
+    const uint32_t r = (uint32_t)(sr * coverage + dr * inv);
+    const uint32_t g = (uint32_t)(sg * coverage + dg * inv);
+    const uint32_t b = (uint32_t)(sb * coverage + db * inv);
+    return (r << 24) | (g << 16) | (b << 8) | 0xFFu;
 }
 
-/** @brief Draw a circle outline using the midpoint algorithm.
+/** @brief Draw a filled antialiased circle (analytic SDF coverage).
  *  @param frame  Target frame.
- *  @param xc     Centre X.
- *  @param yc     Centre Y.
+ *  @param xc     Centre X (sub-pixel precision).
+ *  @param yc     Centre Y (sub-pixel precision).
  *  @param r      Radius in pixels.
  *  @param value  32-bit RGBA colour.
+ *  @note Uses a signed-distance field: interior pixels are written directly
+ *        (squared-distance early-out, no sqrt); only the ~2πr boundary pixels
+ *        compute sqrtf + alpha blend for perfect box-filtered antialiasing.
  */
-static inline void ff_draw_circle_o(Frame* restrict frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
-    ff_frame_mark(frame, (int32_t)xc - (int32_t)r, (int32_t)yc - (int32_t)r,
-                  (int32_t)xc + (int32_t)r, (int32_t)yc + (int32_t)r);
-    int x = 0;
-    int y = r;
-    int p = 1 - r;
+static void ff_draw_sdf_circle_fill(Frame* restrict frame, float xc, float yc, float r, uint32_t value) {
+    if (r <= 0.0f) return;
 
-    while (x <= y) {
-        ++x;
-        if (p < 0) {
-            p = p + 2 * x + 1;
-        } 
-        else{
-            --y;
-            p = p + 2 * (x - y) + 1;
+    // Bounding box with 1px margin for the AA fringe
+    const int32_t l  = (int32_t)floorf(xc - r - 1.0f);
+    const int32_t t  = (int32_t)floorf(yc - r - 1.0f);
+    const int32_t rr = (int32_t)ceilf (xc + r + 1.0f);
+    const int32_t b  = (int32_t)ceilf (yc + r + 1.0f);
+
+    ff_frame_mark(frame, l, t, rr, b);
+
+    // Squared radii for sqrt-free early-out:
+    //   dist <= r_inner  →  full coverage (direct write, no blend)
+    //   dist >= r_outer  →  zero coverage (skip)
+    const float r_inner    = r - 0.5f;
+    const float r_outer    = r + 0.5f;
+    const float r_inner_sq = r_inner * r_inner;
+    const float r_outer_sq = r_outer * r_outer;
+
+    // Clamp scan region to frame bounds — eliminates per-pixel bounds checks
+    const int32_t x0 = l  < 0 ? 0 : l;
+    const int32_t x1 = rr >= (int32_t)frame->width  ? (int32_t)frame->width  - 1 : rr;
+    const int32_t y0 = t  < 0 ? 0 : t;
+    const int32_t y1 = b  >= (int32_t)frame->height ? (int32_t)frame->height - 1 : b;
+
+    const uint32_t w = frame->width;
+
+    for (int32_t py = y0; py <= y1; ++py) {
+        const float dy    = (float)py + 0.5f - yc;  // sample at pixel centre
+        const float dy_sq = dy * dy;
+        uint32_t* restrict row = frame->data + (uint32_t)py * w;
+
+        for (int32_t px = x0; px <= x1; ++px) {
+            const float dx   = (float)px + 0.5f - xc;
+            const float d_sq = dx * dx + dy_sq;
+
+            if (d_sq >= r_outer_sq) continue;       // outside the AA fringe
+
+            if (d_sq <= r_inner_sq) {
+                row[px] = value;                    // fully covered — direct write
+            } else {
+                // Boundary pixel — sqrt + blend (~2πr pixels total)
+                const float dist     = sqrtf(d_sq);
+                const float coverage = r_outer - dist;  // linear falloff 0..1
+                row[px] = ff_blend_coverage(row[px], value, coverage);
+            }
         }
-
-        ff_frame_set(frame, xc + x, yc + y, value);
-        ff_frame_set(frame, xc - x, yc + y, value);
-        ff_frame_set(frame, xc + x, yc - y, value);
-        ff_frame_set(frame, xc - x, yc - y, value);
-        ff_frame_set(frame, xc + y, yc + x, value);
-        ff_frame_set(frame, xc - y, yc + x, value);
-        ff_frame_set(frame, xc + y, yc - x, value);
-        ff_frame_set(frame, xc - y, yc - x, value); 
     }
+}
 
-    ff_frame_set(frame, xc, yc - r, value);
-    ff_frame_set(frame, xc, yc + r, value);
-    ff_frame_set(frame, xc + r, yc, value);
-    ff_frame_set(frame, xc - r, yc, value);
+/** @brief Draw an antialiased circle outline (analytic SDF ring).
+ *  @param frame     Target frame.
+ *  @param xc        Centre X (sub-pixel precision).
+ *  @param yc        Centre Y (sub-pixel precision).
+ *  @param r         Radius to the ring centreline in pixels.
+ *  @param thickness Stroke thickness in pixels (1.0 = hairline).
+ *  @param value     32-bit RGBA colour.
+ *  @note Same SDF approach as ff_draw_sdf_circle_fill; coverage falls off linearly
+ *        across the ring band. Pixels in the hole (dist < r - thickness/2)
+ *        and outside the outer edge are skipped via squared-distance tests.
+ */
+static inline void ff_draw_sdf_circle_stroke(Frame* restrict frame, float xc, float yc, float r, float thickness, uint32_t value) {
+    if (thickness <= 0.0f) return;
+
+    const float half_t = thickness * 0.5f;
+
+    // Bounding box with 1px margin for the AA fringe
+    const int32_t l  = (int32_t)floorf(xc - r - half_t - 1.0f);
+    const int32_t t  = (int32_t)floorf(yc - r - half_t - 1.0f);
+    const int32_t rr = (int32_t)ceilf (xc + r + half_t + 1.0f);
+    const int32_t b  = (int32_t)ceilf (yc + r + half_t + 1.0f);
+
+    ff_frame_mark(frame, l, t, rr, b);
+
+    // Squared radii for sqrt-free early-out:
+    //   dist >= r_outer  →  outside the ring (skip)
+    //   dist <= r_inner  →  inside the hole (skip); r_inner < 0 means no hole
+    const float r_outer    = r + half_t + 0.5f;
+    const float r_outer_sq = r_outer * r_outer;
+    const float r_inner    = r - half_t - 0.5f;
+    const float r_inner_sq = r_inner > 0.0f ? r_inner * r_inner : -1.0f;
+
+    // Clamp scan region to frame bounds
+    const int32_t x0 = l  < 0 ? 0 : l;
+    const int32_t x1 = rr >= (int32_t)frame->width  ? (int32_t)frame->width  - 1 : rr;
+    const int32_t y0 = t  < 0 ? 0 : t;
+    const int32_t y1 = b  >= (int32_t)frame->height ? (int32_t)frame->height - 1 : b;
+
+    const uint32_t w = frame->width;
+
+    for (int32_t py = y0; py <= y1; ++py) {
+        const float dy    = (float)py + 0.5f - yc;
+        const float dy_sq = dy * dy;
+        uint32_t* restrict row = frame->data + (uint32_t)py * w;
+
+        for (int32_t px = x0; px <= x1; ++px) {
+            const float dx   = (float)px + 0.5f - xc;
+            const float d_sq = dx * dx + dy_sq;
+
+            if (d_sq >= r_outer_sq) continue;       // outside the ring
+            if (d_sq <= r_inner_sq) continue;       // inside the hole
+
+            // Ring SDF: linear falloff from the centreline
+            const float dist     = sqrtf(d_sq);
+            const float coverage = half_t + 0.5f - fabsf(dist - r);
+            if (coverage <= 0.0f) continue;
+
+            if (coverage >= 1.0f) {
+                row[px] = value;                    // fully covered
+            } else {
+                row[px] = ff_blend_coverage(row[px], value, coverage);
+            }
+        }
+    }
 }
 
 /** @brief Draw a single 7×8 glyph from a bitmap font.
@@ -2665,16 +2759,17 @@ static void ff_set_socket(Entity* restrict entity, [[maybe_unused]] int x, [[may
  */
 static void ff_draw_socket(Entity* restrict entity) {
     auto field = entity->parent->parent;
-    auto r = entity->width / 2;
-    const point32u center = {
-        .x = entity->bounds.l + r,
-        .y = entity->bounds.t + r
-    };
+    // Continuous-space centre — pixel i spans [i, i+1), so the geometric
+    // centre of [bounds.l, bounds.r) is their midpoint. This gives the AA
+    // circle sub-pixel accuracy even when width is odd.
+    const float cx = ((float)entity->bounds.l + (float)entity->bounds.r) * 0.5f;
+    const float cy = ((float)entity->bounds.t + (float)entity->bounds.b) * 0.5f;
+    const float r_outer = (float)entity->width * 0.5f;
+    const float r_inner = (float)entity->width * 0.25f;
     const auto color = entity->core_type == F_CT_OUTPUT ? SOCKET_OUT : SOCKET_IN;
 
-    ff_draw_circle_f(field->layer[FG], center.x, center.y, r, color);
-    r = entity->width / 4;
-    ff_draw_circle_f(field->layer[FG], center.x, center.y, r, BUTTONS);
+    ff_draw_sdf_circle_fill(field->layer[FG], cx, cy, r_outer, color);
+    ff_draw_sdf_circle_fill(field->layer[FG], cx, cy, r_inner, BUTTONS);
     entity->repaint = false;
 }
 
