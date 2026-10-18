@@ -420,34 +420,68 @@ void* draw_field(void* arg)
             renderer_draw_layer(&g_renderer, R_LAYER_DO);
         #endif
 
-        /* Draw oscillograph stream line (scissored to widget bounds).
-         * Gating on the valid-point count avoids blanking the trace for two
-         * frames after every ring wrap (the write cursor resets to 0) — that
-         * was the periodic blink. And once the ring has wrapped, chronological
-         * order starts at the write cursor, not at index 0, so draw the two
-         * contiguous segments in chronological order. Both backends skip draws
-         * with count < 2. */
+        /* Draw oscillograph stream line (scissored to widget bounds), CRT-style:
+         * the head (newest point) is fully opaque and opacity fades linearly to
+         * zero at the tail (oldest point) — phosphor decay behind the beam. The
+         * fade is ONE continuous ramp alpha(g) = g/(N-1) over the chronological
+         * point index g (N = r_head valid points), so it stays seamless across
+         * the ring wrap where the trace is drawn as two segments. Gating on the
+         * valid-point count avoids blanking the trace for two frames after every
+         * ring wrap (the write cursor resets to 0) — that was the periodic blink.
+         * And once the ring has wrapped, chronological order starts at the write
+         * cursor, not at index 0; the wrap seam between the two segments is
+         * drawn explicitly so no sector of the trace is ever missing. Both
+         * backends skip draws with count < 2. */
         if (context->stream[0] && ((Oscillograph*)context->stream[0]->extension)->r_head >= 2) {
             auto s = context->stream[0];
             auto ext = (Oscillograph*)s->extension;
             auto buf = (const float*)ext->data;
+            const float inv = 1.0f / ((float)ext->r_head - 1.0f);
             if (ext->r_head < ext->size) {
                 /* Still filling — points are contiguous from the start. */
-                renderer_draw_line(&g_renderer, buf, ext->r_head,
-                                   0x40A090FF,
-                                   (int32_t)s->bounds.l, (int32_t)s->bounds.t,
-                                   s->width, s->height);
+                renderer_draw_line_fade(&g_renderer, buf, ext->r_head,
+                                        0x40A090FF, 0.0f, 1.0f,
+                                        (int32_t)s->bounds.l, (int32_t)s->bounds.t,
+                                        s->width, s->height);
             } else {
-                /* Ring full — oldest point sits at the write cursor. */
-                renderer_draw_line(&g_renderer, buf + ext->w_head,
-                                   (ext->size * 2 - ext->w_head) / 2,
-                                   0x40A090FF,
-                                   (int32_t)s->bounds.l, (int32_t)s->bounds.t,
-                                   s->width, s->height);
-                renderer_draw_line(&g_renderer, buf, ext->w_head / 2,
-                                   0x40A090FF,
-                                   (int32_t)s->bounds.l, (int32_t)s->bounds.t,
-                                   s->width, s->height);
+                /* Ring full — oldest point sits at the write cursor. Segment A
+                 * covers chronological indices [0, countA), segment B [countA, N),
+                 * and countA + countB == size == r_head, so the two per-segment
+                 * ramps join exactly into the global 0.0 → 1.0 fade. */
+                const uint32_t count_a = (ext->size * 2 - ext->w_head) / 2;
+                const uint32_t count_b = ext->w_head / 2;
+                renderer_draw_line_fade(&g_renderer, buf + ext->w_head,
+                                        count_a,
+                                        0x40A090FF,
+                                        0.0f,
+                                        (float)(count_a - 1) * inv,
+                                        (int32_t)s->bounds.l, (int32_t)s->bounds.t,
+                                        s->width, s->height);
+                renderer_draw_line_fade(&g_renderer, buf, count_b,
+                                        0x40A090FF,
+                                        (float)count_a * inv,
+                                        1.0f,
+                                        (int32_t)s->bounds.l, (int32_t)s->bounds.t,
+                                        s->width, s->height);
+                /* The ring wraps between segment A and segment B, so the sector
+                 * connecting them (P[size-1] → P[0]) lies in no contiguous run —
+                 * without it the trace has a one-sector gap that rotates with the
+                 * write cursor. It also carries the head/tail point when the other
+                 * segment is too short to draw on its own (count < 2). Skipped
+                 * when w_head == 0: then segment A is the whole trace and this
+                 * sector would wrongly close the loop newest → oldest. */
+                if (count_b >= 1) {
+                    const float seam[4] = {
+                        buf[ext->size * 2 - 2], buf[ext->size * 2 - 1],
+                        buf[0], buf[1],
+                    };
+                    renderer_draw_line_fade(&g_renderer, seam, 2,
+                                            0x40A090FF,
+                                            (float)(count_a - 1) * inv,
+                                            (float)count_a * inv,
+                                            (int32_t)s->bounds.l, (int32_t)s->bounds.t,
+                                            s->width, s->height);
+                }
             }
         }
 

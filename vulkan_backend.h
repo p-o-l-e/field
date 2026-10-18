@@ -110,6 +110,13 @@ typedef struct {
     VkImageView*     swapchain_views;
     VkFramebuffer*   framebuffers;
 
+    /* MSAA color attachment (one image per swapchain image); the render pass
+     * resolves it into the swapchain image. Antialiases line primitives. */
+    VkSampleCountFlagBits msaa_samples;
+    VkImage*         msaa_images;
+    VkDeviceMemory*  msaa_memories;
+    VkImageView*     msaa_views;
+
     /* Render pass */
     VkRenderPass     render_pass;
 
@@ -797,16 +804,111 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
         vkCreateImageView(ctx->device, &view_info, nullptr, &ctx->swapchain_views[i]);
     }
 
+    /* --- MSAA ---
+     * Pick the highest supported color sample count (4x preferred) so line
+     * primitives are antialiased; the render pass resolves the multisampled
+     * color attachment into the swapchain image. Falls back to 1x (no
+     * resolve attachment) if the device supports no color MSAA. */
+    {
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(ctx->physical_device, &props);
+        VkSampleCountFlags counts = props.limits.framebufferColorSampleCounts;
+        ctx->msaa_samples = VK_SAMPLE_COUNT_1_BIT;
+        if (counts & VK_SAMPLE_COUNT_4_BIT)      ctx->msaa_samples = VK_SAMPLE_COUNT_4_BIT;
+        else if (counts & VK_SAMPLE_COUNT_2_BIT) ctx->msaa_samples = VK_SAMPLE_COUNT_2_BIT;
+    }
+
+    ctx->msaa_images   = nullptr;
+    ctx->msaa_memories = nullptr;
+    ctx->msaa_views    = nullptr;
+    if (ctx->msaa_samples != VK_SAMPLE_COUNT_1_BIT) {
+        ctx->msaa_images   = malloc(ctx->swapchain_image_count * sizeof(VkImage));
+        ctx->msaa_memories = malloc(ctx->swapchain_image_count * sizeof(VkDeviceMemory));
+        ctx->msaa_views    = malloc(ctx->swapchain_image_count * sizeof(VkImageView));
+        for (uint32_t i = 0; i < ctx->swapchain_image_count; ++i) {
+            VkImageCreateInfo img_info = {
+                .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                .imageType     = VK_IMAGE_TYPE_2D,
+                .format        = ctx->swapchain_format,
+                .extent        = { extent.width, extent.height, 1 },
+                .mipLevels     = 1,
+                .arrayLayers   = 1,
+                .samples       = ctx->msaa_samples,
+                .tiling        = VK_IMAGE_TILING_OPTIMAL,
+                .usage         = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                .sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
+                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            };
+            if (vkCreateImage(ctx->device, &img_info, nullptr, &ctx->msaa_images[i]) != VK_SUCCESS) {
+                fprintf(stderr, "[Vulkan] Failed to create MSAA color image\n");
+                return false;
+            }
+
+            VkMemoryRequirements mem_reqs;
+            vkGetImageMemoryRequirements(ctx->device, ctx->msaa_images[i], &mem_reqs);
+            VkMemoryAllocateInfo alloc_info = {
+                .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                .allocationSize  = mem_reqs.size,
+                .memoryTypeIndex = vk_find_memory_type(ctx->physical_device,
+                                                        mem_reqs.memoryTypeBits,
+                                                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+            };
+            if (alloc_info.memoryTypeIndex == UINT32_MAX) return false;
+            if (vkAllocateMemory(ctx->device, &alloc_info, nullptr, &ctx->msaa_memories[i]) != VK_SUCCESS) {
+                fprintf(stderr, "[Vulkan] Failed to allocate MSAA image memory\n");
+                return false;
+            }
+            vkBindImageMemory(ctx->device, ctx->msaa_images[i], ctx->msaa_memories[i], 0);
+
+            VkImageViewCreateInfo view_info = {
+                .sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .image    = ctx->msaa_images[i],
+                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                .format   = ctx->swapchain_format,
+                .subresourceRange = {
+                    .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel   = 0,
+                    .levelCount     = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount     = 1,
+                },
+            };
+            if (vkCreateImageView(ctx->device, &view_info, nullptr, &ctx->msaa_views[i]) != VK_SUCCESS) {
+                fprintf(stderr, "[Vulkan] Failed to create MSAA image view\n");
+                return false;
+            }
+        }
+    }
+
     /* --- Render pass --- */
-    VkAttachmentDescription color_att = {
-        .format         = ctx->swapchain_format,
-        .samples        = VK_SAMPLE_COUNT_1_BIT,
-        .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
-        .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+    /* When MSAA is active, attachment 0 is the multisampled color image and
+       attachment 1 resolves it into the swapchain image, which becomes the
+       presentable attachment. */
+    const bool msaa = ctx->msaa_samples != VK_SAMPLE_COUNT_1_BIT;
+
+    VkAttachmentDescription attachments[2] = {
+        {
+            .format         = ctx->swapchain_format,
+            .samples        = ctx->msaa_samples,
+            .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp        = msaa ? VK_ATTACHMENT_STORE_OP_DONT_CARE
+                                   : VK_ATTACHMENT_STORE_OP_STORE,
+            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout    = msaa ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+                                   : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        },
+        {
+            .format         = ctx->swapchain_format,
+            .samples        = VK_SAMPLE_COUNT_1_BIT,
+            .loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
+            .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        },
     };
 
     VkAttachmentReference color_ref = {
@@ -814,10 +916,16 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
         .layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     };
 
+    VkAttachmentReference resolve_ref = {
+        .attachment = 1,
+        .layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    };
+
     VkSubpassDescription subpass = {
-        .pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
-        .colorAttachmentCount = 1,
-        .pColorAttachments    = &color_ref,
+        .pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount    = 1,
+        .pColorAttachments       = &color_ref,
+        .pResolveAttachments     = msaa ? &resolve_ref : nullptr,
     };
 
     VkSubpassDependency dependency = {
@@ -831,8 +939,8 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
 
     VkRenderPassCreateInfo rp_info = {
         .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 1,
-        .pAttachments    = &color_att,
+        .attachmentCount = msaa ? 2u : 1u,
+        .pAttachments    = attachments,
         .subpassCount    = 1,
         .pSubpasses      = &subpass,
         .dependencyCount = 1,
@@ -843,11 +951,15 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
     /* --- Framebuffers --- */
     ctx->framebuffers = malloc(ctx->swapchain_image_count * sizeof(VkFramebuffer));
     for (uint32_t i = 0; i < ctx->swapchain_image_count; ++i) {
+        VkImageView fb_attachments[2] = {
+            msaa ? ctx->msaa_views[i] : ctx->swapchain_views[i],
+            ctx->swapchain_views[i],
+        };
         VkFramebufferCreateInfo fb_info = {
             .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             .renderPass      = ctx->render_pass,
-            .attachmentCount = 1,
-            .pAttachments    = &ctx->swapchain_views[i],
+            .attachmentCount = msaa ? 2u : 1u,
+            .pAttachments    = fb_attachments,
             .width           = extent.width,
             .height          = extent.height,
             .layers          = 1,
@@ -946,7 +1058,7 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
 
         VkPipelineMultisampleStateCreateInfo ms = {
             .sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+            .rasterizationSamples = ctx->msaa_samples,
         };
 
         VkPipelineColorBlendAttachmentState blend_att = {
@@ -1020,7 +1132,7 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
         VkPushConstantRange push_range = {
             .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
             .offset     = 0,
-            .size       = sizeof(float) * 4, /* vec4 uColor */
+            .size       = sizeof(float) * 8, /* vec4 uColor + vec4 uFade */
         };
         VkPipelineLayoutCreateInfo pl_info = {
             .sType          = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -1069,7 +1181,7 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
 
         VkPipelineMultisampleStateCreateInfo ms = {
             .sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+            .rasterizationSamples = ctx->msaa_samples,
         };
 
         VkPipelineColorBlendAttachmentState blend_att = {
@@ -1208,9 +1320,12 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
  * Per-frame rendering
  ******************************************************************************************************************************/
 
-/* Push constant data for line shader (vec4 color). */
+/* Push constant data for line shader (vec4 color + vec4 fade ramp). */
 typedef struct {
-    float r, g, b, a;
+    float r, g, b, a;       /* color; a = uniform alpha for solid lines */
+    float fade_alpha0;      /* opacity at the first vertex */
+    float fade_step;        /* opacity increment per vertex */
+    float pad[2];
 } VkLinePushConstants;
 
 /* Begin a frame: acquire next swapchain image, reset command buffer.
@@ -1296,18 +1411,20 @@ static void renderer_draw_layer(RendererContext* restrict ctx, int layer_index)
     vkCmdDraw(cmd, 6, 1, 0, 0);
 }
 
-/* Draw a line strip with a uniform color. Records into the current cmd buffer.
+/* Draw a line strip whose vertex opacity ramps linearly from `alpha0` at the
+ * first vertex to `alpha1` at the last vertex. Records into the current cmd
+ * buffer.
  * `data` is count*2 floats in 0-1 normalized coords (Y-up).
  * `scissor_l/t/w/h` optionally clips the draw (screen coords, Y-down from top).
  *
  * Each draw gets its own slot in the line VBO (via line_vbo_offset) so multiple
  * line draws in one frame don't overwrite each other's vertex data before the
  * GPU reads it. The offset is reset to 0 at the start of each frame. */
-static void renderer_draw_line(RendererContext* restrict ctx,
-                                  const float* restrict data, uint32_t count,
-                                  uint32_t color,
-                                  int32_t scissor_l, int32_t scissor_t,
-                                  uint32_t scissor_w, uint32_t scissor_h)
+static void renderer_draw_line_fade(RendererContext* restrict ctx,
+                                    const float* restrict data, uint32_t count,
+                                    uint32_t color, float alpha0, float alpha1,
+                                    int32_t scissor_l, int32_t scissor_t,
+                                    uint32_t scissor_w, uint32_t scissor_h)
 {
     if (count < 2) return;
 
@@ -1341,12 +1458,16 @@ static void renderer_draw_line(RendererContext* restrict ctx,
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx->line_pipeline);
 
-    /* Push constant: color as vec4 (0xRRGGBBAA → r,g,b,a in 0-1) */
+    /* Push constants: color as vec4 (0xRRGGBBAA → r,g,b,a in 0-1) plus the fade
+     * ramp. The vertex shader computes alpha = fade_alpha0 + gl_VertexIndex *
+     * fade_step, so a single draw can span the whole opacity ramp. */
     VkLinePushConstants pc = {
         .r = (float)ff_extract_byte(color, 3) / 255.0f,
         .g = (float)ff_extract_byte(color, 2) / 255.0f,
         .b = (float)ff_extract_byte(color, 1) / 255.0f,
         .a = (float)ff_extract_byte(color, 0) / 255.0f,
+        .fade_alpha0 = alpha0,
+        .fade_step   = (alpha1 - alpha0) / (float)(count - 1),
     };
     vkCmdPushConstants(cmd, ctx->line_pipeline_layout,
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
@@ -1356,6 +1477,19 @@ static void renderer_draw_line(RendererContext* restrict ctx,
 
     /* Advance to the next slot (stride is 8 bytes, so always aligned) */
     ctx->line_vbo_offset += draw_size;
+}
+
+/* Draw a line strip with a uniform (solid) color. Thin wrapper over
+ * renderer_draw_line_fade with a flat alpha ramp. */
+static void renderer_draw_line(RendererContext* restrict ctx,
+                               const float* restrict data, uint32_t count,
+                               uint32_t color,
+                               int32_t scissor_l, int32_t scissor_t,
+                               uint32_t scissor_w, uint32_t scissor_h)
+{
+    const float a = (float)ff_extract_byte(color, 0) / 255.0f;
+    renderer_draw_line_fade(ctx, data, count, color, a, a,
+                            scissor_l, scissor_t, scissor_w, scissor_h);
 }
 
 /* Update a sub-region of a layer texture with new pixel data (dirty-rect
@@ -1455,14 +1589,22 @@ static void renderer_destroy(RendererContext* restrict ctx)
     vkDestroyDescriptorPool(ctx->device, ctx->descriptor_pool, nullptr);
     vkDestroyDescriptorSetLayout(ctx->device, ctx->layer_descriptor_set_layout, nullptr);
 
-    /* Framebuffers + image views */
+    /* Framebuffers + image views (+ per-image MSAA color attachments) */
     for (uint32_t i = 0; i < ctx->swapchain_image_count; ++i) {
         vkDestroyFramebuffer(ctx->device, ctx->framebuffers[i], nullptr);
         vkDestroyImageView(ctx->device, ctx->swapchain_views[i], nullptr);
+        if (ctx->msaa_views) {
+            vkDestroyImageView(ctx->device, ctx->msaa_views[i], nullptr);
+            vkDestroyImage(ctx->device, ctx->msaa_images[i], nullptr);
+            vkFreeMemory(ctx->device, ctx->msaa_memories[i], nullptr);
+        }
     }
     free(ctx->framebuffers);
     free(ctx->swapchain_views);
     free(ctx->swapchain_images);
+    free(ctx->msaa_views);
+    free(ctx->msaa_images);
+    free(ctx->msaa_memories);
 
     /* Swapchain */
     vkDestroySwapchainKHR(ctx->device, ctx->swapchain, nullptr);

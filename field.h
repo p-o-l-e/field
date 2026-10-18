@@ -3279,7 +3279,7 @@ static void ff_init_crt(Entity* restrict entity) {
     ff_frame_init(ext->frame, entity->width, entity->height);
     ff_draw_graticule(ext->frame, BACKGROUND, 10, 8);
 
-    ext->size = 256;
+    ext->size = 32;
     ext->data = (float*)calloc(ext->size * 2, sizeof(float));
     ext->r_head = 0;
     ext->w_head = 0;

@@ -23,6 +23,9 @@
  *   static void renderer_draw_layer(RendererContext*, int layer);
  *   static void renderer_draw_line(RendererContext*, const float* data, uint32_t count,
  *                                  uint32_t color, int32_t sl, int32_t st, uint32_t sw, uint32_t sh);
+ *   static void renderer_draw_line_fade(RendererContext*, const float* data, uint32_t count,
+ *                                       uint32_t color, float alpha0, float alpha1,
+ *                                       int32_t sl, int32_t st, uint32_t sw, uint32_t sh);
  *   static void renderer_end_frame(RendererContext*, uint32_t image_index);
  *   static void renderer_destroy(RendererContext*);
  *
@@ -105,6 +108,9 @@ typedef ptrdiff_t      GLintptr;
 #define GL_ARRAY_BUFFER           0x8892
 #define GL_DYNAMIC_DRAW           0x88E8
 #define GL_STATIC_DRAW            0x88E4
+#define GL_LINE_SMOOTH            0x0B20
+#define GL_LINE_SMOOTH_HINT       0x0C52
+#define GL_NICEST                 0x1102
 
 #define GL_RENDERER  0x1F01
 #define GL_VERSION   0x1F02
@@ -152,6 +158,7 @@ typedef GLint          (APIENTRY *PFNGLGETUNIFORMLOCATIONPROC)(GLuint, const GLc
 typedef void           (APIENTRY *PFNGLUNIFORM1IPROC)(GLint, GLint);
 typedef void           (APIENTRY *PFNGLUNIFORM4FPROC)(GLint, GLfloat, GLfloat, GLfloat, GLfloat);
 typedef const GLubyte* (APIENTRY *PFNGLGETSTRINGPROC)(GLenum);
+typedef void           (APIENTRY *PFNGLHINTPROC)(GLenum, GLenum);
 
 static PFNGLVIEWPORTPROC              pglViewport              = nullptr;
 static PFNGLCLEARCOLORPROC            pglClearColor            = nullptr;
@@ -195,6 +202,7 @@ static PFNGLGETUNIFORMLOCATIONPROC    pglGetUniformLocation    = nullptr;
 static PFNGLUNIFORM1IPROC             pglUniform1i             = nullptr;
 static PFNGLUNIFORM4FPROC             pglUniform4f             = nullptr;
 static PFNGLGETSTRINGPROC             pglGetString             = nullptr;
+static PFNGLHINTPROC                  pglHint                  = nullptr;
 
 #define glViewport              pglViewport
 #define glClearColor            pglClearColor
@@ -238,6 +246,7 @@ static PFNGLGETSTRINGPROC             pglGetString             = nullptr;
 #define glUniform1i             pglUniform1i
 #define glUniform4f             pglUniform4f
 #define glGetString             pglGetString
+#define glHint                  pglHint
 
 static bool load_gl_functions(void)
 {
@@ -287,6 +296,7 @@ static bool load_gl_functions(void)
     LOAD(glUniform1i,             PFNGLUNIFORM1IPROC)
     LOAD(glUniform4f,             PFNGLUNIFORM4FPROC)
     LOAD(glGetString,             PFNGLGETSTRINGPROC)
+    LOAD(glHint,                  PFNGLHINTPROC)
 
     #undef LOAD
     return true;
@@ -325,11 +335,13 @@ static const char* LINE_VS = R"GLSL(
 #version 330 core
 layout(location = 0) in vec2 aPos;
 uniform vec4 uColor;
+uniform vec4 uFade; /* x = alpha at vertex 0, y = per-vertex alpha step */
 out vec4 vColor;
 void main() {
     vec2 clip = vec2(aPos.x * 2.0 - 1.0, aPos.y * 2.0 - 1.0);
     gl_Position = vec4(clip, 0.0, 1.0);
-    vColor = uColor;
+    float a = uFade.x + float(gl_VertexID) * uFade.y;
+    vColor = vec4(uColor.rgb, a);
 }
 )GLSL";
 
@@ -356,6 +368,7 @@ typedef struct {
     GLuint line_vao;
     GLuint line_vbo;
     GLint  line_u_color;
+    GLint  line_u_fade;
 } GLPipeline;
 
 /******************************************************************************************************************************
@@ -471,6 +484,7 @@ static GLuint link_program(const char* vs_src, const char* fs_src)
     ctx->pipeline.line_program = link_program(LINE_VS, LINE_FS);
     if (!ctx->pipeline.line_program) return false;
     ctx->pipeline.line_u_color = glGetUniformLocation(ctx->pipeline.line_program, "uColor");
+    ctx->pipeline.line_u_fade  = glGetUniformLocation(ctx->pipeline.line_program, "uFade");
 
     glGenVertexArrays(1, &ctx->pipeline.line_vao);
     glBindVertexArray(ctx->pipeline.line_vao);
@@ -485,6 +499,9 @@ static GLuint link_program(const char* vs_src, const char* fs_src)
     /* Fixed state */
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    /* Antialias line strips (GL_LINE_SMOOTH is core since GL 1.0) */
+    glEnable(GL_LINE_SMOOTH);
+    glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
     glClearColor(0.f, 0.f, 0.f, 0.f);
 
     /* Create layer textures (empty, will be filled by renderer_upload_layer) */
@@ -566,14 +583,15 @@ static void renderer_draw_layer(RendererContext* restrict ctx, int layer_index)
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-/* Draw a line strip with a uniform color.
+/* Draw a line strip whose vertex opacity ramps linearly from `alpha0` at the
+ * first vertex to `alpha1` at the last vertex.
  * `data` is count*2 floats in 0-1 normalized coords (Y-up).
  * Scissor is in screen coords (top-left origin); converted to GL bottom-left origin. */
-static void renderer_draw_line(RendererContext* restrict ctx,
-                                const float* restrict data, uint32_t count,
-                                uint32_t color,
-                                int32_t scissor_l, int32_t scissor_t,
-                                uint32_t scissor_w, uint32_t scissor_h)
+static void renderer_draw_line_fade(RendererContext* restrict ctx,
+                                    const float* restrict data, uint32_t count,
+                                    uint32_t color, float alpha0, float alpha1,
+                                    int32_t scissor_l, int32_t scissor_t,
+                                    uint32_t scissor_w, uint32_t scissor_h)
 {
     if (count < 2) return;
 
@@ -601,11 +619,28 @@ static void renderer_draw_line(RendererContext* restrict ctx,
                 (float)ff_extract_byte(color, 1) / 255.0f,
                 (float)ff_extract_byte(color, 0) / 255.0f);
 
+    /* Fade ramp: the vertex shader computes alpha = uFade.x + gl_VertexID * uFade.y */
+    glUniform4f(ctx->pipeline.line_u_fade, alpha0,
+                (alpha1 - alpha0) / (float)(count - 1), 0.0f, 0.0f);
+
     glBindVertexArray(ctx->pipeline.line_vao);
     glDrawArrays(GL_LINE_STRIP, 0, (GLsizei)count);
     glBindVertexArray(0);
 
     glDisable(GL_SCISSOR_TEST);
+}
+
+/* Draw a line strip with a uniform (solid) color. Thin wrapper over
+ * renderer_draw_line_fade with a flat alpha ramp. */
+static void renderer_draw_line(RendererContext* restrict ctx,
+                               const float* restrict data, uint32_t count,
+                               uint32_t color,
+                               int32_t scissor_l, int32_t scissor_t,
+                               uint32_t scissor_w, uint32_t scissor_h)
+{
+    const float a = (float)ff_extract_byte(color, 0) / 255.0f;
+    renderer_draw_line_fade(ctx, data, count, color, a, a,
+                            scissor_l, scissor_t, scissor_w, scissor_h);
 }
 
 /* End frame: swap buffers. */
