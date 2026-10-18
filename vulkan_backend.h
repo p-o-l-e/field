@@ -165,7 +165,7 @@ typedef struct {
  * Helpers
  ******************************************************************************************************************************/
 
-static uint32_t vk_find_memory_type(VkPhysicalDevice phys, uint32_t type_filter,
+[[nodiscard]] static uint32_t vk_find_memory_type(VkPhysicalDevice phys, uint32_t type_filter,
                                      VkMemoryPropertyFlags properties)
 {
     VkPhysicalDeviceMemoryProperties mem_props;
@@ -179,7 +179,7 @@ static uint32_t vk_find_memory_type(VkPhysicalDevice phys, uint32_t type_filter,
     return UINT32_MAX;
 }
 
-static VkShaderModule vk_create_shader_module(VkDevice device, const uint32_t* code, size_t len)
+[[nodiscard]] static VkShaderModule vk_create_shader_module(VkDevice device, const uint32_t* restrict code, size_t len)
 {
     VkShaderModuleCreateInfo info = {
         .sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -195,8 +195,8 @@ static VkShaderModule vk_create_shader_module(VkDevice device, const uint32_t* c
 }
 
 /* Find a queue family that supports both graphics and present. */
-static bool vk_find_queue_families(VkPhysicalDevice phys, VkSurfaceKHR surface,
-                                    uint32_t* gfx, uint32_t* present)
+[[nodiscard]] static bool vk_find_queue_families(VkPhysicalDevice phys, VkSurfaceKHR surface,
+                                    uint32_t* restrict gfx, uint32_t* restrict present)
 {
     uint32_t count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(phys, &count, nullptr);
@@ -218,8 +218,8 @@ static bool vk_find_queue_families(VkPhysicalDevice phys, VkSurfaceKHR surface,
 }
 
 /* Check swapchain support and pick format/present mode. */
-static bool vk_query_swapchain_support(VkPhysicalDevice phys, VkSurfaceKHR surface,
-                                        VkSurfaceFormatKHR* format, VkPresentModeKHR* mode,
+[[nodiscard]] static bool vk_query_swapchain_support(VkPhysicalDevice phys, VkSurfaceKHR surface,
+                                        VkSurfaceFormatKHR* restrict format, VkPresentModeKHR* restrict mode,
                                         VkExtent2D* extent)
 {
     VkSurfaceCapabilitiesKHR caps;
@@ -276,7 +276,7 @@ static bool vk_query_swapchain_support(VkPhysicalDevice phys, VkSurfaceKHR surfa
 static bool vk_create_buffer(VkDevice device, VkPhysicalDevice phys,
                               VkDeviceSize size, VkBufferUsageFlags usage,
                               VkMemoryPropertyFlags props,
-                              VkBuffer* buffer, VkDeviceMemory* memory)
+                              VkBuffer* restrict buffer, VkDeviceMemory* restrict memory)
 {
     VkBufferCreateInfo buf_info = {
         .sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -311,7 +311,7 @@ static bool vk_create_buffer(VkDevice device, VkPhysicalDevice phys,
  * Layer texture creation — one VkImage per Frame layer.
  ******************************************************************************************************************************/
 
-static bool vk_create_layer_texture(RendererContext* ctx, VkLayerTexture* lt,
+static bool vk_create_layer_texture(RendererContext* restrict ctx, VkLayerTexture* restrict lt,
                                      uint32_t width, uint32_t height)
 {
     /* Destroy old texture if it exists */
@@ -422,8 +422,8 @@ static bool vk_create_layer_texture(RendererContext* ctx, VkLayerTexture* lt,
  * and per-frame via the main command buffer for updates.
  ******************************************************************************************************************************/
 
-static void renderer_upload_layer(RendererContext* ctx, int layer_index,
-                                    const uint32_t* pixels, uint32_t width, uint32_t height)
+static void renderer_upload_layer(RendererContext* restrict ctx, int layer_index,
+                                    const uint32_t* restrict pixels, uint32_t width, uint32_t height)
 {
     VkLayerTexture* lt = &ctx->layers[layer_index];
     VkDeviceSize size = (VkDeviceSize)width * height * sizeof(uint32_t);
@@ -605,7 +605,7 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
  * Initialization
  ******************************************************************************************************************************/
 
-static bool renderer_init(RendererContext* ctx, GLFWwindow* window, uint32_t width, uint32_t height)
+[[nodiscard]] static bool renderer_init(RendererContext* restrict ctx, GLFWwindow* restrict window, uint32_t width, uint32_t height)
 {
     memset(ctx, 0, sizeof(*ctx));
     ctx->window = window;
@@ -1216,7 +1216,7 @@ typedef struct {
 /* Begin a frame: acquire next swapchain image, reset command buffer.
  * Does NOT begin the render pass — texture updates must happen first
  * (vkCmdCopyBufferToImage is illegal inside a render pass). */
-static bool renderer_begin_frame(RendererContext* ctx, uint32_t* image_index)
+[[nodiscard]] static bool renderer_begin_frame(RendererContext* restrict ctx, uint32_t* restrict image_index)
 {
     vkWaitForFences(ctx->device, 1, &ctx->in_flight_fences[ctx->current_frame],
                     VK_TRUE, UINT64_MAX);
@@ -1245,7 +1245,7 @@ static bool renderer_begin_frame(RendererContext* ctx, uint32_t* image_index)
 }
 
 /* Begin the render pass. Call AFTER all texture updates are recorded. */
-static void renderer_begin_render(RendererContext* ctx, uint32_t image_index)
+static void renderer_begin_render(RendererContext* restrict ctx, uint32_t image_index)
 {
     VkClearValue clear = { .color = { {0.0f, 0.0f, 0.0f, 0.0f} } };
     VkRenderPassBeginInfo rp_begin = {
@@ -1279,7 +1279,7 @@ static void renderer_begin_render(RendererContext* ctx, uint32_t image_index)
 }
 
 /* Draw a layer texture as a full-screen quad. Records into the current cmd buffer. */
-static void renderer_draw_layer(RendererContext* ctx, int layer_index)
+static void renderer_draw_layer(RendererContext* restrict ctx, int layer_index)
 {
     VkLayerTexture* lt = &ctx->layers[layer_index];
     if (!lt->valid) return;
@@ -1303,8 +1303,8 @@ static void renderer_draw_layer(RendererContext* ctx, int layer_index)
  * Each draw gets its own slot in the line VBO (via line_vbo_offset) so multiple
  * line draws in one frame don't overwrite each other's vertex data before the
  * GPU reads it. The offset is reset to 0 at the start of each frame. */
-static void renderer_draw_line(RendererContext* ctx,
-                                  const float* data, uint32_t count,
+static void renderer_draw_line(RendererContext* restrict ctx,
+                                  const float* restrict data, uint32_t count,
                                   uint32_t color,
                                   int32_t scissor_l, int32_t scissor_t,
                                   uint32_t scissor_w, uint32_t scissor_h)
@@ -1364,8 +1364,8 @@ static void renderer_draw_line(RendererContext* ctx,
  * Each layer gets its own slot in the staging buffer per frame in flight, so
  * multiple updates in one command buffer don't clobber each other and a
  * frame's memcpy can't race the previous frame's in-flight copy. */
-static void renderer_update_layer_rect(RendererContext* ctx, int layer_index,
-                                        const uint32_t* pixels, uint32_t width, uint32_t height,
+static void renderer_update_layer_rect(RendererContext* restrict ctx, int layer_index,
+                                        const uint32_t* restrict pixels, uint32_t width, uint32_t height,
                                         uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 {
     VkDeviceSize layer_size = (VkDeviceSize)width * height * sizeof(uint32_t);
@@ -1377,7 +1377,7 @@ static void renderer_update_layer_rect(RendererContext* ctx, int layer_index,
 }
 
 /* End the frame: finish render pass, submit, present. */
-static void renderer_end_frame(RendererContext* ctx, uint32_t image_index)
+static void renderer_end_frame(RendererContext* restrict ctx, uint32_t image_index)
 {
     VkCommandBuffer cmd = ctx->command_buffers[ctx->current_frame];
 
@@ -1414,7 +1414,7 @@ static void renderer_end_frame(RendererContext* ctx, uint32_t image_index)
  * Cleanup
  ******************************************************************************************************************************/
 
-static void renderer_destroy(RendererContext* ctx)
+static void renderer_destroy(RendererContext* restrict ctx)
 {
     vkDeviceWaitIdle(ctx->device);
 

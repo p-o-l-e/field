@@ -55,7 +55,7 @@ enum {
  * proportional to what actually changed instead of the full layer size.
  * Note the renderer and field layer indices differ (R_LAYER_FG=2 vs FG=3),
  * so both indices are passed explicitly. */
-static void ff_upload_dirty_layer(RendererContext* ctx, Field* field, int r_layer, int f_layer) {
+static void ff_upload_dirty_layer(RendererContext* restrict ctx, const Field* restrict field, int r_layer, int f_layer) {
     Frame* frame = field->layer[f_layer];
     if (!frame->is_dirty) return;
     renderer_update_layer_rect(ctx, r_layer, frame->data, frame->width, frame->height,
@@ -300,7 +300,8 @@ void* draw_field(void* arg)
     /* Oscillograph stream ring buffer — accumulates XY points across frames. */
     constexpr size_t STREAM_BUF_SIZE = 128;
     static float stream_buf[STREAM_BUF_SIZE * 2];
-    static size_t stream_w = 0;
+    static size_t stream_w = 0; /* ring write cursor (float index) */
+    static size_t stream_n = 0; /* valid points — saturates at STREAM_BUF_SIZE */
 
     pthread_barrier_wait(&_init_barrier);
     printf("GLFW Initialized...\n");
@@ -359,6 +360,7 @@ void* draw_field(void* arg)
                 stream_buf[stream_w++] = **ext->x * scale + cx;
                 stream_buf[stream_w++] = **ext->y * scale + cy;
                 if (stream_w >= STREAM_BUF_SIZE * 2) stream_w = 0;
+                if (stream_n < STREAM_BUF_SIZE) ++stream_n;
             }
         }
 
@@ -423,14 +425,32 @@ void* draw_field(void* arg)
             renderer_draw_layer(&g_renderer, R_LAYER_DO);
         #endif
 
-        /* Draw oscillograph stream line (scissored to widget bounds) */
-        if (context->stream[0] && stream_w >= 4) {
-            renderer_draw_line(&g_renderer, stream_buf, (uint32_t)STREAM_BUF_SIZE,
-                               0x40A090FF,
-                               (int32_t)context->stream[0]->bounds.l,
-                               (int32_t)context->stream[0]->bounds.t,
-                               context->stream[0]->width,
-                               context->stream[0]->height);
+        /* Draw oscillograph stream line (scissored to widget bounds).
+         * Gating on stream_w blanks the trace for two frames after every ring
+         * wrap (the cursor resets to 0) — that was the periodic blink. And once
+         * the ring has wrapped, chronological order starts at the write cursor,
+         * not at index 0, so draw the two contiguous segments in chronological
+         * order. Both backends skip draws with count < 2. */
+        if (context->stream[0] && stream_n >= 2) {
+            auto s = context->stream[0];
+            if (stream_n < STREAM_BUF_SIZE) {
+                /* Still filling — points are contiguous from the start. */
+                renderer_draw_line(&g_renderer, stream_buf, (uint32_t)stream_n,
+                                   0x40A090FF,
+                                   (int32_t)s->bounds.l, (int32_t)s->bounds.t,
+                                   s->width, s->height);
+            } else {
+                /* Ring full — oldest point sits at the write cursor. */
+                renderer_draw_line(&g_renderer, stream_buf + stream_w,
+                                   (uint32_t)((STREAM_BUF_SIZE * 2 - stream_w) / 2),
+                                   0x40A090FF,
+                                   (int32_t)s->bounds.l, (int32_t)s->bounds.t,
+                                   s->width, s->height);
+                renderer_draw_line(&g_renderer, stream_buf, (uint32_t)(stream_w / 2),
+                                   0x40A090FF,
+                                   (int32_t)s->bounds.l, (int32_t)s->bounds.t,
+                                   s->width, s->height);
+            }
         }
 
         /* Draw pending connection cord */

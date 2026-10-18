@@ -426,7 +426,7 @@ static GLuint link_program(const char* vs_src, const char* fs_src)
  * Renderer interface implementation
  ******************************************************************************************************************************/
 
-static bool renderer_init(RendererContext* ctx, GLFWwindow* window,
+[[nodiscard]] static bool renderer_init(RendererContext* restrict ctx, GLFWwindow* restrict window,
                            uint32_t width, uint32_t height)
 {
     memset(ctx, 0, sizeof(*ctx));
@@ -504,8 +504,8 @@ static bool renderer_init(RendererContext* ctx, GLFWwindow* window,
 }
 
 /* One-time initial upload of layer pixels (called once per layer at startup). */
-static void renderer_upload_layer(RendererContext* ctx, int layer_index,
-                                   const uint32_t* pixels, uint32_t width, uint32_t height)
+static void renderer_upload_layer(RendererContext* restrict ctx, int layer_index,
+                                   const uint32_t* restrict pixels, uint32_t width, uint32_t height)
 {
     glBindTexture(GL_TEXTURE_2D, ctx->layer_textures[layer_index]);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)width, (GLsizei)height,
@@ -514,7 +514,7 @@ static void renderer_upload_layer(RendererContext* ctx, int layer_index,
 }
 
 /* Begin frame: clear the framebuffer. image_index is always 0 for OpenGL. */
-static bool renderer_begin_frame(RendererContext* ctx, uint32_t* image_index)
+[[nodiscard]] static bool renderer_begin_frame(RendererContext* restrict ctx, uint32_t* restrict image_index)
 {
     (void)ctx;
     glClear(GL_COLOR_BUFFER_BIT);
@@ -526,8 +526,8 @@ static bool renderer_begin_frame(RendererContext* ctx, uint32_t* image_index)
  * Source pixels are addressed as pixels[(y + row) * width + x + col] — the
  * row stride stays the full layer width via GL_UNPACK_ROW_LENGTH, so no
  * intermediate copy is needed. Pixel store state is restored afterwards. */
-static void renderer_update_layer_rect(RendererContext* ctx, int layer_index,
-                                       const uint32_t* pixels, uint32_t width, uint32_t height,
+static void renderer_update_layer_rect(RendererContext* restrict ctx, int layer_index,
+                                       const uint32_t* restrict pixels, uint32_t width, uint32_t height,
                                        uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 {
     (void)height; /* upload extents are (w, h); height only bounds the source rows */
@@ -546,13 +546,13 @@ static void renderer_update_layer_rect(RendererContext* ctx, int layer_index,
 }
 
 /* No render pass concept in OpenGL — this is a no-op. */
-static void renderer_begin_render(RendererContext* ctx, uint32_t image_index)
+static void renderer_begin_render(RendererContext* restrict ctx, uint32_t image_index)
 {
     (void)ctx; (void)image_index;
 }
 
 /* Draw a layer texture as a full-screen quad. */
-static void renderer_draw_layer(RendererContext* ctx, int layer_index)
+static void renderer_draw_layer(RendererContext* restrict ctx, int layer_index)
 {
     glUseProgram(ctx->pipeline.layer_program);
     glActiveTexture(GL_TEXTURE0);
@@ -569,8 +569,8 @@ static void renderer_draw_layer(RendererContext* ctx, int layer_index)
 /* Draw a line strip with a uniform color.
  * `data` is count*2 floats in 0-1 normalized coords (Y-up).
  * Scissor is in screen coords (top-left origin); converted to GL bottom-left origin. */
-static void renderer_draw_line(RendererContext* ctx,
-                                const float* data, uint32_t count,
+static void renderer_draw_line(RendererContext* restrict ctx,
+                                const float* restrict data, uint32_t count,
                                 uint32_t color,
                                 int32_t scissor_l, int32_t scissor_t,
                                 uint32_t scissor_w, uint32_t scissor_h)
@@ -609,14 +609,14 @@ static void renderer_draw_line(RendererContext* ctx,
 }
 
 /* End frame: swap buffers. */
-static void renderer_end_frame(RendererContext* ctx, uint32_t image_index)
+static void renderer_end_frame(RendererContext* restrict ctx, uint32_t image_index)
 {
     (void)image_index;
     glfwSwapBuffers(ctx->window);
 }
 
 /* Cleanup. */
-static void renderer_destroy(RendererContext* ctx)
+static void renderer_destroy(RendererContext* restrict ctx)
 {
     glDeleteTextures(RENDERER_LAYER_COUNT, ctx->layer_textures);
 

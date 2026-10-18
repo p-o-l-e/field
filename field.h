@@ -577,7 +577,7 @@ extern const uint8_t gtFont[];
  *  @param byte   Byte index (0 = LSB, 3 = MSB).
  *  @return The extracted 8-bit value.
  */
-uint8_t     ff_extract_byte(uint32_t, uint_fast8_t);
+[[nodiscard]] uint8_t     ff_extract_byte(uint32_t, uint_fast8_t) [[reproducible]];
 
 /** @brief Convert normalised UV coordinates to screen pixel coordinates.
  *  @param x  Normalised X (0.0–1.0).
@@ -586,7 +586,7 @@ uint8_t     ff_extract_byte(uint32_t, uint_fast8_t);
  *  @param h  Target height in pixels.
  *  @return Screen-space pixel coordinates.
  */
-point32u    ff_uv_to_screen(float, float, uint32_t, uint32_t);
+[[nodiscard]] point32u    ff_uv_to_screen(float, float, uint32_t, uint32_t) [[reproducible]];
 
 /** @brief Convert screen pixel coordinates to normalised UV coordinates.
  *  @param x  Screen X pixel.
@@ -595,7 +595,7 @@ point32u    ff_uv_to_screen(float, float, uint32_t, uint32_t);
  *  @param h  Source height in pixels.
  *  @return Normalised UV coordinates (Y flipped: 0 at bottom).
  */
-point       ff_screen_to_uv(uint32_t, uint32_t, uint32_t, uint32_t);
+[[nodiscard]] point       ff_screen_to_uv(uint32_t, uint32_t, uint32_t, uint32_t) [[reproducible]];
 
 /** @brief Convert HSVA (0–255 each) to a packed 32-bit RGBA value.
  *  @param h  Hue (0–255).
@@ -604,14 +604,14 @@ point       ff_screen_to_uv(uint32_t, uint32_t, uint32_t, uint32_t);
  *  @param a  Alpha (0–255).
  *  @return Packed 0xRRGGBBAA colour.
  */
-static uint32_t ff_hsva_to_rgba(uint8_t, uint8_t, uint8_t, uint8_t);
+[[nodiscard]] static uint32_t ff_hsva_to_rgba(uint8_t, uint8_t, uint8_t, uint8_t) [[reproducible]];
 
 /** @brief Generate a deterministic colour from an index (golden-ratio hue spread).
  *  @param index  Unique index (e.g. entity index).
  *  @param alpha  Alpha value (0–255).
  *  @return Packed 0xRRGGBBAA colour.
  */
-uint32_t    ff_index_to_hsv(uint32_t, uint8_t);
+[[nodiscard]] uint32_t    ff_index_to_hsv(uint32_t, uint8_t);
 
 /** @brief Set a single pixel in a frame (bounds-checked).
  *  @param frame  Target frame.
@@ -619,7 +619,7 @@ uint32_t    ff_index_to_hsv(uint32_t, uint8_t);
  *  @param y      Pixel Y.
  *  @param value  32-bit RGBA value.
  */
-static void     ff_frame_set(Frame*, uint32_t, uint32_t, uint32_t);
+static void     ff_frame_set(Frame* restrict, uint32_t, uint32_t, uint32_t);
 
 /** @brief Get a single pixel from a frame (bounds-checked, returns pixel 0 on OOB).
  *  @param frame  Source frame.
@@ -627,51 +627,51 @@ static void     ff_frame_set(Frame*, uint32_t, uint32_t, uint32_t);
  *  @param y      Pixel Y.
  *  @return 32-bit RGBA value.
  */
-static uint32_t ff_frame_get(Frame*, uint32_t, uint32_t);
+[[nodiscard]] static uint32_t ff_frame_get(const Frame* restrict, uint32_t, uint32_t);
 
 /** @brief Clear the entire frame to zero (transparent black).
  *  @param frame  Target frame.
  */
-static void     ff_frame_clr(Frame*);
+static void     ff_frame_clr(Frame* restrict);
 
 /** @brief Fill the entire frame with a single colour.
  *  @param frame  Target frame.
  *  @param value  32-bit RGBA fill value.
  */
-static void     ff_frame_fill(Frame*, uint32_t);
+static void     ff_frame_fill(Frame* restrict, uint32_t);
 
 /** @brief Allocate a frame buffer of the given dimensions.
  *  @param frame  Frame to initialise.
  *  @param x      Width in pixels.
  *  @param y      Height in pixels.
  */
-static void     ff_frame_init(Frame*, uint32_t, uint32_t);
+static void     ff_frame_init(Frame* restrict, uint32_t, uint32_t);
 
 /** @brief Free a frame's pixel buffer.
  *  @param frame  Frame to release.
  */
-static void     ff_frame_flush(Frame*);
+static void     ff_frame_flush(Frame* restrict);
 
 /** @brief Copy all pixels from source to target (dimensions must match).
  *  @param target  Destination frame.
- *  @param source  Source frame.
+ *  @param source  Source frame (read-only).
  */
-static void     ff_frame_copy(Frame*, Frame*);
+static void     ff_frame_copy(Frame* restrict target, const Frame* restrict source);
 
 /** @brief Copy source to target, recoloring each non-zero pixel via ff_index_to_hsv.
  *  @param target  Destination frame.
- *  @param source  Source frame.
+ *  @param source  Source frame (read-only, used as stencil index).
  *  @param alpha   Alpha value for the recolored output.
  */
-static void     ff_frame_copy_with_alpha(Frame*, Frame*, uint8_t);
+static void     ff_frame_copy_with_alpha(Frame* restrict target, const Frame* restrict source, uint8_t);
 
 /** @brief Copy source to target at a pixel offset, skipping zero (transparent) pixels.
  *  @param target  Destination frame.
- *  @param source  Source frame.
+ *  @param source  Source frame (read-only).
  *  @param xo      X offset in target.
  *  @param yo      Y offset in target.
  */
-static void     ff_frame_copy_at(Frame*, Frame*, uint32_t, uint32_t);
+static void     ff_frame_copy_at(Frame* restrict target, const Frame* restrict source, uint32_t, uint32_t);
 
 /** @brief Union a modified region into a frame's dirty rectangle (clamped to bounds).
  *  @param frame  Target frame.
@@ -680,12 +680,12 @@ static void     ff_frame_copy_at(Frame*, Frame*, uint32_t, uint32_t);
  *  @param r      Right edge (inclusive).
  *  @param b      Bottom edge (inclusive).
  */
-static void     ff_frame_mark(Frame*, int32_t, int32_t, int32_t, int32_t);
+static void     ff_frame_mark(Frame* restrict, int32_t, int32_t, int32_t, int32_t);
 
 /** @brief Reset a frame's dirty rectangle (call after the region was uploaded).
  *  @param frame  Target frame.
  */
-static void     ff_frame_dirty_reset(Frame*);
+static void     ff_frame_dirty_reset(Frame* restrict);
 
 /** @brief Allocate a sprite with @c nframes frames of size @c w × @c h.
  *  @param sprite   Sprite to initialise.
@@ -693,20 +693,20 @@ static void     ff_frame_dirty_reset(Frame*);
  *  @param h        Frame height in pixels.
  *  @param nframes  Number of frames.
  */
-static void ff_sprite_init(Sprite*, uint32_t, uint32_t, uint32_t);
+static void ff_sprite_init(Sprite* restrict, uint32_t, uint32_t, uint32_t);
 
 /** @brief Free all frames and the sprite's frame array.
  *  @param sprite  Sprite to release.
  */
-static void ff_sprite_flush(Sprite*);
+static void ff_sprite_flush(Sprite* restrict);
 
 /** @brief Load a horizontal stripe image into sprite frames.
  *  @details The source frame must be @c w × (h * nframes) pixels;
  *           each frame is extracted from a vertical slice.
  *  @param sprite  Target sprite.
- *  @param frame   Source stripe image.
+ *  @param frame   Source stripe image (read-only).
  */
-static void ff_sprite_load_stripe(Sprite*, Frame*);
+static void ff_sprite_load_stripe(Sprite* restrict, const Frame* restrict);
 
 /** @brief Draw a single glyph from a 7×8 bitmap font.
  *  @param frame  Target frame.
@@ -716,7 +716,7 @@ static void ff_sprite_load_stripe(Sprite*, Frame*);
  *  @param t      Top pixel position.
  *  @param colour 32-bit RGBA colour.
  */
-static void ff_draw_glyph(Frame*, const uint8_t*, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void ff_draw_glyph(Frame* restrict, const uint8_t* restrict, uint32_t, uint32_t, uint32_t, const uint32_t);
 
 /** @brief Draw a text string using the embedded bitmap font.
  *  @param frame  Target frame.
@@ -728,7 +728,7 @@ static void ff_draw_glyph(Frame*, const uint8_t*, uint32_t, uint32_t, uint32_t, 
  *  @param _h     Unused (reserved).
  *  @param colour 32-bit RGBA colour.
  */
-static void ffDrawTextLabel(Frame*, const uint8_t*, const char*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void ffDrawTextLabel(Frame* restrict, const uint8_t* restrict, const char* restrict, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
 
 /** @brief Draw a rectangle outline (1-pixel border).
  *  @param frame  Target frame.
@@ -738,7 +738,7 @@ static void ffDrawTextLabel(Frame*, const uint8_t*, const char*, uint32_t, uint3
  *  @param b      Bottom edge.
  *  @param colour 32-bit RGBA colour.
  */
-static void ff_draw_rect_o(Frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void ff_draw_rect_o(Frame* restrict, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
 
 /** @brief Draw a filled rectangle.
  *  @param frame  Target frame.
@@ -748,7 +748,7 @@ static void ff_draw_rect_o(Frame*, uint32_t, uint32_t, uint32_t, uint32_t, const
  *  @param b      Bottom edge.
  *  @param colour 32-bit RGBA colour.
  */
-static void ff_draw_rect_f(Frame*, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void ff_draw_rect_f(Frame* restrict, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
 
 /** @brief Draw a vertical line.
  *  @param frame  Target frame.
@@ -757,7 +757,7 @@ static void ff_draw_rect_f(Frame*, uint32_t, uint32_t, uint32_t, uint32_t, const
  *  @param ye     End Y (inclusive).
  *  @param value  32-bit RGBA colour.
  */
-static void ff_draw_line_v(Frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void ff_draw_line_v(Frame* restrict, uint32_t, uint32_t, uint32_t, const uint32_t);
 
 /** @brief Draw a horizontal line.
  *  @param frame  Target frame.
@@ -766,7 +766,7 @@ static void ff_draw_line_v(Frame*, uint32_t, uint32_t, uint32_t, const uint32_t)
  *  @param xe     End X (inclusive).
  *  @param value  32-bit RGBA colour.
  */
-static void ff_draw_line_h(Frame*, uint32_t, uint32_t, uint32_t, const uint32_t);
+static void ff_draw_line_h(Frame* restrict, uint32_t, uint32_t, uint32_t, const uint32_t);
 
 /** @brief Draw a filled circle (midpoint algorithm).
  *  @param frame  Target frame.
@@ -775,7 +775,7 @@ static void ff_draw_line_h(Frame*, uint32_t, uint32_t, uint32_t, const uint32_t)
  *  @param r      Radius in pixels.
  *  @param value  32-bit RGBA colour.
  */
-static void ff_draw_circle_f(Frame*, uint32_t, uint32_t, uint32_t, uint32_t);
+static void ff_draw_circle_f(Frame* restrict, uint32_t, uint32_t, uint32_t, uint32_t);
 
 /** @brief Draw a circle outline (midpoint algorithm).
  *  @param frame  Target frame.
@@ -784,28 +784,28 @@ static void ff_draw_circle_f(Frame*, uint32_t, uint32_t, uint32_t, uint32_t);
  *  @param r      Radius in pixels.
  *  @param value  32-bit RGBA colour.
  */
-static void ff_draw_circle_o(Frame*, uint32_t, uint32_t, uint32_t, uint32_t);
+static void ff_draw_circle_o(Frame* restrict, uint32_t, uint32_t, uint32_t, uint32_t);
 
 /** @brief Draw a bounding-box outline from an @ref ltrb32u.
  *  @param canvas  Target frame.
- *  @param r       Bounding box.
+ *  @param r       Bounding box (read-only).
  *  @param colour  32-bit RGBA colour.
  */
-static void ff_draw_ltrb_o(Frame*, ltrb32u*, const uint32_t);
+static void ff_draw_ltrb_o(Frame* restrict, const ltrb32u* restrict, const uint32_t);
 
 /** @brief Draw a filled bounding box from an @ref ltrb32u.
  *  @param canvas  Target frame.
- *  @param r       Bounding box.
+ *  @param r       Bounding box (read-only).
  *  @param colour  32-bit RGBA colour.
  */
-static void ff_draw_ltrb_f(Frame*, ltrb32u*, const uint32_t);
+static void ff_draw_ltrb_f(Frame* restrict, const ltrb32u* restrict, const uint32_t);
 
 /** @brief Create an entity inside a node from a descriptor.
  *  @param node        Target node.
- *  @param descriptor  Entity blueprint (see @ref SectorDescriptor).
+ *  @param descriptor  Entity blueprint (see @ref SectorDescriptor, read-only).
  *  @return Pointer to the newly created entity, or @c NULL on failure.
  */
-Entity* ffCreateEntity(Node* restrict, SectorDescriptor*);
+[[nodiscard]] Entity* ffCreateEntity(Node* restrict, const SectorDescriptor*);
 
 /** @brief Create a new field (canvas).
  *  @param x      Left position in screen coordinates.
@@ -816,7 +816,7 @@ Entity* ffCreateEntity(Node* restrict, SectorDescriptor*);
  *  @param flags  Field flags (@ref FieldFlags).
  *  @return Pointer to the newly created field.
  */
-Field*  ffCreateField(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+[[nodiscard]] Field*  ffCreateField(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 
 /** @brief Destroy a field and free all associated resources.
  *  @param field  Field to destroy.
@@ -830,7 +830,7 @@ void    ffDestroyField(Field* restrict);
  *  @param size   Initial entity capacity.
  *  @return Pointer to the newly created node.
  */
-static Node* ffCreateNode(Field* restrict, uint32_t, uint32_t, size_t);
+[[nodiscard]] static Node* ffCreateNode(Field* restrict, uint32_t, uint32_t, size_t);
 
 /** @brief Place a node on the canvas at the given position (makes it visible).
  *  @param field  Owning field.
@@ -845,7 +845,7 @@ static void  ffPlaceNode(Field* restrict, Node* restrict, uint32_t, uint32_t);
  *  @param id     Entity UID to find (0 returns @c NULL).
  *  @return Pointer to the entity, or @c NULL if not found.
  */
-Entity* ff_find_entity_by_id(Field* restrict, uint32_t);
+[[nodiscard]] Entity* ff_find_entity_by_id(Field* restrict, uint32_t);
 
 /** @brief No-op placeholder (reserved). */
 void    ff_empty(void);
@@ -854,13 +854,13 @@ void    ff_empty(void);
  *  @param a  Ignored.
  *  @param b  Ignored.
  */
-void    ff_fuse_link(Entity*, Entity*);
+void    ff_fuse_link([[maybe_unused]] Entity*, [[maybe_unused]] Entity*);
 
 /** @brief Move an entity to new bounds, updating stencil layers.
  *  @param entity  Entity to move.
- *  @param bounds  New bounding box.
+ *  @param bounds  New bounding box (read-only).
  */
-void    ff_move_entity(Entity* restrict, ltrb32u* restrict);
+void    ff_move_entity(Entity* restrict, const ltrb32u* restrict);
 
 /** @brief Erase an entity (removes from stencil; does not free).
  *  @param entity  Entity to erase.
@@ -879,19 +879,19 @@ void    ff_add_mod_link(Entity*, Entity*, CallbackEvent, void (*)(Entity*, Entit
  *  @param entity  Textbox entity.
  *  @param text    Null-terminated text (truncated to TEXTBOX_SIZE-1).
  */
-void    ff_set_text_data(Entity*, const char*);
+void    ff_set_text_data(Entity* restrict, const char* restrict);
 
 /** @brief Copy a slider's value into a textbox as a formatted string.
- *  @param slider  Source slider entity.
+ *  @param slider  Source slider entity (read-only).
  *  @param tbox    Target textbox entity.
  */
-static void ff_value_to_textbox(Entity*, Entity*);
+static void ff_value_to_textbox(Entity* restrict slider, Entity* restrict tbox);
 
 /** @brief Mark the target entity for repaint.
  *  @param _src    Ignored source entity.
  *  @param target  Entity to mark dirty.
  */
-static void ff_set_repaint(Entity*, Entity*);
+static void ff_set_repaint([[maybe_unused]] Entity* restrict _src, Entity* restrict target);
 
 /** @brief Draw all dirty entities across all visible nodes.
  *  @param field  Field to render.
@@ -936,9 +936,9 @@ static void ff_disconnect(Entity* restrict);
 #ifdef DEBUG_OVERLAY
 /** @brief Draw the debug overlay with entity diagnostic information.
  *  @param field   Target field.
- *  @param entity  Entity under the cursor (may be @c NULL).
+ *  @param entity  Entity under the cursor (may be @c NULL, read-only).
  */
-static void ff_draw_debug_overlay(Field*, Entity*);
+static void ff_draw_debug_overlay(Field* restrict, const Entity* restrict);
 #endif
 
 /** @name Dispatch tables
@@ -964,7 +964,7 @@ extern void (*release_entity[])(Entity* restrict, int, int); ///< Per-type relea
  * @param byte   Byte index (0 = LSB, 3 = MSB).
  * @return The extracted 8-bit value.
  */
-uint8_t ff_extract_byte(uint32_t value, uint_fast8_t byte) {
+[[nodiscard]] uint8_t ff_extract_byte(uint32_t value, uint_fast8_t byte) [[reproducible]] {
     return (value >> (byte * 8)) & 0xFF;
 }
 
@@ -975,7 +975,7 @@ uint8_t ff_extract_byte(uint32_t value, uint_fast8_t byte) {
  *  @param h  Target height in pixels.
  *  @return Screen-space pixel coordinates.
  */
-point32u ff_uv_to_screen(float x, float y, uint32_t w, uint32_t h) {
+[[nodiscard]] point32u ff_uv_to_screen(float x, float y, uint32_t w, uint32_t h) [[reproducible]] {
     point32u s = {
         .x = (uint32_t)(x * (float)w),
         .y = (uint32_t)(y * (float)h)
@@ -990,7 +990,7 @@ point32u ff_uv_to_screen(float x, float y, uint32_t w, uint32_t h) {
  *  @param h  Source height in pixels.
  *  @return Normalised UV coordinates (Y: 0 at bottom, 1 at top).
  */
-point ff_screen_to_uv(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+[[nodiscard]] point ff_screen_to_uv(uint32_t x, uint32_t y, uint32_t w, uint32_t h) [[reproducible]] {
     point n = {
         .x =  (float)x / (float)w,
         .y =  1.0f - (float)y / (float)h
@@ -1005,13 +1005,13 @@ point ff_screen_to_uv(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
  *  @param a  Alpha (0–255).
  *  @return Packed 0xRRGGBBAA colour.
  */
-static uint32_t ff_hsva_to_rgba(uint8_t h, uint8_t s, uint8_t v, uint8_t a) {
-    uint8_t region = h / 43;
-    uint8_t remainder = (h - region * 43) * 6;
+[[nodiscard]] static uint32_t ff_hsva_to_rgba(uint8_t h, uint8_t s, uint8_t v, uint8_t a) [[reproducible]] {
+    const uint8_t region = h / 43;
+    const uint8_t remainder = (h - region * 43) * 6;
 
-    uint8_t p = (v * (255 - s)) >> 8;
-    uint8_t q = (v * (255 - ((s * remainder) >> 8))) >> 8;
-    uint8_t t = (v * (255 - ((s * (255 - remainder)) >> 8))) >> 8;
+    const uint8_t p = (v * (255 - s)) >> 8;
+    const uint8_t q = (v * (255 - ((s * remainder) >> 8))) >> 8;
+    const uint8_t t = (v * (255 - ((s * (255 - remainder)) >> 8))) >> 8;
 
     uint8_t r, g, b;
     switch (region) {
@@ -1030,10 +1030,10 @@ static uint32_t ff_hsva_to_rgba(uint8_t h, uint8_t s, uint8_t v, uint8_t a) {
  *  @param alpha  Alpha value (0–255).
  *  @return Packed 0xRRGGBBAA colour.
  */
-uint32_t ff_index_to_hsv(uint32_t index, uint8_t alpha) {
-    uint8_t hue = (index * 137) & 0xFF;
-    uint8_t sat = 204;
-    uint8_t val = 230;
+[[nodiscard]] uint32_t ff_index_to_hsv(uint32_t index, uint8_t alpha) {
+    const uint8_t hue = (index * 137) & 0xFF;
+    constexpr uint8_t sat = 204;
+    constexpr uint8_t val = 230;
     return ff_hsva_to_rgba(hue, sat, val, alpha);
 }
 
@@ -1045,7 +1045,7 @@ uint32_t ff_index_to_hsv(uint32_t index, uint8_t alpha) {
  *  @param y      Pixel Y coordinate.
  *  @param value  32-bit RGBA pixel value.
  */
-static inline void ff_frame_set(Frame* frame, uint32_t x, uint32_t y, uint32_t value) {
+static inline void ff_frame_set(Frame* restrict frame, uint32_t x, uint32_t y, uint32_t value) {
     if(x < frame->width && y < frame->height)
     frame->data[x + y * frame->width] = value;
 }
@@ -1056,7 +1056,7 @@ static inline void ff_frame_set(Frame* frame, uint32_t x, uint32_t y, uint32_t v
  *  @param y      Pixel Y coordinate.
  *  @return 32-bit RGBA pixel value.
  */
-static inline uint32_t ff_frame_get(Frame* frame, uint32_t x, uint32_t y) {
+[[nodiscard]] static inline uint32_t ff_frame_get(const Frame* restrict frame, uint32_t x, uint32_t y) {
     if(x < frame->width && y < frame->height) return frame->data[x + y * frame->width];
     return frame->data[0];
 }
@@ -1064,7 +1064,7 @@ static inline uint32_t ff_frame_get(Frame* frame, uint32_t x, uint32_t y) {
 /** @brief Clear the entire frame buffer to zero (transparent black).
  *  @param frame  Target frame.
  */
-static inline void ff_frame_clr(Frame* frame) {
+static inline void ff_frame_clr(Frame* restrict frame) {
     memset(frame->data, 0, frame->height * frame->width * sizeof(uint32_t));
     ff_frame_mark(frame, 0, 0, (int32_t)frame->width - 1, (int32_t)frame->height - 1);
 }
@@ -1073,7 +1073,7 @@ static inline void ff_frame_clr(Frame* frame) {
  *  @param frame  Target frame.
  *  @param value  32-bit RGBA fill value.
  */
-static inline void ff_frame_fill(Frame* frame, uint32_t value) {
+static inline void ff_frame_fill(Frame* restrict frame, uint32_t value) {
     for(uint32_t i = 0; i < (frame->height * frame->width); ++i) frame->data[i] = value;
     ff_frame_mark(frame, 0, 0, (int32_t)frame->width - 1, (int32_t)frame->height - 1);
 }
@@ -1083,7 +1083,7 @@ static inline void ff_frame_fill(Frame* frame, uint32_t value) {
  *  @param x      Width in pixels.
  *  @param y      Height in pixels.
  */
-static inline void ff_frame_init(Frame* frame, uint32_t x, uint32_t y) {
+static inline void ff_frame_init(Frame* restrict frame, uint32_t x, uint32_t y) {
     frame->width     = x;
     frame->height    = y;
     frame->data      = (uint32_t*)calloc(frame->width * frame->height , sizeof(uint32_t));
@@ -1093,7 +1093,7 @@ static inline void ff_frame_init(Frame* frame, uint32_t x, uint32_t y) {
 /** @brief Free the frame's pixel buffer (does not free the Frame struct itself).
  *  @param frame  Frame whose data to free.
  */
-static inline void ff_frame_flush(Frame* frame) {
+static inline void ff_frame_flush(Frame* restrict frame) {
     free(frame->data);
 }
 
@@ -1110,7 +1110,7 @@ static inline void ff_frame_flush(Frame* frame) {
  *  @param r      Right edge (inclusive).
  *  @param b      Bottom edge (inclusive).
  */
-static inline void ff_frame_mark(Frame* frame, int32_t l, int32_t t, int32_t r, int32_t b) {
+static inline void ff_frame_mark(Frame* restrict frame, int32_t l, int32_t t, int32_t r, int32_t b) {
     if(r < l || b < t) return;
     if(l < 0) l = 0;
     if(t < 0) t = 0;
@@ -1135,7 +1135,7 @@ static inline void ff_frame_mark(Frame* frame, int32_t l, int32_t t, int32_t r, 
 /** @brief Reset a frame's dirty rectangle (call after the region was uploaded).
  *  @param frame  Target frame.
  */
-static inline void ff_frame_dirty_reset(Frame* frame) {
+static inline void ff_frame_dirty_reset(Frame* restrict frame) {
     frame->is_dirty = false;
 }
 
@@ -1143,7 +1143,7 @@ static inline void ff_frame_dirty_reset(Frame* frame) {
  *  @param target  Destination frame.
  *  @param source  Source frame.
  */
-static inline void ff_frame_copy(Frame* target, Frame* source) {
+static inline void ff_frame_copy(Frame* restrict target, const Frame* restrict source) {
     for(uint32_t i = 0; i < target->height * target->width; i++) target->data[i] = source->data[i];
     ff_frame_mark(target, 0, 0, (int32_t)target->width - 1, (int32_t)target->height - 1);
 }
@@ -1153,7 +1153,7 @@ static inline void ff_frame_copy(Frame* target, Frame* source) {
  *  @param source  Source frame (used as stencil index).
  *  @param alpha   Alpha value for the recolored output.
  */
-static void ff_frame_copy_with_alpha(Frame* target, Frame* source, uint8_t alpha) {
+static void ff_frame_copy_with_alpha(Frame* restrict target, const Frame* restrict source, uint8_t alpha) {
     for(uint32_t i = 0; i < target->height * target->width; ++i) {
         auto data = ff_index_to_hsv(source->data[i] + 0x2, alpha);
         target->data[i] = data;
@@ -1167,7 +1167,7 @@ static void ff_frame_copy_with_alpha(Frame* target, Frame* source, uint8_t alpha
  *  @param xo      X offset in target.
  *  @param yo      Y offset in target.
  */
-static inline void ff_frame_copy_at(Frame* target, Frame* source, uint32_t xo, uint32_t yo) {
+static inline void ff_frame_copy_at(Frame* restrict target, const Frame* restrict source, uint32_t xo, uint32_t yo) {
     ff_frame_mark(target, (int32_t)xo, (int32_t)yo,
                   (int32_t)(xo + source->width - 1),
                   (int32_t)(yo + source->height - 1));
@@ -1211,7 +1211,7 @@ static inline void ff_draw_rect_o(Frame* restrict frame, uint32_t l, uint32_t t,
  *  @param b       Bottom edge (inclusive).
  *  @param colour  32-bit RGBA colour.
  */
-static inline void ff_draw_rect_f(Frame* frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour) {
+static inline void ff_draw_rect_f(Frame* restrict frame, uint32_t l, uint32_t t, uint32_t r, uint32_t b, const uint32_t colour) {
     ff_frame_mark(frame, (int32_t)l, (int32_t)t, (int32_t)r, (int32_t)b);
     for(uint32_t y = t; y <= b; ++y) {
         for(uint32_t x = l; x <= r; ++x) {
@@ -1227,7 +1227,7 @@ static inline void ff_draw_rect_f(Frame* frame, uint32_t l, uint32_t t, uint32_t
  *  @param ye     End Y (inclusive).
  *  @param value  32-bit RGBA colour.
  */
-static inline void ff_draw_line_v(Frame* frame, uint32_t x, uint32_t yo, uint32_t ye, const uint32_t value) {
+static inline void ff_draw_line_v(Frame* restrict frame, uint32_t x, uint32_t yo, uint32_t ye, const uint32_t value) {
     ff_frame_mark(frame, (int32_t)x, (int32_t)yo, (int32_t)x, (int32_t)ye);
     for(uint32_t y = yo; y <= ye; ++y)
         ff_frame_set(frame, x, y, value);
@@ -1240,7 +1240,7 @@ static inline void ff_draw_line_v(Frame* frame, uint32_t x, uint32_t yo, uint32_
  *  @param xe     End X (inclusive).
  *  @param value  32-bit RGBA colour.
  */
-static inline void ff_draw_line_h(Frame* frame, uint32_t y, uint32_t xo, uint32_t xe, const uint32_t value) {
+static inline void ff_draw_line_h(Frame* restrict frame, uint32_t y, uint32_t xo, uint32_t xe, const uint32_t value) {
     ff_frame_mark(frame, (int32_t)xo, (int32_t)y, (int32_t)xe, (int32_t)y);
     for(uint32_t x = xo; x <= xe; ++x)
         ff_frame_set(frame, x, y, value);
@@ -1253,7 +1253,7 @@ static inline void ff_draw_line_h(Frame* frame, uint32_t y, uint32_t xo, uint32_
  *  @param r      Radius in pixels.
  *  @param value  32-bit RGBA colour.
  */
-static void ff_draw_circle_f(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
+static void ff_draw_circle_f(Frame* restrict frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
     ff_frame_mark(frame, (int32_t)xc - (int32_t)r, (int32_t)yc - (int32_t)r,
                   (int32_t)xc + (int32_t)r, (int32_t)yc + (int32_t)r);
     int x = 0;
@@ -1286,7 +1286,7 @@ static void ff_draw_circle_f(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r,
  *  @param r      Radius in pixels.
  *  @param value  32-bit RGBA colour.
  */
-static inline void ff_draw_circle_o(Frame* frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
+static inline void ff_draw_circle_o(Frame* restrict frame, uint32_t xc, uint32_t yc, uint32_t r, uint32_t value) {
     ff_frame_mark(frame, (int32_t)xc - (int32_t)r, (int32_t)yc - (int32_t)r,
                   (int32_t)xc + (int32_t)r, (int32_t)yc + (int32_t)r);
     int x = 0;
@@ -1327,7 +1327,7 @@ static inline void ff_draw_circle_o(Frame* frame, uint32_t xc, uint32_t yc, uint
  *  @param t       Top pixel position.
  *  @param colour  32-bit RGBA colour.
  */
-static inline void ff_draw_glyph(Frame* frame, const uint8_t* font, uint32_t id, uint32_t l, uint32_t t, const uint32_t colour) {
+static inline void ff_draw_glyph(Frame* restrict frame, const uint8_t* restrict font, uint32_t id, uint32_t l, uint32_t t, const uint32_t colour) {
     ff_frame_mark(frame, (int32_t)l, (int32_t)t, (int32_t)(l + 6), (int32_t)(t + 7));
     uint32_t pos = id * 7;
     u_int8_t stencil = 0b1;
@@ -1350,7 +1350,7 @@ static inline void ff_draw_glyph(Frame* frame, const uint8_t* font, uint32_t id,
  *  @param _h      Unused (reserved for future clipping).
  *  @param colour  32-bit RGBA colour.
  */
-static inline void ffDrawTextLabel(Frame* frame, const uint8_t* font, const char* text, uint32_t l, uint32_t t, uint32_t, uint32_t, const uint32_t colour) {
+static inline void ffDrawTextLabel(Frame* restrict frame, const uint8_t* restrict font, const char* restrict text, uint32_t l, uint32_t t, uint32_t, uint32_t, const uint32_t colour) {
     uint32_t n = strlen(text);
     ff_frame_mark(frame, (int32_t)l, (int32_t)t, (int32_t)(l + n * 8 - 1), (int32_t)(t + 7));
     for(uint32_t i = 0; i < n; i++) {
@@ -1366,7 +1366,7 @@ static inline void ffDrawTextLabel(Frame* frame, const uint8_t* font, const char
  *  @param h        Frame height in pixels.
  *  @param nframes  Number of animation frames.
  */
-static inline void ff_sprite_init(Sprite* sprite, uint32_t w, uint32_t h, uint32_t nframes) {
+static inline void ff_sprite_init(Sprite* restrict sprite, uint32_t w, uint32_t h, uint32_t nframes) {
     Frame temp;
     ff_frame_init(&temp, w, h);
 
@@ -1398,7 +1398,7 @@ static inline void ff_sprite_flush(Sprite* restrict sprite) {
  *  @param sprite  Target sprite (must be pre-allocated with matching dimensions).
  *  @param frame   Source stripe image.
  */
-static inline void ff_sprite_load_stripe(Sprite* restrict sprite, Frame* restrict frame) {
+static inline void ff_sprite_load_stripe(Sprite* restrict sprite, const Frame* restrict frame) {
     for(uint32_t i = 0; i < sprite->nframes; i++) {
         for(uint32_t y = 0; y < sprite->height; y++) {
             for(uint32_t x = 0; x < sprite->width; x++) {
@@ -1413,7 +1413,7 @@ static inline void ff_sprite_load_stripe(Sprite* restrict sprite, Frame* restric
  *  @param r       Bounding box (left, top, right, bottom).
  *  @param colour  32-bit RGBA colour.
  */
-static inline void ff_draw_ltrb_o(Frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour) {
+static inline void ff_draw_ltrb_o(Frame* restrict canvas, const ltrb32u* restrict r, const uint32_t colour) {
     ff_frame_mark(canvas, (int32_t)r->l, (int32_t)r->t, (int32_t)r->r, (int32_t)r->b);
     for(uint32_t i = r->l; i <= r->r; ++i) {
         ff_frame_set(canvas, i, r->t, colour);
@@ -1430,7 +1430,7 @@ static inline void ff_draw_ltrb_o(Frame* restrict canvas, ltrb32u* restrict r, c
  *  @param r       Bounding box (left, top, right, bottom).
  *  @param colour  32-bit RGBA colour.
  */
-static inline void ff_draw_ltrb_f(Frame* restrict canvas, ltrb32u* restrict r, const uint32_t colour)
+static inline void ff_draw_ltrb_f(Frame* restrict canvas, const ltrb32u* restrict r, const uint32_t colour)
 {
     ff_frame_mark(canvas, (int32_t)r->l, (int32_t)r->t, (int32_t)r->r, (int32_t)r->b);
     for(uint32_t y = r->t; y <= r->b; ++y) {
@@ -1451,7 +1451,7 @@ static inline void ff_draw_ltrb_f(Frame* restrict canvas, ltrb32u* restrict r, c
  * @param descriptor  Entity blueprint.
  * @return Pointer to the newly created entity.
  */
-Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
+[[nodiscard]] Entity* ffCreateEntity(Node* restrict node, const SectorDescriptor* descriptor) {
     if (node->entities >= node->capacity) {
         node->capacity = node->capacity * 2 + 4;
         node->at = realloc(node->at, node->capacity * sizeof(Entity));
@@ -1619,7 +1619,7 @@ Entity* ffCreateEntity(Node* restrict node, SectorDescriptor* descriptor) {
  * @param flags  Field flags (@ref FieldFlags).
  * @return Pointer to the newly created field.
  */
-Field* ffCreateField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags) {
+[[nodiscard]] Field* ffCreateField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t size, uint32_t flags) {
     Field *field = malloc(sizeof(Field));
 
     field->bounds.l     = x;
@@ -1668,6 +1668,10 @@ Field* ffCreateField(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t si
     field->node[0].visible = true;
 
     auto canvas = &field->node[0].at[0];
+    /* The canvas entity is built by hand on malloc'd memory, not via
+     * ffCreateEntity — zero it so extension is NULL (ff_release_socket and
+     * ffDestroyField both inspect it) and flags/target[] are defined. */
+    memset(canvas, 0, sizeof(Entity));
 
     canvas->type = ST_CANVAS;
     canvas->parent = &field->node[0];
@@ -1745,7 +1749,7 @@ void ffDestroyField(Field* restrict field) {
  * @param size   Initial entity capacity.
  * @return Pointer to the newly created node.
  */
-static inline Node* ffCreateNode(Field* restrict field, uint32_t w, uint32_t h, size_t size) {
+[[nodiscard]] static inline Node* ffCreateNode(Field* restrict field, uint32_t w, uint32_t h, size_t size) {
 
     auto index = field->nodes;
 
@@ -1807,7 +1811,7 @@ static inline void ffPlaceNode(Field* restrict field, Node* restrict node, uint3
  * @param id     Entity UID to find (0 returns @c NULL immediately).
  * @return Pointer to the entity, or @c NULL if not found.
  */
-Entity* ff_find_entity_by_id(Field* restrict field, uint32_t id) {
+[[nodiscard]] Entity* ff_find_entity_by_id(Field* restrict field, uint32_t id) {
     if(!id) return nullptr;
 
     for(uint32_t n = 0; n < field->nodes; ++n) {
@@ -1824,14 +1828,14 @@ void ff_empty() {}
  *  @param a  Ignored.
  *  @param b  Ignored.
  */
-void ff_fuse_link(Entity*, Entity*) {}
+void ff_fuse_link([[maybe_unused]] Entity* a, [[maybe_unused]] Entity* b) {}
 
 /**
  * @brief Move an entity to new bounds, updating the foreground and stencil layers.
  * @param entity  Entity to move.
  * @param bounds  New screen-space bounding box.
  */
-void ff_move_entity(Entity* restrict entity, ltrb32u* restrict bounds) {
+void ff_move_entity(Entity* restrict entity, const ltrb32u* restrict bounds) {
     auto field = entity->parent->parent;
     ff_draw_ltrb_f(field->layer[FG], &entity->bounds, 0x0);
     if(!(entity->flags & TRANSPARENT)) {
@@ -1869,7 +1873,7 @@ void ff_set_text_data(Entity* restrict entity, const char* restrict text) {
  *  @param slider  Source slider/encoder entity.
  *  @param tbox    Target textbox entity.
  */
-static inline void ff_value_to_textbox(Entity* slider, Entity* tbox) {
+static void ff_value_to_textbox(Entity* restrict slider, Entity* restrict tbox) {
     int precision = 2;
     auto ext = (Textbox*)tbox->extension;
     char *text = ext->text;
@@ -1882,7 +1886,7 @@ static inline void ff_value_to_textbox(Entity* slider, Entity* tbox) {
  *  @param _src    Ignored source entity.
  *  @param target  Entity to mark dirty.
  */
-static inline void ff_set_repaint(Entity*, Entity* target) {
+static inline void ff_set_repaint([[maybe_unused]] Entity* restrict _src, Entity* restrict target) {
     target->repaint = true;
 }
 
@@ -1976,7 +1980,7 @@ void ff_hit_test_down(Field* restrict field, int x, int y, uint32_t button) {
  *  @param field   Target field.
  *  @param entity  Entity under the cursor (may be @c NULL).
  */
-static inline void ff_draw_debug_overlay(Field* field, Entity* entity) {
+static inline void ff_draw_debug_overlay(Field* restrict field, const Entity* restrict entity) {
     constexpr uint32_t colour = 0xFF'FF'FF'90;
     ff_frame_fill(field->layer[DO], 0);
     uint32_t voffset = 10;
@@ -2178,7 +2182,7 @@ void ff_draw_scene(Field* restrict field) {
  *  @param x       Mouse X (unused).
  *  @param y       Mouse Y (unused).
  */
-static void ff_set_checkbox(Entity* restrict entity, int, int) {
+static void ff_set_checkbox(Entity* restrict entity, [[maybe_unused]] int x, [[maybe_unused]] int y) {
     auto coarse = &entity->value[CP_COARSE];
     auto ext = (Checkbox*)entity->extension;
     if(entity->flags & RADIO) {
@@ -2227,13 +2231,13 @@ static void ff_set_slider(Entity* restrict entity, int x, int y) {
 
     if(entity->flags & VERTICAL) {
         const int dy = field->memory[SP_CURSOR_PRIOR].y - y;
-        float inverse = ext->inverse ? -1.0f : 1.0f;
+        const float inverse = ext->inverse ? -1.0f : 1.0f;
         const auto step = ext->step[CP_COARSE] * inverse;
         value = step * roundf((float)dy * v) + ext->memory[CP_COARSE];
     }
     else {
         const int dx = field->memory[SP_CURSOR_PRIOR].x - x;
-        float inverse = ext->inverse ? -1.0f : 1.0f;
+        const float inverse = ext->inverse ? -1.0f : 1.0f;
         const auto step = ext->step[CP_COARSE] * inverse;
         value = - step * roundf((float)dx * v) + ext->memory[CP_COARSE];
     }
@@ -2339,12 +2343,12 @@ static void ff_draw_slider(Entity* restrict entity) {
  *  @param x       Scroll delta X (unused).
  *  @param y       Scroll delta Y.
  */
-static void ff_scroll_slider(Entity* restrict entity, int x, int y) {
+static void ff_scroll_slider(Entity* restrict entity, [[maybe_unused]] int x, int y) {
     auto fine = &entity->value[CP_FINE];
     auto coarse = &entity->value[CP_COARSE];
     auto ext = (Slider*)entity->extension;
-    float inverse = ext->inverse ? -1.0f : 1.0f;
-    auto df = (float)y * ext->step[CP_FINE] * inverse;
+    const float inverse = ext->inverse ? -1.0f : 1.0f;
+    const auto df = (float)y * ext->step[CP_FINE] * inverse;
 
     if((*coarse + df < ext->range[1]) && (*coarse + df > ext->range[0])) {
         *fine += df;
@@ -2377,13 +2381,13 @@ static void ff_set_encoder(Entity* restrict entity, int x, int y) {
 
     if(entity->flags & VERTICAL) {
         const int dy = field->memory[SP_CURSOR_PRIOR].y - y;
-        float inverse = ext->inverse ? -1.0f : 1.0f;
+        const float inverse = ext->inverse ? -1.0f : 1.0f;
         const auto step = ext->step[CP_COARSE] * inverse;
         value = step * roundf((float)dy * v) + ext->memory[CP_COARSE];
     }
     else {
         const int dx = field->memory[SP_CURSOR_PRIOR].x - x;
-        float inverse = ext->inverse ? -1.0f : 1.0f;
+        const float inverse = ext->inverse ? -1.0f : 1.0f;
         const auto step = ext->step[CP_COARSE] * inverse;
         value = - step * roundf((float)dx * v) + ext->memory[CP_COARSE];
     }
@@ -2475,13 +2479,13 @@ static void ff_scroll_encoder(Entity* restrict entity, int x, int y) {
 
     if(entity->flags & VERTICAL) {
         const int dy = y;
-        float inverse = ext->inverse ? -1.0f : 1.0f;
+        const float inverse = ext->inverse ? -1.0f : 1.0f;
         const auto step = ext->step[CP_FINE] * inverse;
         value = step * dy + *coarse;
     }
     else {
         const int dx = y;
-        float inverse = ext->inverse ? -1.0f : 1.0f;
+        const float inverse = ext->inverse ? -1.0f : 1.0f;
         const auto step = ext->step[CP_FINE] * inverse;
         value = step * dx + *coarse;
     }
@@ -2529,9 +2533,9 @@ static void ff_draw_button(Entity* restrict entity) {
 static void ff_draw_rotary(Entity* restrict entity) {
     auto field = entity->parent->parent;
     auto ext = (Rotary*)entity->extension;
-    auto range = ext->range[1] - ext->range[0];
+    const auto range = ext->range[1] - ext->range[0];
     Sprite* spr = ext->sprite;
-    int f = ((entity->value[CP_COARSE] - ext->range[0]) / range) * spr->nframes;
+    const int f = ((entity->value[CP_COARSE] - ext->range[0]) / range) * spr->nframes;
     ff_frame_copy_at(field->layer[FG], &spr->data[f], entity->bounds.l, entity->bounds.t);
 
     entity->repaint = false;
@@ -2546,8 +2550,8 @@ static void ff_set_rotary(Entity* restrict entity, int x, int y) {
     auto field = entity->parent->parent;
     auto coarse = &entity->value[CP_COARSE];
     auto ext = (Rotary*)entity->extension;
-    int dy = roundf((field->memory[SP_CURSOR_PRIOR].y - y)/ext->step[CP_COARSE]);
-    int dx = roundf((x - field->memory[SP_CURSOR_PRIOR].x)/ext->step[CP_COARSE]);
+    const int dy = roundf((field->memory[SP_CURSOR_PRIOR].y - y)/ext->step[CP_COARSE]);
+    const int dx = roundf((x - field->memory[SP_CURSOR_PRIOR].x)/ext->step[CP_COARSE]);
 
     *coarse += (dy + dx);
 
@@ -2568,8 +2572,8 @@ static void ff_set_sprite_inf_slider(Entity* restrict entity, int x, int y) {
     auto field = entity->parent->parent;
     auto coarse = &entity->value[CP_COARSE];
     auto ext = (Rotary*)entity->extension;
-    int dy = roundf((y - field->memory[SP_CURSOR_PRIOR].y)/ext->step[CP_COARSE]);
-    int dx = roundf((field->memory[SP_CURSOR_PRIOR].x - x)/ext->step[CP_COARSE]);
+    const int dy = roundf((y - field->memory[SP_CURSOR_PRIOR].y)/ext->step[CP_COARSE]);
+    const int dx = roundf((field->memory[SP_CURSOR_PRIOR].x - x)/ext->step[CP_COARSE]);
 
     *coarse += (dy + dx);
 
@@ -2586,7 +2590,7 @@ static void ff_set_sprite_inf_slider(Entity* restrict entity, int x, int y) {
  *  @param x       Mouse X (unused).
  *  @param y       Mouse Y (unused).
  */
-static void ff_set_button(Entity* restrict entity, int, int) {
+static void ff_set_button(Entity* restrict entity, [[maybe_unused]] int x, [[maybe_unused]] int y) {
     auto coarse = &entity->value[CP_COARSE];
     if(*coarse < 0.5f) *coarse = 1.0f;
     else *coarse = 0.0f;
@@ -2598,7 +2602,7 @@ static void ff_set_button(Entity* restrict entity, int, int) {
  *  @param x       Mouse X (unused).
  *  @param y       Mouse Y (unused).
  */
-static void ff_release_button(Entity* restrict entity, int, int) {
+static void ff_release_button(Entity* restrict entity, [[maybe_unused]] int x, [[maybe_unused]] int y) {
     auto field = entity->parent->parent;
     auto pressed = field->pressed; 
     auto coarse = &pressed->value[CP_COARSE];
@@ -2645,7 +2649,7 @@ static void ff_init_socket(Entity* restrict entity) {
  *  @param x       Mouse X (unused).
  *  @param y       Mouse Y (unused).
  */
-static void ff_set_socket(Entity* restrict entity, int, int) {
+static void ff_set_socket(Entity* restrict entity, [[maybe_unused]] int x, [[maybe_unused]] int y) {
     auto coarse = &entity->value[CP_COARSE];
     if(*coarse < 0.5f) *coarse = 1.0f;
     else *coarse = 0.0f;
@@ -2658,11 +2662,11 @@ static void ff_set_socket(Entity* restrict entity, int, int) {
 static void ff_draw_socket(Entity* restrict entity) {
     auto field = entity->parent->parent;
     auto r = entity->width / 2;
-    point32u center = {
+    const point32u center = {
         .x = entity->bounds.l + r,
         .y = entity->bounds.t + r
     };
-    auto color = entity->core_type == F_CT_OUTPUT ? SOCKET_OUT : SOCKET_IN;
+    const auto color = entity->core_type == F_CT_OUTPUT ? SOCKET_OUT : SOCKET_IN;
 
     ff_draw_circle_f(field->layer[FG], center.x, center.y, r, color);
     r = entity->width / 4;
@@ -2678,17 +2682,17 @@ static void ff_draw_socket(Entity* restrict entity) {
  *  @param t  Parameter (0.0–1.0).
  *  @return Interpolated point on the curve.
  */
-static inline point ff_interpolate_bezier(point a, point b, point c, point d, float t)
+[[nodiscard]] static inline point ff_interpolate_bezier(point a, point b, point c, point d, float t) [[reproducible]]
 {
-    float ti = 1.0f - t;
-    float tsq = t * t;
-    float isq = ti * ti;
-    
-    float fa = isq * ti;
-    float fb = 3.0f * t * isq;
-    float fc = 3.0f * tsq * ti;
-    float fd = tsq * t;
-    
+    const float ti = 1.0f - t;
+    const float tsq = t * t;
+    const float isq = ti * ti;
+
+    const float fa = isq * ti;
+    const float fb = 3.0f * t * isq;
+    const float fc = 3.0f * tsq * ti;
+    const float fd = tsq * t;
+
     point o = {
         .x = fa * a.x + fb * b.x + fc * c.x + fd * d.x,
         .y = fa * a.y + fb * b.y + fc * c.y + fd * d.y
@@ -2704,7 +2708,7 @@ static inline point ff_interpolate_bezier(point a, point b, point c, point d, fl
  *  @param x       Mouse X coordinate.
  *  @param y       Mouse Y coordinate.
  */
-static void ff_drag_socket(Entity* entity, int x, int y)
+static void ff_drag_socket(Entity* restrict entity, int x, int y)
 {
     auto field = entity->parent->parent;
     auto ext = (Socket*)entity->extension;
@@ -2744,8 +2748,8 @@ static void ff_drag_socket(Entity* entity, int x, int y)
 
     point a, b, c, d;
 
-    float xo = (float)entity->bounds.l + 0.5f * (float)entity->width;
-    float yo = (float)entity->bounds.t + 0.5f * (float)entity->height;
+    const float xo = (float)entity->bounds.l + 0.5f * (float)entity->width;
+    const float yo = (float)entity->bounds.t + 0.5f * (float)entity->height;
 
     a.x = xo;
     a.y = yo;
@@ -2768,10 +2772,10 @@ static void ff_drag_socket(Entity* entity, int x, int y)
     const float inc = 1.0f / (float)(SPLINE_SEGMENTS - 1) ;
     float t = 0.0;
 
-    auto uva = ff_screen_to_uv(a.x, a.y, o->width, o->height);
-    auto uvb = ff_screen_to_uv(b.x, b.y, o->width, o->height);
-    auto uvc = ff_screen_to_uv(c.x, c.y, o->width, o->height);
-    auto uvd = ff_screen_to_uv(d.x, d.y, o->width, o->height);
+    const auto uva = ff_screen_to_uv(a.x, a.y, o->width, o->height);
+    const auto uvb = ff_screen_to_uv(b.x, b.y, o->width, o->height);
+    const auto uvc = ff_screen_to_uv(c.x, c.y, o->width, o->height);
+    const auto uvd = ff_screen_to_uv(d.x, d.y, o->width, o->height);
 
     for(uint32_t i = 0, j = 0; i < SPLINE_SEGMENTS; i++) {
         point uvp = ff_interpolate_bezier(uva, uvb, uvc, uvd, t);
@@ -2819,8 +2823,8 @@ static void ff_drag_cord(Entity* restrict entity, int x, int y)
 
     point a, b, c, d;
 
-    float xo = (float)entity->bounds.l + 0.5f * (float)entity->width;
-    float yo = (float)entity->bounds.t + 0.5f * (float)entity->height;
+    const float xo = (float)entity->bounds.l + 0.5f * (float)entity->width;
+    const float yo = (float)entity->bounds.t + 0.5f * (float)entity->height;
 
     a.x = xo;
     a.y = yo;
@@ -2843,10 +2847,10 @@ static void ff_drag_cord(Entity* restrict entity, int x, int y)
     const float inc = 1.0f / (float)(SPLINE_SEGMENTS - 1) ;
     float t = 0.0;
 
-    auto uva = ff_screen_to_uv(a.x, a.y, o->width, o->height);
-    auto uvb = ff_screen_to_uv(b.x, b.y, o->width, o->height);
-    auto uvc = ff_screen_to_uv(c.x, c.y, o->width, o->height);
-    auto uvd = ff_screen_to_uv(d.x, d.y, o->width, o->height);
+    const auto uva = ff_screen_to_uv(a.x, a.y, o->width, o->height);
+    const auto uvb = ff_screen_to_uv(b.x, b.y, o->width, o->height);
+    const auto uvc = ff_screen_to_uv(c.x, c.y, o->width, o->height);
+    const auto uvd = ff_screen_to_uv(d.x, d.y, o->width, o->height);
 
     for(uint32_t i = 0, j = 0; i < SPLINE_SEGMENTS; i++) {
         point uvp = ff_interpolate_bezier(uva, uvb, uvc, uvd, t);
@@ -2869,7 +2873,7 @@ static void ff_drag_cord(Entity* restrict entity, int x, int y)
  *  @return @c true if the connection was established, @c false if the
  *          core types are incompatible (e.g. input→input).
  */
-inline static bool ff_connect(Entity* restrict source, Entity* restrict target) {
+[[nodiscard]] inline static bool ff_connect(Entity* restrict source, Entity* restrict target) {
     auto ext_s = (Socket*)source->extension;
     auto ext_t = (Socket*)target->extension;
 
@@ -2954,6 +2958,11 @@ static void ff_release_socket(Entity* restrict entity, int x, int y) {
     if(target_nid >= field->nodes || target_uid >= field->node[target_nid].entities) return;
     auto target = &field->node[target_nid].at[target_uid];
 
+    if(target->type != ST_SOCKET) {
+        ff_disconnect(entity);
+        return;
+    }
+
     auto target_ext = (Socket*)target->extension;
     if(target_ext->connected) ff_disconnect(target);
     if(ff_connect(entity, target)) return;
@@ -2974,7 +2983,7 @@ static void ff_init_node(Entity* restrict entity) {
  *  @param x       Mouse X (unused).
  *  @param y       Mouse Y (unused).
  */
-static void ff_set_node(Entity* restrict entity, int, int) {
+static void ff_set_node(Entity* restrict entity, [[maybe_unused]] int x, [[maybe_unused]] int y) {
     entity->repaint = true;
 }
 
@@ -2982,7 +2991,7 @@ static void ff_set_node(Entity* restrict entity, int, int) {
  *  @param entity  Entity to test.
  *  @return @c true if any pixel in the entity's bounds belongs to a different node.
  */
-static inline bool ff_has_overlap(const Entity* restrict entity) {
+[[nodiscard]] static inline bool ff_has_overlap(const Entity* restrict entity) {
     auto field = entity->parent->parent;
     const auto l = field->layer[SN];
     for(uint32_t y = entity->bounds.t; y < entity->bounds.b; ++y) {
@@ -3064,7 +3073,7 @@ static void ff_drag_node(Entity* restrict entity, int x, int y)
  *  @param x       Mouse X (unused).
  *  @param y       Mouse Y (unused).
  */
-static void ff_release_node(Entity* restrict entity, int, int)
+static void ff_release_node(Entity* restrict entity, [[maybe_unused]] int x, [[maybe_unused]] int y)
 {
     auto field = entity->parent->parent;
     auto overlap = ff_has_overlap(entity);
@@ -3139,7 +3148,7 @@ static void ff_release_node(Entity* restrict entity, int, int)
 /** @brief Initialise a textbox entity (no-op — buffer is embedded in the struct).
  *  @param entity  Textbox entity (unused).
  */
-static void ff_init_textbox(Entity* restrict entity) {
+static void ff_init_textbox([[maybe_unused]] Entity* restrict entity) {
     // Text buffer is embedded in the Textbox extension, nothing to allocate
     (void)entity;
 }
@@ -3149,7 +3158,7 @@ static void ff_init_textbox(Entity* restrict entity) {
  *  @param x       Mouse X (unused).
  *  @param y       Mouse Y (unused).
  */
-static void ff_set_textbox(Entity* restrict entity, int, int) {
+static void ff_set_textbox(Entity* restrict entity, [[maybe_unused]] int x, [[maybe_unused]] int y) {
     entity->repaint = true;
 }
 
@@ -3183,7 +3192,7 @@ static void ff_draw_textbox(Entity* restrict entity) {
  *  @param vdiv    Number of major vertical divisions.
  *  @param hdiv    Number of major horizontal divisions.
  */
-static void ff_draw_graticule(Frame* frame, uint32_t colour, uint32_t vdiv, uint32_t hdiv) {
+static void ff_draw_graticule(Frame* restrict frame, uint32_t colour, uint32_t vdiv, uint32_t hdiv) {
     const float W = (float)frame->width;
     const float H = (float)frame->height;
 
@@ -3274,7 +3283,7 @@ static void ff_init_crt(Entity* restrict entity) {
  *  @param x       Mouse X (unused).
  *  @param y       Mouse Y (unused).
  */
-static void ff_set_crt(Entity* restrict entity, int, int) {
+static void ff_set_crt(Entity* restrict entity, [[maybe_unused]] int x, [[maybe_unused]] int y) {
     entity->repaint = true;
 }
 
@@ -3326,7 +3335,7 @@ static void ff_draw_canvas(Entity* restrict entity)
 /** Dispatch Tables ***********************************************************************************************************/
 
 /** @brief No-op init handler for entity types that need no initialisation. */
-static inline void ff_init_none(Entity* restrict) {}
+static inline void ff_init_none([[maybe_unused]] Entity* restrict entity) {}
 
 /**
  * @brief Dispatch table: per-type entity initialisation handlers.
@@ -3349,7 +3358,7 @@ void (*init_entity[])(Entity* restrict)  = {
 };
 
 /** @brief No-op set handler for entity types without press behaviour. */
-static inline void ff_set_none(Entity* restrict, int, int) {}
+static inline void ff_set_none([[maybe_unused]] Entity* restrict entity, [[maybe_unused]] int x, [[maybe_unused]] int y) {}
 
 /**
  * @brief Dispatch table: per-type press (mouse-down) handlers.
@@ -3392,7 +3401,7 @@ void (*draw_entity[])(Entity* restrict) = {
 };
 
 /** @brief No-op drag handler for entity types that don't support dragging. */
-static inline void ff_drag_none(Entity* restrict, int, int) {}
+static inline void ff_drag_none([[maybe_unused]] Entity* restrict entity, [[maybe_unused]] int x, [[maybe_unused]] int y) {}
 
 /**
  * @brief Dispatch table: per-type drag handlers.
@@ -3415,7 +3424,7 @@ void (*drag_entity[])(Entity* restrict, int, int) = {
 };
 
 /** @brief No-op scroll handler for entity types that don't support scroll. */
-static inline void ff_scroll_none(Entity* restrict, int, int) {}
+static inline void ff_scroll_none([[maybe_unused]] Entity* restrict entity, [[maybe_unused]] int x, [[maybe_unused]] int y) {}
 
 /**
  * @brief Dispatch table: per-type scroll (mouse wheel) handlers.
@@ -3438,7 +3447,7 @@ void (*scroll_entity[])(Entity* restrict, int, int) = {
 };
 
 /** @brief No-op hover-enter handler for entity types without hover behaviour. */
-static inline void ff_enter_none(Entity* restrict, int, int) {}
+static inline void ff_enter_none([[maybe_unused]] Entity* restrict entity, [[maybe_unused]] int x, [[maybe_unused]] int y) {}
 
 /**
  * @brief Dispatch table: per-type hover-enter handlers.
@@ -3461,7 +3470,7 @@ void (*enter_entity[])(Entity* restrict, int, int) = {
 };
 
 /** @brief No-op hover-leave handler for entity types without hover behaviour. */
-static inline void ff_leave_none(Entity* restrict, int, int) {}
+static inline void ff_leave_none([[maybe_unused]] Entity* restrict entity, [[maybe_unused]] int x, [[maybe_unused]] int y) {}
 
 /**
  * @brief Dispatch table: per-type hover-leave handlers.
@@ -3484,7 +3493,7 @@ void (*leave_entity[])(Entity* restrict, int, int) = {
 };
 
 /** @brief No-op release handler for entity types without release behaviour. */
-static inline void ff_release_none(Entity* restrict, int, int) {}
+static inline void ff_release_none([[maybe_unused]] Entity* restrict entity, [[maybe_unused]] int x, [[maybe_unused]] int y) {}
 
 /**
  * @brief Dispatch table: per-type release (mouse-up) handlers.
