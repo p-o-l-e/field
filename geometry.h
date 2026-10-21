@@ -250,6 +250,17 @@ static void     ff_frame_fill(Frame* restrict, uint32_t);
  */
 static void     ff_frame_init(Frame* restrict, uint32_t, uint32_t);
 
+/** @brief Resize a frame buffer, preserving the overlapping region.
+ *  @details Reallocates the pixel array and copies the top-left overlap row by
+ *           row; the grown area is zero-filled. The whole frame is marked
+ *           dirty so the backend re-uploads it. Resize is a rare event (field
+ *           resize), not a per-frame path, so the allocation is acceptable.
+ *  @param frame  Frame to resize.
+ *  @param w      New width in pixels.
+ *  @param h      New height in pixels.
+ */
+static void     ff_frame_resize(Frame* restrict, uint32_t, uint32_t);
+
 /** @brief Free a frame's pixel buffer.
  *  @param frame  Frame to release.
  */
@@ -555,6 +566,32 @@ static inline void ff_frame_init(Frame* restrict frame, uint32_t x, uint32_t y) 
     frame->height    = y;
     frame->data      = (uint32_t*)calloc(frame->width * frame->height , sizeof(uint32_t));
     frame->is_dirty = false;
+}
+
+/** @brief Resize a frame buffer, preserving the overlapping top-left region.
+ *  @details The new buffer is zero-initialised (calloc) and the overlap is
+ *           copied row by row, so shrinking crops and growing zero-fills.
+ *           The full frame is marked dirty so the backend re-uploads it.
+ *  @param frame  Frame to resize.
+ *  @param w      New width in pixels.
+ *  @param h      New height in pixels.
+ */
+static inline void ff_frame_resize(Frame* restrict frame, uint32_t w, uint32_t h) {
+    if(w == 0 || h == 0) return;
+    if(w == frame->width && h == frame->height) return;
+
+    uint32_t* data = (uint32_t*)calloc((size_t)w * h, sizeof(uint32_t));
+    const uint32_t copy_w = w < frame->width  ? w : frame->width;
+    const uint32_t copy_h = h < frame->height ? h : frame->height;
+    for(uint32_t y = 0; y < copy_h; ++y)
+        memcpy(data + (size_t)y * w, frame->data + (size_t)y * frame->width,
+               (size_t)copy_w * sizeof(uint32_t));
+
+    free(frame->data);
+    frame->data   = data;
+    frame->width  = w;
+    frame->height = h;
+    ff_frame_mark(frame, 0, 0, (int32_t)w - 1, (int32_t)h - 1);
 }
 
 /** @brief Free the frame's pixel buffer (does not free the Frame struct itself).

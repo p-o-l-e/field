@@ -15,6 +15,7 @@
  *
  *   typedef struct RendererContext RendererContext;
  *   static bool renderer_init(RendererContext*, GLFWwindow*, uint32_t w, uint32_t h);
+ *   static bool renderer_resize(RendererContext*, GLFWwindow*, uint32_t w, uint32_t h);
  *   static void renderer_upload_layer(RendererContext*, int layer, const uint32_t* px, uint32_t w, uint32_t h);
  *   static bool renderer_begin_frame(RendererContext*, uint32_t* image_index);
  *   static void renderer_update_layer_rect(RendererContext*, int layer, const uint32_t* px,
@@ -517,6 +518,29 @@ static GLuint link_program(const char* vs_src, const char* fs_src)
     }
     glBindTexture(GL_TEXTURE_2D, 0);
 
+    return true;
+}
+
+/* Recreate the extent-dependent GL objects for a new window size: the viewport
+ * and the layer textures (re-specified, so their content is lost — the caller
+ * re-uploads via renderer_upload_layer). Pipelines, VAOs and VBOs are
+ * size-independent and survive. */
+static bool renderer_resize(RendererContext* restrict ctx, GLFWwindow* restrict window, uint32_t width, uint32_t height)
+{
+    (void)window;
+    if (width == 0 || height == 0) return false;
+    if (width == ctx->width && height == ctx->height) return true;
+
+    glViewport(0, 0, (GLsizei)width, (GLsizei)height);
+    for (int i = 0; i < RENDERER_LAYER_COUNT; ++i) {
+        glBindTexture(GL_TEXTURE_2D, ctx->layer_textures[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)width, (GLsizei)height,
+                     0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    }
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    ctx->width  = width;
+    ctx->height = height;
     return true;
 }
 

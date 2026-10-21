@@ -219,13 +219,21 @@ typedef enum: uint32_t {
 
 } SectorFlags;
 
+/**
+ * @brief Node anchor flags — which field (window) borders a node is glued to.
+ * @details Combine with bitwise OR and assign to @ref Node::anchors. When the
+ *          field is resized (see ff_resize_field()), an anchored edge is pinned
+ *          to the corresponding window border: the node stretches between two
+ *          anchored edges or translates with a single one. NONE keeps the
+ *          node's position and size unchanged.
+ */
 typedef enum: uint32_t {
     NONE        = 0,
-    LEFT        = 1 << 0,
-    TOP         = 1 << 1,
-    RIGHT       = 1 << 2,
-    BOTTOM      = 1 << 3,
-    ALL         = LEFT | TOP | RIGHT | BOTTOM
+    LEFT        = 1 << 0,   ///< Node's left edge follows the window's left border.
+    TOP         = 1 << 1,   ///< Node's top edge follows the window's top border.
+    RIGHT       = 1 << 2,   ///< Node's right edge follows the window's right border.
+    BOTTOM      = 1 << 3,   ///< Node's bottom edge follows the window's bottom border.
+    ALL         = LEFT | TOP | RIGHT | BOTTOM   ///< Node fills the window.
 
 } ResizeFlags;
 
@@ -410,7 +418,7 @@ struct Node {
     uint32_t    height;             ///< Node height in pixels.
     uint32_t    entities;           ///< Entity count in this node.
     uint32_t    capacity;           ///< Allocated capacity of the @c at array.
-    uint32_t    anchors;
+    uint32_t    anchors;            ///< Window-border anchors (@ref ResizeFlags).
     Entity*     at;                 ///< Entity array (contiguous, index-based).
     Field*      parent;             ///< Owning field.
     Frame       buffer;             ///< Off-screen render target for child entities.
@@ -483,6 +491,27 @@ void    ffDestroyField(Field* restrict);
  *  @param y      Top position in screen coordinates.
  */
 static void  ffPlaceNode(Field* restrict, Node* restrict, uint32_t, uint32_t);
+
+/** @brief Resize the field to new dimensions and re-anchor its nodes.
+ *  @details Resizes every render layer (and the root canvas buffer) to the new
+ *           size, then resizes/moves every visible node whose
+ *           @ref Node::anchors is not NONE so its anchored edges sit on the
+ *           corresponding window borders. Called when the window is resized.
+ *  @param field  Field to resize.
+ *  @param w      New width in pixels.
+ *  @param h      New height in pixels.
+ */
+void    ff_resize_field(Field* restrict, uint32_t, uint32_t);
+
+/** @brief Resize/move a node so its anchored edges sit on the field borders.
+ *  @details Computes the node's new screen rectangle from @ref Node::anchors
+ *           and the field bounds, then resizes the node's buffers and
+ *           stencils and translates its child entities. Anchored edges are
+ *           glued to their borders; the opposite edge keeps the node's size.
+ *  @param field  Owning field.
+ *  @param node   Node to re-anchor (must be visible and have an ST_NODE entity).
+ */
+static void ff_anchor_node(Field* restrict, Node* restrict);
 
 /** @brief Find an entity by its unique ID across all nodes.
  *  @param field  Field to search.
@@ -826,6 +855,7 @@ extern void (*release_entity[])(Entity* restrict, int, int); ///< Per-type relea
     for(uint32_t i = 0; i < field->node[0].capacity; i++) field->node[0].at[i].index = i;
     field->node[0].index = 0;
     field->node[0].visible = true;
+    field->node[0].anchors = NONE;
 
     auto canvas = &field->node[0].at[0];
     /* The canvas entity is built by hand on malloc'd memory, not via
@@ -894,8 +924,12 @@ void ffDestroyField(Field* restrict field) {
             free(s->extension);
         }
         free(field->node[n].at);
+        /* The node-local stencil buffer (resized by ff_anchor_node) is owned
+         * by the node — release it here. */
+        ff_frame_flush(&field->node[n].buffer);
     }
     free(field->node);
+    free(field);
 }
 
 
@@ -925,6 +959,7 @@ void ffDestroyField(Field* restrict field) {
     field->node[index].parent = field;
     field->node[index].index = index;
     field->node[index].visible = false;
+    field->node[index].anchors = NONE;
     
     field->node[index].at = malloc(size * sizeof(Entity));
     ff_frame_init(&field->node[index].buffer,  w, h);
@@ -961,6 +996,10 @@ static inline void ffPlaceNode(Field* restrict field, Node* restrict node, uint3
         node->at[i].repaint = true;
     }
     field->repaint = true;
+
+    /* Anchored nodes snap to the window borders immediately at placement. */
+    if(node->anchors != NONE)
+        ff_anchor_node(field, node);
 }
 
 /** Entity Utility ************************************************************************************************************/
@@ -2307,6 +2346,200 @@ static void ff_release_node(Entity* restrict entity, [[maybe_unused]] int x, [[m
     /* SN changed (node committed or snapped back) — redraw the canvas grid. */
     field->node[0].at[0].repaint = true;
     entity->repaint = true;
+    field->repaint = true;
+}
+
+/** Field Resize / Anchoring **************************************************************************************************/
+
+/**
+ * @brief Resize/move a node so its anchored edges sit on the field borders.
+ * @details The node's screen rectangle is the bounds of its ST_NODE (frame)
+ *          entity. Anchor semantics: an anchored edge is glued to its window
+ *          border; the opposite edge keeps the node's size. A node therefore
+ *          stretches only between two opposing anchors (e.g. a menu bar with
+ *          LEFT|RIGHT|TOP spans the window but keeps its height) and
+ *          translates when a single edge is anchored (a RIGHT-anchored panel
+ *          sticks to the right border without growing). Axes without any
+ *          anchor keep the node's position and size.
+ *          The node's local layout is unchanged — only the frame grows or the
+ *          whole node translates — so child entities keep their positions
+ *          relative to the node and are translated by the move delta.
+ *          Stencil layers (SN/SC) and the visible layers (NG/TL/FG) are
+ *          repaired over the union of the old and new rectangles.
+ * @param field  Owning field.
+ * @param node   Node to re-anchor (visible, with an ST_NODE entity).
+ */
+static void ff_anchor_node(Field* restrict field, Node* restrict node) {
+    /* The ST_NODE (frame) entity's bounds are the node's screen rectangle. */
+    Entity* frame_entity = nullptr;
+    for(uint32_t i = 0; i < node->entities; ++i) {
+        if(node->at[i].type == ST_NODE) {
+            frame_entity = &node->at[i];
+            break;
+        }
+    }
+    if(!frame_entity) return;
+
+    const uint32_t a = node->anchors;
+    const ltrb32u old = frame_entity->bounds;
+
+    /* Anchored edge → glued to its border; opposite edge → keeps the node's
+     * size. 64-bit intermediates keep a shrink from wrapping the unsigned
+     * screen coordinates. */
+    const uint32_t w = old.r - old.l;
+    const uint32_t h = old.b - old.t;
+
+    int64_t nl = old.l;
+    int64_t nr = old.r;
+    if (a & LEFT)       nl = field->bounds.l;
+    else if (a & RIGHT) nl = (int64_t)field->bounds.r - (int64_t)w;
+    if (a & RIGHT)      nr = field->bounds.r;
+    else if (a & LEFT)  nr = (int64_t)field->bounds.l + (int64_t)w;
+
+    int64_t nt = old.t;
+    int64_t nb = old.b;
+    if (a & TOP)         nt = field->bounds.t;
+    else if (a & BOTTOM) nt = (int64_t)field->bounds.b - (int64_t)h;
+    if (a & BOTTOM)      nb = field->bounds.b;
+    else if (a & TOP)    nb = (int64_t)field->bounds.t + (int64_t)h;
+
+    /* Anchored axes stay inside the field and non-empty (a node wider/taller
+     * than the window is cropped to it). Free axes are not clamped — a shrink
+     * may leave the node offscreen, which the bounds-checked draw/stencil
+     * primitives handle safely. */
+    if (a & (LEFT | RIGHT)) {
+        if (nl < (int64_t)field->bounds.l) nl = field->bounds.l;
+        if (nr > (int64_t)field->bounds.r) nr = field->bounds.r;
+        if (nr <= nl) nr = nl + 1;
+    }
+    if (a & (TOP | BOTTOM)) {
+        if (nt < (int64_t)field->bounds.t) nt = field->bounds.t;
+        if (nb > (int64_t)field->bounds.b) nb = field->bounds.b;
+        if (nb <= nt) nb = nt + 1;
+    }
+
+    const ltrb32u rect = {
+        .l = (uint32_t)nl,
+        .t = (uint32_t)nt,
+        .r = (uint32_t)nr,
+        .b = (uint32_t)nb,
+    };
+    if(rect.l == old.l && rect.t == old.t && rect.r == old.r && rect.b == old.b) return;
+
+    const uint32_t new_w = rect.r - rect.l;
+    const uint32_t new_h = rect.b - rect.t;
+    const int32_t dx = (int32_t)rect.l - (int32_t)old.l;
+    const int32_t dy = (int32_t)rect.t - (int32_t)old.t;
+    const bool moved = dx != 0 || dy != 0;
+
+    /* Union of old and new rectangles — cleared in every layer so no stale
+     * pixels survive the resize/move. BG is fully redrawn via the canvas. */
+    const ltrb32u uni = {
+        .l = old.l < rect.l ? old.l : rect.l,
+        .t = old.t < rect.t ? old.t : rect.t,
+        .r = old.r > rect.r ? old.r : rect.r,
+        .b = old.b > rect.b ? old.b : rect.b,
+    };
+    ff_draw_ltrb_f(field->layer[NG], &uni, 0x0);
+    ff_draw_ltrb_f(field->layer[TL], &uni, 0x0);
+    ff_draw_ltrb_f(field->layer[FG], &uni, 0x0);
+    ff_draw_ltrb_f(field->layer[SC], &uni, 0x0);
+    ff_draw_ltrb_f(field->layer[SN], &uni, 0x0);
+    if(field->staging)
+        ff_draw_ltrb_f(field->layer[ST], &uni, 0x0);
+
+    /* Resize the node's local stencil buffer (entity indices are node-local and
+     * unaffected by the resize) and the frame entity's own buffer. */
+    ff_frame_resize(&node->buffer, new_w, new_h);
+    auto frame_ext = (EntityNode*)frame_entity->extension;
+    if(frame_ext && frame_ext->frame)
+        ff_frame_resize(frame_ext->frame, new_w, new_h);
+
+    node->width  = new_w;
+    node->height = new_h;
+
+    /* Stencils: node id over the new rectangle, entity ids re-copied from the
+     * resized local buffer (covers both the moved and grown/shrunk cases). */
+    ff_draw_ltrb_f(field->layer[SN], &rect, node->index);
+    ff_frame_copy_at(field->layer[SC], &node->buffer, rect.l, rect.t);
+
+    /* The frame entity takes the new rectangle; children follow the delta. */
+    frame_entity->bounds  = rect;
+    frame_entity->width   = new_w;
+    frame_entity->height  = new_h;
+    frame_entity->repaint = true;
+
+    for(uint32_t i = 0; i < node->entities; ++i) {
+        auto child = &node->at[i];
+        if(child == frame_entity) continue;
+
+        if(moved) {
+            child->bounds.l = (uint32_t)((int64_t)child->bounds.l + dx);
+            child->bounds.t = (uint32_t)((int64_t)child->bounds.t + dy);
+            child->bounds.r = (uint32_t)((int64_t)child->bounds.r + dx);
+            child->bounds.b = (uint32_t)((int64_t)child->bounds.b + dy);
+
+            /* Sockets moved with the node — re-drag their cords. */
+            if(child->type == ST_SOCKET) {
+                auto child_ext = (Socket*)child->extension;
+                if(child_ext->connected) {
+                    auto target = child_ext->connection;
+                    auto target_ext = (Socket*)target->extension;
+                    if(child_ext->has_data)
+                        ff_drag_cord(child, target->bounds.l + target->width / 2,
+                                     target->bounds.t + target->height / 2);
+                    else if(target_ext->has_data)
+                        ff_drag_cord(target, child->bounds.l + child->width / 2,
+                                     child->bounds.t + child->height / 2);
+                }
+            }
+        }
+        child->repaint = true;
+    }
+
+    /* SN changed — the canvas grid is drawn around node areas and must be
+     * redrawn (same as ffPlaceNode / ff_release_node). */
+    field->node[0].at[0].repaint = true;
+    field->repaint = true;
+}
+
+/**
+ * @brief Resize the field to new dimensions and re-anchor its nodes.
+ * @details Resizes every render layer and the root canvas buffer (content is
+ *          preserved, grown area cleared), then re-anchors every visible node
+ *          with @ref Node::anchors != NONE to the new window borders. All
+ *          entities are marked for repaint and every layer is fully dirty, so
+ *          the backend re-uploads it. Resize is a rare event — the reallocs
+ *          here are not on the per-frame path.
+ * @param field  Field to resize.
+ * @param w      New width in pixels (0 is ignored).
+ * @param h      New height in pixels (0 is ignored).
+ */
+void ff_resize_field(Field* restrict field, uint32_t w, uint32_t h) {
+    if(w == 0 || h == 0) return;
+
+    field->width     = w;
+    field->height    = h;
+    field->bounds.r  = field->bounds.l + w;
+    field->bounds.b  = field->bounds.t + h;
+
+    for(uint32_t i = 0; i < CC; ++i)
+        ff_frame_resize(field->layer[i], w, h);
+    ff_frame_resize(&field->node[0].buffer, w, h);
+
+    /* Node 0 is the root canvas — never anchored. */
+    for(uint32_t n = 1; n < field->nodes; ++n) {
+        if(!field->node[n].visible) continue;
+        if(field->node[n].anchors == NONE) continue;
+        ff_anchor_node(field, &field->node[n]);
+    }
+
+    /* Everything redraws: canvas grid, node frames, and all entities. */
+    for(uint32_t n = 0; n < field->nodes; ++n) {
+        if(!field->node[n].visible) continue;
+        for(uint32_t i = 0; i < field->node[n].entities; ++i)
+            field->node[n].at[i].repaint = true;
+    }
     field->repaint = true;
 }
 

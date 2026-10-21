@@ -87,6 +87,13 @@ pthread_barrier_t _exit_barrier;
 pthread_cond_t _repaint_condition;
 pthread_cond_t _escape_condition;
 
+/* Pending window resize — recorded by framebuffer_size_callback on the event
+ * thread and applied by the draw thread (the only thread that touches the
+ * renderer, so no GPU object is recreated mid-frame). A zero width means
+ * "no resize pending". */
+static atomic_uint _pending_width  = 0;
+static atomic_uint _pending_height = 0;
+
 /******************************************************************************************************************************
  * GLFW callbacks (shared across backends)
  ******************************************************************************************************************************/
@@ -95,14 +102,28 @@ static RendererContext g_renderer;
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
-    (void)window; (void)width; (void)height;
-    /* Fixed-size window; resize handling would go here */
+    (void)window;
+    /* Minimised windows report 0x0 — keep the last valid size. */
+    if (width <= 0 || height <= 0) return;
+
+    printf("[resize-cb] framebuffer %dx%d\n", width, height); /* DIAGNOSTIC */
+    pthread_mutex_lock(&_screen_lock);
+    atomic_store(&_pending_width, (uint32_t)width);
+    atomic_store(&_pending_height, (uint32_t)height);
+    pthread_cond_signal(&_repaint_condition);
+    pthread_mutex_unlock(&_screen_lock);
 }
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
     Field* context = (Field*)glfwGetWindowUserPointer(window);
 
+    /* Input callbacks run on the event thread and read/mutate field state
+     * (stencil hit tests, entity values). They take _screen_lock so they
+     * serialize with the draw thread's ff_resize_field, which frees and
+     * reallocates the layer buffers those hit tests read — without this, a
+     * scroll event racing a resize reads a freed stencil buffer. */
+    pthread_mutex_lock(&_screen_lock);
     double x, y;
     glfwGetCursorPos(window, &x, &y);
     ff_hit_test(context, (int)x, (int)y);
@@ -113,22 +134,28 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
         scroll_entity[context->node[cn].at[ce].type](&context->node[cn].at[ce], (int)xoffset, (int)yoffset);
     }
     context->current[IP_ENTITY] = 0;
+    pthread_mutex_unlock(&_screen_lock);
 }
 
 static void cursor_position_callback(GLFWwindow* window, double x, double y)
 {
     Field* context = (Field*)glfwGetWindowUserPointer(window);
 
+    /* See scroll_callback: serialize with ff_resize_field on the draw thread. */
+    pthread_mutex_lock(&_screen_lock);
     if(context->drag)
         ff_hit_test_drag(context, (int)x, (int)y);
     else
         ff_hit_test(context, (int)x, (int)y);
+    pthread_mutex_unlock(&_screen_lock);
 }
 
 void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mods*/)
 {
     Field* context = (Field*)glfwGetWindowUserPointer(window);
 
+    /* See scroll_callback: serialize with ff_resize_field on the draw thread. */
+    pthread_mutex_lock(&_screen_lock);
     switch(button)
     {
         case GLFW_MOUSE_BUTTON_LEFT:
@@ -178,6 +205,7 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int/* mod
         break;
 
     }
+    pthread_mutex_unlock(&_screen_lock);
 }
 
 static void error_callback(int error, const char* description)
@@ -239,7 +267,7 @@ void* draw_field(void* arg)
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 #endif
 
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
     glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
     glfwWindowHint(GLFW_SAMPLES, 0);
@@ -258,7 +286,9 @@ void* draw_field(void* arg)
         glfwTerminate();
         exit(EXIT_FAILURE);
     }
-    glfwSetWindowSizeLimits(window, context->layer[FG]->width, context->layer[FG]->height, context->layer[FG]->width, context->layer[FG]->height);
+    /* Minimum size only — the window is freely resizable; anchored nodes
+     * follow the window borders (see ff_resize_field). */
+    glfwSetWindowSizeLimits(window, 320, 240, GLFW_DONT_CARE, GLFW_DONT_CARE);
     glfwSetWindowSize(window, context->layer[FG]->width, context->layer[FG]->height);
 
     glfwSetWindowUserPointer(window, context);
@@ -300,8 +330,65 @@ void* draw_field(void* arg)
     pthread_barrier_wait(&_init_barrier);
     printf("GLFW Initialized...\n");
 
+    struct timespec loop_start;
+    clock_gettime(CLOCK_MONOTONIC, &loop_start);
+
     while (_window_on)
     {
+        /* DIAGNOSTIC HOOK — not for production: LOOM_TEST_RESIZE1/2 hold
+         * "WxH@SEC" (seconds after this loop starts). When the loop has been
+         * running SEC seconds the window is resized via glfwSetWindowSize,
+         * called on GLFW's main thread (this draw thread). The resulting
+         * ConfigureNotify drives the same framebuffer_size_callback ->
+         * ff_resize_field path as a WM resize. Used to reproduce resize
+         * behaviour without a window manager.
+         * LOOM_TEST_BURST="WxH@SEC:COUNT" additionally fires one resize per
+         * loop iteration for COUNT iterations, alternating WxH with the
+         * startup size — mimics a continuous WM resize drag. */
+        static bool hook_init = false;
+        static bool done1 = false, done2 = false;
+        static long at1 = -1, at2 = -1;
+        static unsigned rw1, rh1, rw2, rh2;
+        static long burst_at = -1;
+        static int  burst_count = 0, burst_left = 0;
+        static unsigned bw, bh;
+        static bool burst_armed = false;
+        if (!hook_init) {
+            hook_init = true;
+            const char* s1 = getenv("LOOM_TEST_RESIZE1");
+            const char* s2 = getenv("LOOM_TEST_RESIZE2");
+            const char* sb = getenv("LOOM_TEST_BURST");
+            if (s1) sscanf(s1, "%ux%u@%ld", &rw1, &rh1, &at1);
+            if (s2) sscanf(s2, "%ux%u@%ld", &rw2, &rh2, &at2);
+            if (sb) sscanf(sb, "%ux%u@%ld:%d", &bw, &bh, &burst_at, &burst_count);
+        }
+        if (at1 >= 0 || at2 >= 0 || burst_at >= 0) {
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            const long elapsed = now.tv_sec - loop_start.tv_sec;
+            if (!done1 && at1 >= 0 && elapsed >= at1) {
+                done1 = true;
+                printf("[test-resize] glfwSetWindowSize %ux%u after %lds\n", rw1, rh1, elapsed);
+                glfwSetWindowSize(window, (int)rw1, (int)rh1);
+            }
+            if (!done2 && at2 >= 0 && elapsed >= at2) {
+                done2 = true;
+                printf("[test-resize] glfwSetWindowSize %ux%u after %lds\n", rw2, rh2, elapsed);
+                glfwSetWindowSize(window, (int)rw2, (int)rh2);
+            }
+            if (!burst_armed && burst_at >= 0 && elapsed >= burst_at) {
+                burst_armed = true;
+                burst_left = burst_count;
+            }
+            if (burst_left > 0) {
+                if (burst_left & 1)
+                    glfwSetWindowSize(window, (int)bw, (int)bh);
+                else
+                    glfwSetWindowSize(window, 1280, 720); /* main.c startup size */
+                --burst_left;
+            }
+        }
+
         /* When the Oscillograph has valid streaming data, wake at its configured
          * frame rate instead of blocking indefinitely. */
         Oscillograph* osc = nullptr;
@@ -322,6 +409,48 @@ void* draw_field(void* arg)
             pthread_cond_wait(&_repaint_condition, &_screen_lock);
         }
         pthread_mutex_unlock(&_screen_lock);
+
+        /* Apply a pending window resize (recorded by the event thread) before
+         * anything renders: resize the field and its anchored nodes, recreate
+         * the renderer's extent-dependent objects, and re-upload all layers
+         * (fresh textures need a full upload before the per-frame dirty-rect
+         * path can update them). The pending flag is claimed under
+         * _screen_lock — the same lock the callback holds while recording —
+         * so a resize arriving mid-check is never lost. The resize itself
+         * runs outside the lock. */
+        uint32_t rw = 0, rh = 0;
+        pthread_mutex_lock(&_screen_lock);
+        if (atomic_load(&_pending_width)) {
+            rw = atomic_load(&_pending_width);
+            rh = atomic_load(&_pending_height);
+            atomic_store(&_pending_width, 0);
+            /* Apply the field resize under _screen_lock: ff_resize_field frees
+             * and reallocates the layer buffers and rewrites entity bounds and
+             * stencils, all of which the event thread's input callbacks read
+             * (stencil hit tests). Without this serialization a cursor/scroll/
+             * click event racing the resize reads a freed stencil buffer
+             * (use-after-free). The GPU-side resize and re-upload stay outside
+             * the lock — the event thread never touches renderer objects. */
+            printf("[resize] applying %ux%u\n", rw, rh); /* DIAGNOSTIC */
+            ff_resize_field(context, rw, rh);
+        }
+        pthread_mutex_unlock(&_screen_lock);
+
+        if (rw) {
+            const bool rok = renderer_resize(&g_renderer, window, rw, rh);
+            printf("[resize] renderer_resize=%d\n", (int)rok); /* DIAGNOSTIC */
+            if (rok) {
+                renderer_upload_layer(&g_renderer, R_LAYER_BG, context->layer[BG]->data, rw, rh);
+                renderer_upload_layer(&g_renderer, R_LAYER_NG, context->layer[NG]->data, rw, rh);
+                renderer_upload_layer(&g_renderer, R_LAYER_FG, context->layer[FG]->data, rw, rh);
+                renderer_upload_layer(&g_renderer, R_LAYER_TL, context->layer[TL]->data, rw, rh);
+                renderer_upload_layer(&g_renderer, R_LAYER_ST, context->layer[ST]->data, rw, rh);
+                #ifdef DEBUG_OVERLAY
+                    renderer_upload_layer(&g_renderer, R_LAYER_DO, context->layer[DO]->data, rw, rh);
+                #endif
+            }
+            context->repaint = true;
+        }
 
         #ifdef DEBUG_OVERLAY
             if(atomic_load(&force_repaint)) context->repaint = true;

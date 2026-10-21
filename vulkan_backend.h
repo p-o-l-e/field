@@ -315,6 +315,222 @@ static bool vk_create_buffer(VkDevice device, VkPhysicalDevice phys,
 }
 
 /******************************************************************************************************************************
+ * Swapchain (re)creation — swapchain, image views, MSAA attachments,
+ * framebuffers. All extent-dependent objects live here, split from
+ * renderer_init so renderer_resize can tear them down and recreate them at a
+ * new window size. The render pass and pipelines are extent-independent and
+ * survive a resize.
+ ******************************************************************************************************************************/
+
+/* Destroy every swapchain-dependent object (no-op when there is none). */
+static void vk_destroy_swapchain_objects(RendererContext* restrict ctx)
+{
+    if (ctx->swapchain == VK_NULL_HANDLE) return;
+    vkDeviceWaitIdle(ctx->device);
+
+    for (uint32_t i = 0; i < ctx->swapchain_image_count; ++i) {
+        vkDestroyFramebuffer(ctx->device, ctx->framebuffers[i], nullptr);
+        vkDestroyImageView(ctx->device, ctx->swapchain_views[i], nullptr);
+        if (ctx->msaa_views) {
+            vkDestroyImageView(ctx->device, ctx->msaa_views[i], nullptr);
+            vkDestroyImage(ctx->device, ctx->msaa_images[i], nullptr);
+            vkFreeMemory(ctx->device, ctx->msaa_memories[i], nullptr);
+        }
+    }
+    free(ctx->framebuffers);     ctx->framebuffers     = nullptr;
+    free(ctx->swapchain_views);  ctx->swapchain_views  = nullptr;
+    free(ctx->swapchain_images); ctx->swapchain_images = nullptr;
+    free(ctx->msaa_views);       ctx->msaa_views       = nullptr;
+    free(ctx->msaa_images);      ctx->msaa_images      = nullptr;
+    free(ctx->msaa_memories);    ctx->msaa_memories    = nullptr;
+
+    vkDestroySwapchainKHR(ctx->device, ctx->swapchain, nullptr);
+    ctx->swapchain = VK_NULL_HANDLE;
+    ctx->swapchain_image_count = 0;
+}
+
+/* Create the swapchain, its image views, and the per-image MSAA attachments.
+ * The requested extent is overridden by the surface's currentExtent when the
+ * compositor reports one, otherwise clamped to the supported range.
+ * Requires ctx->msaa_samples to be set (done once in renderer_init). */
+[[nodiscard]] static bool vk_create_swapchain(RendererContext* restrict ctx, VkExtent2D extent)
+{
+    /* Format / present mode from the surface. The extent output is ignored —
+     * the requested extent is reconciled with the surface caps below. */
+    VkSurfaceFormatKHR surf_format;
+    VkPresentModeKHR present_mode;
+    VkExtent2D queried;
+    if (!vk_query_swapchain_support(ctx->physical_device, ctx->surface,
+                                    &surf_format, &present_mode, &queried)) {
+        fprintf(stderr, "[Vulkan] Swapchain not supported\n");
+        return false;
+    }
+    ctx->swapchain_format = surf_format.format;
+
+    VkSurfaceCapabilitiesKHR caps;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(ctx->physical_device, ctx->surface, &caps);
+    if (caps.currentExtent.width != UINT32_MAX) {
+        extent = caps.currentExtent;
+    } else {
+        if (extent.width  < caps.minImageExtent.width)  extent.width  = caps.minImageExtent.width;
+        if (extent.height < caps.minImageExtent.height) extent.height = caps.minImageExtent.height;
+        if (extent.width  > caps.maxImageExtent.width)  extent.width  = caps.maxImageExtent.width;
+        if (extent.height > caps.maxImageExtent.height) extent.height = caps.maxImageExtent.height;
+    }
+    ctx->swapchain_extent = extent;
+
+    uint32_t image_count = 3; /* triple buffering if available */
+    if (caps.maxImageCount > 0 && image_count > caps.maxImageCount)
+        image_count = caps.maxImageCount;
+    if (image_count < caps.minImageCount)
+        image_count = caps.minImageCount;
+
+    uint32_t unique_families[2] = { ctx->graphics_family, ctx->present_family };
+    VkSwapchainCreateInfoKHR swap_info = {
+        .sType            = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .surface          = ctx->surface,
+        .minImageCount    = image_count,
+        .imageFormat      = surf_format.format,
+        .imageColorSpace  = surf_format.colorSpace,
+        .imageExtent      = extent,
+        .imageArrayLayers = 1,
+        .imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageSharingMode = (ctx->graphics_family == ctx->present_family)
+                              ? VK_SHARING_MODE_EXCLUSIVE : VK_SHARING_MODE_CONCURRENT,
+        .queueFamilyIndexCount = (ctx->graphics_family == ctx->present_family) ? 0 : 2,
+        .pQueueFamilyIndices   = (ctx->graphics_family == ctx->present_family) ? nullptr : unique_families,
+        .preTransform   = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
+        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .presentMode    = present_mode,
+        .clipped        = VK_TRUE,
+        .oldSwapchain   = VK_NULL_HANDLE,
+    };
+
+    if (vkCreateSwapchainKHR(ctx->device, &swap_info, nullptr, &ctx->swapchain) != VK_SUCCESS) {
+        fprintf(stderr, "[Vulkan] Failed to create swapchain\n");
+        return false;
+    }
+
+    vkGetSwapchainImagesKHR(ctx->device, ctx->swapchain, &ctx->swapchain_image_count, nullptr);
+    ctx->swapchain_images = malloc(ctx->swapchain_image_count * sizeof(VkImage));
+    vkGetSwapchainImagesKHR(ctx->device, ctx->swapchain, &ctx->swapchain_image_count, ctx->swapchain_images);
+
+    /* Create swapchain image views */
+    ctx->swapchain_views = malloc(ctx->swapchain_image_count * sizeof(VkImageView));
+    for (uint32_t i = 0; i < ctx->swapchain_image_count; ++i) {
+        VkImageViewCreateInfo view_info = {
+            .sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image    = ctx->swapchain_images[i],
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format   = ctx->swapchain_format,
+            .subresourceRange = {
+                .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel   = 0,
+                .levelCount     = 1,
+                .baseArrayLayer = 0,
+                .layerCount     = 1,
+            },
+        };
+        vkCreateImageView(ctx->device, &view_info, nullptr, &ctx->swapchain_views[i]);
+    }
+
+    /* MSAA color attachments (one per swapchain image) at the new extent. */
+    if (ctx->msaa_samples != VK_SAMPLE_COUNT_1_BIT) {
+        ctx->msaa_images   = malloc(ctx->swapchain_image_count * sizeof(VkImage));
+        ctx->msaa_memories = malloc(ctx->swapchain_image_count * sizeof(VkDeviceMemory));
+        ctx->msaa_views    = malloc(ctx->swapchain_image_count * sizeof(VkImageView));
+        for (uint32_t i = 0; i < ctx->swapchain_image_count; ++i) {
+            VkImageCreateInfo img_info = {
+                .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                .imageType     = VK_IMAGE_TYPE_2D,
+                .format        = ctx->swapchain_format,
+                .extent        = { extent.width, extent.height, 1 },
+                .mipLevels     = 1,
+                .arrayLayers   = 1,
+                .samples       = ctx->msaa_samples,
+                .tiling        = VK_IMAGE_TILING_OPTIMAL,
+                .usage         = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                .sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
+                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            };
+            if (vkCreateImage(ctx->device, &img_info, nullptr, &ctx->msaa_images[i]) != VK_SUCCESS) {
+                fprintf(stderr, "[Vulkan] Failed to create MSAA color image\n");
+                return false;
+            }
+
+            VkMemoryRequirements mem_reqs;
+            vkGetImageMemoryRequirements(ctx->device, ctx->msaa_images[i], &mem_reqs);
+            VkMemoryAllocateInfo alloc_info = {
+                .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                .allocationSize  = mem_reqs.size,
+                .memoryTypeIndex = vk_find_memory_type(ctx->physical_device,
+                                                        mem_reqs.memoryTypeBits,
+                                                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+            };
+            if (alloc_info.memoryTypeIndex == UINT32_MAX) return false;
+            if (vkAllocateMemory(ctx->device, &alloc_info, nullptr, &ctx->msaa_memories[i]) != VK_SUCCESS) {
+                fprintf(stderr, "[Vulkan] Failed to allocate MSAA image memory\n");
+                return false;
+            }
+            vkBindImageMemory(ctx->device, ctx->msaa_images[i], ctx->msaa_memories[i], 0);
+
+            VkImageViewCreateInfo view_info = {
+                .sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .image    = ctx->msaa_images[i],
+                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                .format   = ctx->swapchain_format,
+                .subresourceRange = {
+                    .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel   = 0,
+                    .levelCount     = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount     = 1,
+                },
+            };
+            if (vkCreateImageView(ctx->device, &view_info, nullptr, &ctx->msaa_views[i]) != VK_SUCCESS) {
+                fprintf(stderr, "[Vulkan] Failed to create MSAA image view\n");
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+/* (Re)create one framebuffer per swapchain image (MSAA resolve + swapchain
+ * image). Requires the render pass to exist. Destroys previous framebuffers. */
+static void vk_create_framebuffers(RendererContext* restrict ctx)
+{
+    vkDeviceWaitIdle(ctx->device);
+
+    if (ctx->framebuffers) {
+        for (uint32_t i = 0; i < ctx->swapchain_image_count; ++i)
+            vkDestroyFramebuffer(ctx->device, ctx->framebuffers[i], nullptr);
+        free(ctx->framebuffers);
+        ctx->framebuffers = nullptr;
+    }
+
+    const bool msaa = ctx->msaa_samples != VK_SAMPLE_COUNT_1_BIT;
+    ctx->framebuffers = malloc(ctx->swapchain_image_count * sizeof(VkFramebuffer));
+    for (uint32_t i = 0; i < ctx->swapchain_image_count; ++i) {
+        VkImageView fb_attachments[2] = {
+            msaa ? ctx->msaa_views[i] : ctx->swapchain_views[i],
+            ctx->swapchain_views[i],
+        };
+        VkFramebufferCreateInfo fb_info = {
+            .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .renderPass      = ctx->render_pass,
+            .attachmentCount = msaa ? 2u : 1u,
+            .pAttachments    = fb_attachments,
+            .width           = ctx->swapchain_extent.width,
+            .height          = ctx->swapchain_extent.height,
+            .layers          = 1,
+        };
+        vkCreateFramebuffer(ctx->device, &fb_info, nullptr, &ctx->framebuffers[i]);
+    }
+}
+
+/******************************************************************************************************************************
  * Layer texture creation — one VkImage per Frame layer.
  ******************************************************************************************************************************/
 
@@ -734,76 +950,6 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
     vkGetDeviceQueue(ctx->device, ctx->graphics_family, 0, &ctx->graphics_queue);
     vkGetDeviceQueue(ctx->device, ctx->present_family, 0, &ctx->present_queue);
 
-    /* --- Swapchain --- */
-    VkSurfaceFormatKHR surf_format;
-    VkPresentModeKHR present_mode;
-    VkExtent2D extent;
-    if (!vk_query_swapchain_support(ctx->physical_device, ctx->surface,
-                                     &surf_format, &present_mode, &extent)) {
-        fprintf(stderr, "[Vulkan] Swapchain not supported\n");
-        return false;
-    }
-    ctx->swapchain_format = surf_format.format;
-    ctx->swapchain_extent = extent;
-
-    uint32_t image_count = 3; /* triple buffering if available */
-    {
-        VkSurfaceCapabilitiesKHR caps;
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(ctx->physical_device, ctx->surface, &caps);
-        if (caps.maxImageCount > 0 && image_count > caps.maxImageCount)
-            image_count = caps.maxImageCount;
-        if (image_count < caps.minImageCount)
-            image_count = caps.minImageCount;
-    }
-
-    VkSwapchainCreateInfoKHR swap_info = {
-        .sType            = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-        .surface          = ctx->surface,
-        .minImageCount    = image_count,
-        .imageFormat      = surf_format.format,
-        .imageColorSpace  = surf_format.colorSpace,
-        .imageExtent      = extent,
-        .imageArrayLayers = 1,
-        .imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        .imageSharingMode = (ctx->graphics_family == ctx->present_family)
-                              ? VK_SHARING_MODE_EXCLUSIVE : VK_SHARING_MODE_CONCURRENT,
-        .queueFamilyIndexCount = (ctx->graphics_family == ctx->present_family) ? 0 : 2,
-        .pQueueFamilyIndices   = (ctx->graphics_family == ctx->present_family) ? nullptr : unique_families,
-        .preTransform   = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
-        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode    = present_mode,
-        .clipped        = VK_TRUE,
-        .oldSwapchain   = VK_NULL_HANDLE,
-    };
-
-    if (vkCreateSwapchainKHR(ctx->device, &swap_info, nullptr, &ctx->swapchain) != VK_SUCCESS) {
-        fprintf(stderr, "[Vulkan] Failed to create swapchain\n");
-        return false;
-    }
-
-    vkGetSwapchainImagesKHR(ctx->device, ctx->swapchain, &ctx->swapchain_image_count, nullptr);
-    ctx->swapchain_images = malloc(ctx->swapchain_image_count * sizeof(VkImage));
-    vkGetSwapchainImagesKHR(ctx->device, ctx->swapchain, &ctx->swapchain_image_count, ctx->swapchain_images);
-
-    /* Create swapchain image views */
-    ctx->swapchain_views = malloc(ctx->swapchain_image_count * sizeof(VkImageView));
-    for (uint32_t i = 0; i < ctx->swapchain_image_count; ++i) {
-        VkImageViewCreateInfo view_info = {
-            .sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .image    = ctx->swapchain_images[i],
-            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format   = ctx->swapchain_format,
-            .subresourceRange = {
-                .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-        };
-        vkCreateImageView(ctx->device, &view_info, nullptr, &ctx->swapchain_views[i]);
-    }
-
     /* --- MSAA ---
      * Pick the highest supported color sample count (4x preferred) so line
      * primitives are antialiased; the render pass resolves the multisampled
@@ -818,66 +964,12 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
         else if (counts & VK_SAMPLE_COUNT_2_BIT) ctx->msaa_samples = VK_SAMPLE_COUNT_2_BIT;
     }
 
-    ctx->msaa_images   = nullptr;
-    ctx->msaa_memories = nullptr;
-    ctx->msaa_views    = nullptr;
-    if (ctx->msaa_samples != VK_SAMPLE_COUNT_1_BIT) {
-        ctx->msaa_images   = malloc(ctx->swapchain_image_count * sizeof(VkImage));
-        ctx->msaa_memories = malloc(ctx->swapchain_image_count * sizeof(VkDeviceMemory));
-        ctx->msaa_views    = malloc(ctx->swapchain_image_count * sizeof(VkImageView));
-        for (uint32_t i = 0; i < ctx->swapchain_image_count; ++i) {
-            VkImageCreateInfo img_info = {
-                .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-                .imageType     = VK_IMAGE_TYPE_2D,
-                .format        = ctx->swapchain_format,
-                .extent        = { extent.width, extent.height, 1 },
-                .mipLevels     = 1,
-                .arrayLayers   = 1,
-                .samples       = ctx->msaa_samples,
-                .tiling        = VK_IMAGE_TILING_OPTIMAL,
-                .usage         = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                .sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
-                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            };
-            if (vkCreateImage(ctx->device, &img_info, nullptr, &ctx->msaa_images[i]) != VK_SUCCESS) {
-                fprintf(stderr, "[Vulkan] Failed to create MSAA color image\n");
-                return false;
-            }
-
-            VkMemoryRequirements mem_reqs;
-            vkGetImageMemoryRequirements(ctx->device, ctx->msaa_images[i], &mem_reqs);
-            VkMemoryAllocateInfo alloc_info = {
-                .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-                .allocationSize  = mem_reqs.size,
-                .memoryTypeIndex = vk_find_memory_type(ctx->physical_device,
-                                                        mem_reqs.memoryTypeBits,
-                                                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
-            };
-            if (alloc_info.memoryTypeIndex == UINT32_MAX) return false;
-            if (vkAllocateMemory(ctx->device, &alloc_info, nullptr, &ctx->msaa_memories[i]) != VK_SUCCESS) {
-                fprintf(stderr, "[Vulkan] Failed to allocate MSAA image memory\n");
-                return false;
-            }
-            vkBindImageMemory(ctx->device, ctx->msaa_images[i], ctx->msaa_memories[i], 0);
-
-            VkImageViewCreateInfo view_info = {
-                .sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                .image    = ctx->msaa_images[i],
-                .viewType = VK_IMAGE_VIEW_TYPE_2D,
-                .format   = ctx->swapchain_format,
-                .subresourceRange = {
-                    .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .baseMipLevel   = 0,
-                    .levelCount     = 1,
-                    .baseArrayLayer = 0,
-                    .layerCount     = 1,
-                },
-            };
-            if (vkCreateImageView(ctx->device, &view_info, nullptr, &ctx->msaa_views[i]) != VK_SUCCESS) {
-                fprintf(stderr, "[Vulkan] Failed to create MSAA image view\n");
-                return false;
-            }
-        }
+    /* --- Swapchain ---
+     * Swapchain, image views and MSAA attachments are created by
+     * vk_create_swapchain so renderer_resize can recreate them at a new
+     * window size; framebuffers are created below the render pass. */
+    if (!vk_create_swapchain(ctx, (VkExtent2D){ width, height })) {
+        return false;
     }
 
     /* --- Render pass --- */
@@ -949,23 +1041,7 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
     vkCreateRenderPass(ctx->device, &rp_info, nullptr, &ctx->render_pass);
 
     /* --- Framebuffers --- */
-    ctx->framebuffers = malloc(ctx->swapchain_image_count * sizeof(VkFramebuffer));
-    for (uint32_t i = 0; i < ctx->swapchain_image_count; ++i) {
-        VkImageView fb_attachments[2] = {
-            msaa ? ctx->msaa_views[i] : ctx->swapchain_views[i],
-            ctx->swapchain_views[i],
-        };
-        VkFramebufferCreateInfo fb_info = {
-            .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .renderPass      = ctx->render_pass,
-            .attachmentCount = msaa ? 2u : 1u,
-            .pAttachments    = fb_attachments,
-            .width           = extent.width,
-            .height          = extent.height,
-            .layers          = 1,
-        };
-        vkCreateFramebuffer(ctx->device, &fb_info, nullptr, &ctx->framebuffers[i]);
-    }
+    vk_create_framebuffers(ctx);
 
     /* --- Descriptor set layout (layer: combined image sampler) --- */
     VkDescriptorSetLayoutBinding layer_binding = {
@@ -1313,6 +1389,59 @@ static void vk_update_layer_texture(VkCommandBuffer cmd, RendererContext* ctx,
         vk_create_layer_texture(ctx, &ctx->layers[i], width, height);
     }
 
+    return true;
+}
+
+/******************************************************************************************************************************
+ * Resize
+ ******************************************************************************************************************************/
+
+/* Recreate all extent-dependent GPU objects for a new window size.
+ * Called from the draw thread (the only thread that touches the renderer)
+ * after ff_resize_field() has resized the CPU-side layers. The caller
+ * re-uploads the layer pixels afterwards via renderer_upload_layer() — fresh
+ * layer textures start in UNDEFINED layout, which the full upload transitions
+ * from; the per-frame dirty-rect path then works as usual. The render pass,
+ * pipelines, descriptor sets and sync objects are extent-independent. */
+static bool renderer_resize(RendererContext* restrict ctx, GLFWwindow* restrict window, uint32_t width, uint32_t height)
+{
+    (void)window;
+    if (width == 0 || height == 0) return false;
+    if (width == ctx->width && height == ctx->height) return true;
+
+    /* Tear down the old swapchain-dependent objects, then recreate them at
+     * the new extent. */
+    vk_destroy_swapchain_objects(ctx);
+    if (!vk_create_swapchain(ctx, (VkExtent2D){ width, height })) {
+        fprintf(stderr, "[Vulkan] Failed to recreate swapchain at %ux%u\n", width, height);
+        return false;
+    }
+    vk_create_framebuffers(ctx);
+
+    /* Layer textures follow the field size. */
+    for (int i = 0; i < RENDERER_LAYER_COUNT; ++i)
+        vk_create_layer_texture(ctx, &ctx->layers[i], width, height);
+
+    /* The per-frame dirty-rect path strides the staging buffer by one full
+     * layer per layer per frame in flight — grow it when the new size needs
+     * more room (a shrink keeps the larger buffer). */
+    VkDeviceSize layer_size = (VkDeviceSize)width * height * sizeof(uint32_t);
+    VkDeviceSize size = layer_size * RENDERER_LAYER_COUNT * VK_MAX_FRAMES_IN_FLIGHT;
+    if (size > ctx->staging_size) {
+        if (ctx->staging_buffer) {
+            vkDestroyBuffer(ctx->device, ctx->staging_buffer, nullptr);
+            vkFreeMemory(ctx->device, ctx->staging_memory, nullptr);
+        }
+        vk_create_buffer(ctx->device, ctx->physical_device, size,
+                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         &ctx->staging_buffer, &ctx->staging_memory);
+        ctx->staging_size = size;
+        vkMapMemory(ctx->device, ctx->staging_memory, 0, size, 0, &ctx->staging_mapped);
+    }
+
+    ctx->width  = width;
+    ctx->height = height;
     return true;
 }
 
