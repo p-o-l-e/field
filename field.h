@@ -831,6 +831,10 @@ extern void (*release_entity[])(Entity* restrict, int, int); ///< Per-type relea
     field->current[IP_NODE] = 0;
     field->current[IP_ENTITY] = 0;
     field->pressed      = nullptr;
+    /* The field is malloc'd — stream[] must be zeroed before first use;
+       ff_init_crt only sets stream[0], and readers test every slot. */
+    for(size_t i = 0; i < sizeof(field->stream) / sizeof(field->stream[0]); ++i)
+        field->stream[i] = nullptr;
 
     if(true) {
         for(uint32_t i = 0; i < CC; ++i) {
@@ -2507,7 +2511,13 @@ static void ff_anchor_node(Field* restrict field, Node* restrict node) {
  * @brief Resize the field to new dimensions and re-anchor its nodes.
  * @details Resizes every render layer and the root canvas buffer (content is
  *          preserved, grown area cleared), then re-anchors every visible node
- *          with @ref Node::anchors != NONE to the new window borders. All
+ *          with @ref Node::anchors != NONE to the new window borders. The
+ *          hit-test stencils (SC/SN) are then rebuilt from the nodes' local
+ *          stencil buffers, because ff_frame_resize crops on shrink — a node
+ *          that was off-screen loses its stencil IDs and ff_draw_scene never
+ *          re-stamps them. Cord splines and oscillograph trace points are
+ *          stored in window-normalised UVs, so they are re-dragged / rescaled
+ *          into the new window space to keep their screen positions. All
  *          entities are marked for repaint and every layer is fully dirty, so
  *          the backend re-uploads it. Resize is a rare event — the reallocs
  *          here are not on the per-frame path.
@@ -2517,6 +2527,9 @@ static void ff_anchor_node(Field* restrict field, Node* restrict node) {
  */
 void ff_resize_field(Field* restrict field, uint32_t w, uint32_t h) {
     if(w == 0 || h == 0) return;
+
+    const uint32_t old_w = field->width;
+    const uint32_t old_h = field->height;
 
     field->width     = w;
     field->height    = h;
@@ -2532,6 +2545,76 @@ void ff_resize_field(Field* restrict field, uint32_t w, uint32_t h) {
         if(!field->node[n].visible) continue;
         if(field->node[n].anchors == NONE) continue;
         ff_anchor_node(field, &field->node[n]);
+    }
+
+    /* Rebuild the hit-test stencils. SC/SN are a pure function of the
+     * visible nodes: SN is the ST_NODE frame rect stamped with the node
+     * index, SC is the node-local entity stencil (node->buffer) copied at
+     * the frame position — the same stamping ffPlaceNode/ff_anchor_node do.
+     * Node 0 is the canvas and is not stamped: SC/SN value 0 means "no
+     * entity/node" and hit-tests resolve it to the root canvas. */
+    ff_frame_clr(field->layer[SC]);
+    ff_frame_clr(field->layer[SN]);
+    for(uint32_t n = 1; n < field->nodes; ++n) {
+        if(!field->node[n].visible) continue;
+
+        /* The ST_NODE (frame) entity's bounds are the node's screen rect. */
+        Entity* frame_entity = nullptr;
+        for(uint32_t i = 0; i < field->node[n].entities; ++i) {
+            if(field->node[n].at[i].type == ST_NODE) {
+                frame_entity = &field->node[n].at[i];
+                break;
+            }
+        }
+        if(!frame_entity) continue;
+
+        ff_draw_ltrb_f(field->layer[SN], &frame_entity->bounds, n);
+        ff_frame_copy_at(field->layer[SC], &field->node[n].buffer,
+                        frame_entity->bounds.l, frame_entity->bounds.t);
+    }
+
+    /* Re-drag established cords. Splines are stored in window-normalised UVs
+     * (ff_screen_to_uv at drag time), so after a resize they map to different
+     * screen positions and detach from their sockets. Recompute from the
+     * current socket centres with the new window size — the same re-drag
+     * ff_anchor_node/ff_release_node do when a node moves. A connection owns
+     * exactly one cord (the has_data end); re-drag from that end. */
+    for(uint32_t n = 0; n < field->nodes; ++n) {
+        if(!field->node[n].visible) continue;
+        for(uint32_t i = 0; i < field->node[n].entities; ++i) {
+            auto entity = &field->node[n].at[i];
+            if(entity->type != ST_SOCKET) continue;
+            auto ext = (Socket*)entity->extension;
+            if(!ext->connected) continue;
+            auto target = ext->connection;
+            auto target_ext = (Socket*)target->extension;
+            if(ext->has_data)
+                ff_drag_cord(entity, target->bounds.l + target->width / 2,
+                             target->bounds.t + target->height / 2);
+            else if(target_ext->has_data)
+                ff_drag_cord(target, entity->bounds.l + entity->width / 2,
+                             entity->bounds.t + entity->height / 2);
+        }
+    }
+
+    /* Rescale oscillograph ring buffers. Trace points are stored in
+     * window-normalised UVs, fed per frame with the current window size
+     * (see the stream feed in field_glfw.h), so stored history maps to
+     * different screen positions after a resize. X is proportional
+     * (screen = uv * W) but Y is flipped (screen = H * (1 - uv)), so the
+     * rescale is multiplicative in X and affine in Y — the trace keeps its
+     * screen position, and new samples are fed with the new size. */
+    for(size_t s = 0; s < sizeof(field->stream) / sizeof(field->stream[0]); ++s) {
+        if(!field->stream[s]) continue;
+        auto ext = (Oscillograph*)field->stream[s]->extension;
+        if(!ext->data || !ext->size) continue;
+        const float kx = (float)old_w / (float)w;
+        const float ky = (float)old_h / (float)h;
+        auto buf = (float*)ext->data;
+        for(uint32_t i = 0; i < ext->size * 2; i += 2) {
+            buf[i]     *= kx;
+            buf[i + 1]  = 1.0f - ky * (1.0f - buf[i + 1]);
+        }
     }
 
     /* Everything redraws: canvas grid, node frames, and all entities. */
