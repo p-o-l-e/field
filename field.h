@@ -450,6 +450,9 @@ struct Field {
     uint32_t    capacity;           ///< Allocated capacity of the @c node array.
     uint32_t    flags;              ///< Field-level flags (@ref FieldFlags).
     uint32_t    step;               ///< Grid snap step in pixels.
+    uint32_t    policy_scale_init;  ///< Initial frame-heap capacity multiplier (2 = 2x).
+    uint32_t    policy_scale_num;   ///< Frame-heap grow-step numerator (1).
+    uint32_t    policy_scale_den;   ///< Frame-heap grow-step denominator (8 = +1/8).
 };
 
 /** @brief Create an entity inside a node from a descriptor.
@@ -661,6 +664,10 @@ extern void (*release_entity[])(Entity* restrict, int, int); ///< Per-type relea
     entity->repaint                  = true;
     entity->flags                    = descriptor->flags;
     entity->visible                  = true;
+    /* The Entity array comes from malloc (ffCreateNode) — every field must be
+     * initialised here; ff_draw_button reads hovered before the first hit
+     * test pass can set it. */
+    entity->hovered                  = false;
     entity->extension                = nullptr;
     entity->parent                   = node;
 
@@ -826,6 +833,9 @@ extern void (*release_entity[])(Entity* restrict, int, int); ///< Per-type relea
     field->repaint      = true;
     field->flags        = flags;
     field->step         = 25;
+    field->policy_scale_init = 2;
+    field->policy_scale_num  = 1;
+    field->policy_scale_den  = 8;
     field->staging      = false;
     field->connecting   = false;
     field->current[IP_NODE] = 0;
@@ -839,7 +849,10 @@ extern void (*release_entity[])(Entity* restrict, int, int); ///< Per-type relea
     if(true) {
         for(uint32_t i = 0; i < CC; ++i) {
             field->layer[i] = malloc(sizeof(Frame));
-            ff_frame_init(field->layer[i],  w, h);
+            /* Window heap policy: policy_scale_init x the window size at creation
+               — resizes within the headroom never reallocate (see
+               ff_frame_resize). */
+            ff_frame_init_cap(field->layer[i], w, h, (size_t)w * h * field->policy_scale_init);
         }
 
         ff_frame_clr(field->layer[SC]);
@@ -850,7 +863,8 @@ extern void (*release_entity[])(Entity* restrict, int, int); ///< Per-type relea
     /* capacity is size + 1 (root node + size module nodes) — allocate to match,
        otherwise ffCreateNode writes past the array once all slots are used. */
     field->node = malloc(field->capacity * sizeof(Node));
-    ff_frame_init(&field->node->buffer, w, h);
+    /* Root canvas buffer is window-sized — same policy_scale_init policy as the layers. */
+    ff_frame_init_cap(&field->node->buffer, w, h, (size_t)w * h * field->policy_scale_init);
     field->nodes = 1;
     field->node[0].entities = 1;
     field->node[0].capacity = size;
@@ -966,7 +980,8 @@ void ffDestroyField(Field* restrict field) {
     field->node[index].anchors = NONE;
     
     field->node[index].at = malloc(size * sizeof(Entity));
-    ff_frame_init(&field->node[index].buffer,  w, h);
+    /* Node buffers resize with anchored nodes — same policy_scale_init policy. */
+    ff_frame_init_cap(&field->node[index].buffer, w, h, (size_t)w * h * field->policy_scale_init);
     
     ++field->nodes;
     return &field->node[index];
@@ -2182,8 +2197,11 @@ static void ff_release_socket(Entity* restrict entity, int x, int y) {
  */
 static void ff_init_node(Entity* restrict entity) {
     auto ext = (EntityNode*)entity->extension;
+    auto field = entity->parent->parent;
     ext->frame = (Frame*)calloc(1, sizeof(Frame));
-    ff_frame_init(ext->frame, entity->width, entity->height);
+    /* Resized by ff_anchor_node with the window — policy_scale_init policy. */
+    ff_frame_init_cap(ext->frame, entity->width, entity->height,
+                      (size_t)entity->width * entity->height * field->policy_scale_init);
 }
 
 /** @brief Handle node press (prepares for potential drag).
@@ -2454,10 +2472,10 @@ static void ff_anchor_node(Field* restrict field, Node* restrict node) {
 
     /* Resize the node's local stencil buffer (entity indices are node-local and
      * unaffected by the resize) and the frame entity's own buffer. */
-    ff_frame_resize(&node->buffer, new_w, new_h);
+    ff_frame_resize(&node->buffer, new_w, new_h, field->policy_scale_num, field->policy_scale_den);
     auto frame_ext = (EntityNode*)frame_entity->extension;
     if(frame_ext && frame_ext->frame)
-        ff_frame_resize(frame_ext->frame, new_w, new_h);
+        ff_frame_resize(frame_ext->frame, new_w, new_h, field->policy_scale_num, field->policy_scale_den);
 
     node->width  = new_w;
     node->height = new_h;
@@ -2537,8 +2555,8 @@ void ff_resize_field(Field* restrict field, uint32_t w, uint32_t h) {
     field->bounds.b  = field->bounds.t + h;
 
     for(uint32_t i = 0; i < CC; ++i)
-        ff_frame_resize(field->layer[i], w, h);
-    ff_frame_resize(&field->node[0].buffer, w, h);
+        ff_frame_resize(field->layer[i], w, h, field->policy_scale_num, field->policy_scale_den);
+    ff_frame_resize(&field->node[0].buffer, w, h, field->policy_scale_num, field->policy_scale_den);
 
     /* Node 0 is the root canvas — never anchored. */
     for(uint32_t n = 1; n < field->nodes; ++n) {
@@ -2748,8 +2766,10 @@ static void ff_draw_graticule(Frame* restrict frame, uint32_t colour, uint32_t v
  */
 static void ff_init_crt(Entity* restrict entity) {
     auto ext = (Oscillograph*)entity->extension;
+    auto field = entity->parent->parent;
     ext->frame = (Frame*)malloc(sizeof(Frame));
-    ff_frame_init(ext->frame, entity->width, entity->height);
+    ff_frame_init_cap(ext->frame, entity->width, entity->height,
+                      (size_t)entity->width * entity->height * field->policy_scale_init);
     ff_draw_graticule(ext->frame, BACKGROUND, 10, 8);
 
     ext->size = 32;

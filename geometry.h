@@ -148,9 +148,10 @@ typedef struct
  */
 typedef struct
 {
-    uint32_t* data;     ///< Pixel array (width × height entries).
+    uint32_t* data;     ///< Pixel array (capacity entries; only width × height are used).
     uint32_t width;     ///< Buffer width in pixels.
     uint32_t height;    ///< Buffer height in pixels.
+    size_t   capacity;  ///< Allocated pixels (>= width × height); grows on resize, never shrinks.
     ltrb32u  dirty;     ///< Union of modified regions since the last reset (inclusive bounds).
     bool     is_dirty;  ///< Whether @c dirty holds a valid region (false = nothing modified).
 
@@ -243,23 +244,42 @@ static void     ff_frame_clr(Frame* restrict);
  */
 static void     ff_frame_fill(Frame* restrict, uint32_t);
 
-/** @brief Allocate a frame buffer of the given dimensions.
+/** @brief Allocate a frame buffer of the given dimensions (exact capacity).
  *  @param frame  Frame to initialise.
  *  @param x      Width in pixels.
  *  @param y      Height in pixels.
  */
 static void     ff_frame_init(Frame* restrict, uint32_t, uint32_t);
 
-/** @brief Resize a frame buffer, preserving the overlapping region.
- *  @details Reallocates the pixel array and copies the top-left overlap row by
- *           row; the grown area is zero-filled. The whole frame is marked
- *           dirty so the backend re-uploads it. Resize is a rare event (field
- *           resize), not a per-frame path, so the allocation is acceptable.
- *  @param frame  Frame to resize.
- *  @param w      New width in pixels.
- *  @param h      New height in pixels.
+/** @brief Allocate a frame buffer of the given dimensions with explicit capacity.
+ *  @details Window/node resize heaps pass 2x the window size here: resizes
+ *           within the headroom never reallocate (see ff_frame_resize).
+ *  @param frame     Frame to initialise.
+ *  @param x         Width in pixels.
+ *  @param y         Height in pixels.
+ *  @param capacity  Allocated pixel count (must be >= x × y).
  */
-static void     ff_frame_resize(Frame* restrict, uint32_t, uint32_t);
+static void     ff_frame_init_cap(Frame* restrict, uint32_t, uint32_t, size_t);
+
+/** @brief Resize a frame buffer, preserving the overlapping region.
+ *  @details Heap policy: the pixel array is allocated at the owning field's
+ *           heap_init_mult × the used size at creation; when a resize
+ *           outgrows the heap it grows by +grow_num/grow_den of its capacity
+ *           per step until it fits; shrinking NEVER reallocates — the slack
+ *           stays allocated and is reused when the window grows back. The
+ *           used region is re-packed in place (the row stride changes with
+ *           the width): rows are moved with memmove (overlap-safe within a
+ *           row) top-down when narrowing and bottom-up when widening, so no
+ *           row is overwritten before it is read. The grown area is
+ *           zero-filled. The whole frame is marked dirty so the backend
+ *           re-uploads it.
+ *  @param frame     Frame to resize.
+ *  @param w         New width in pixels.
+ *  @param h         New height in pixels.
+ *  @param grow_num  Grow-step numerator (must be >= 1).
+ *  @param grow_den  Grow-step denominator (must be >= 1).
+ */
+static void     ff_frame_resize(Frame* restrict, uint32_t, uint32_t, uint32_t, uint32_t);
 
 /** @brief Free a frame's pixel buffer.
  *  @param frame  Frame to release.
@@ -556,39 +576,95 @@ static inline void ff_frame_fill(Frame* restrict frame, uint32_t value) {
     ff_frame_mark(frame, 0, 0, (int32_t)frame->width - 1, (int32_t)frame->height - 1);
 }
 
-/** @brief Allocate and zero-initialise a frame buffer.
+/** @brief Allocate and zero-initialise a frame buffer (exact capacity).
  *  @param frame  Frame to initialise.
  *  @param x      Width in pixels.
  *  @param y      Height in pixels.
  */
 static inline void ff_frame_init(Frame* restrict frame, uint32_t x, uint32_t y) {
+    ff_frame_init_cap(frame, x, y, (size_t)x * y);
+}
+
+/** @brief Allocate and zero-initialise a frame buffer with explicit capacity.
+ *  @param frame     Frame to initialise.
+ *  @param x         Width in pixels.
+ *  @param y         Height in pixels.
+ *  @param capacity  Allocated pixel count (must be >= x × y).
+ */
+static inline void ff_frame_init_cap(Frame* restrict frame, uint32_t x, uint32_t y, size_t capacity) {
     frame->width     = x;
     frame->height    = y;
-    frame->data      = (uint32_t*)calloc(frame->width * frame->height , sizeof(uint32_t));
-    frame->is_dirty = false;
+    frame->capacity  = capacity;
+    frame->data      = (uint32_t*)calloc(capacity, sizeof(uint32_t));
+    frame->is_dirty  = false;
 }
 
 /** @brief Resize a frame buffer, preserving the overlapping top-left region.
- *  @details The new buffer is zero-initialised (calloc) and the overlap is
- *           copied row by row, so shrinking crops and growing zero-fills.
- *           The full frame is marked dirty so the backend re-uploads it.
- *  @param frame  Frame to resize.
- *  @param w      New width in pixels.
- *  @param h      New height in pixels.
+ *  @details Heap policy: the array grows by +grow_num/grow_den of its capacity
+ *           per step when the new size outgrows it, and is never reallocated
+ *           on shrink — the slack stays allocated and is reused on the next
+ *           grow. The used region is re-packed in place because the row
+ *           stride changes with the width: memmove is overlap-safe within a
+ *           row, and the row order is chosen so no row is overwritten before
+ *           it is read (top-down when narrowing, bottom-up when widening).
+ *           Growing zero-fills, shrinking crops. The full frame is marked
+ *           dirty so the backend re-uploads it.
+ *  @param frame     Frame to resize.
+ *  @param w         New width in pixels.
+ *  @param h         New height in pixels.
+ *  @param grow_num  Grow-step numerator (must be >= 1).
+ *  @param grow_den  Grow-step denominator (must be >= 1).
  */
-static inline void ff_frame_resize(Frame* restrict frame, uint32_t w, uint32_t h) {
+static inline void ff_frame_resize(Frame* restrict frame, uint32_t w, uint32_t h,
+                                   uint32_t grow_num, uint32_t grow_den) {
     if(w == 0 || h == 0) return;
     if(w == frame->width && h == frame->height) return;
 
-    uint32_t* data = (uint32_t*)calloc((size_t)w * h, sizeof(uint32_t));
-    const uint32_t copy_w = w < frame->width  ? w : frame->width;
-    const uint32_t copy_h = h < frame->height ? h : frame->height;
-    for(uint32_t y = 0; y < copy_h; ++y)
-        memcpy(data + (size_t)y * w, frame->data + (size_t)y * frame->width,
-               (size_t)copy_w * sizeof(uint32_t));
+    const uint32_t old_w = frame->width;
+    const uint32_t old_h = frame->height;
+    const size_t   needed = (size_t)w * h;
 
-    free(frame->data);
-    frame->data   = data;
+    if(needed > frame->capacity) {
+        size_t capacity = frame->capacity;
+        /* The +num/den steps only make progress once capacity >= den/num —
+         * seed the denominator so a frame created zero-sized (an anchored
+         * node whose width is only set by this first resize) still grows. */
+        if(capacity < grow_den) capacity = grow_den;
+        do { capacity += (size_t)capacity * grow_num / grow_den; } while(capacity < needed);
+        frame->data     = (uint32_t*)realloc(frame->data, capacity * sizeof(uint32_t));
+        frame->capacity = capacity;
+    }
+
+    const uint32_t copy_w = w < old_w ? w : old_w;
+    const uint32_t copy_h = h < old_h ? h : old_h;
+
+    if(w > old_w) {
+        /* Widening: re-pack bottom-up so a row's new location never clobbers
+         * a row that is still to be read, then zero the grown area (right
+         * strip of the kept rows plus any new bottom rows). copy_w == 0 means
+         * the frame had no width — nothing to re-pack, and the zero-fill
+         * below already covers every row. */
+        if(copy_w)
+            for(uint32_t y = copy_h; y-- > 0;)
+                memmove(frame->data + (size_t)y * w, frame->data + (size_t)y * old_w,
+                        (size_t)copy_w * sizeof(uint32_t));
+        for(uint32_t y = 0; y < copy_h; ++y)
+            memset(frame->data + (size_t)y * w + copy_w, 0,
+                   (size_t)(w - copy_w) * sizeof(uint32_t));
+        for(uint32_t y = copy_h; y < h; ++y)
+            memset(frame->data + (size_t)y * w, 0, (size_t)w * sizeof(uint32_t));
+    }
+    else {
+        /* Narrowing (or same width, which needs no re-pack): top-down. Zero
+         * any new bottom rows when the height grew. */
+        if(w < old_w)
+            for(uint32_t y = 0; y < copy_h; ++y)
+                memmove(frame->data + (size_t)y * w, frame->data + (size_t)y * old_w,
+                        (size_t)copy_w * sizeof(uint32_t));
+        for(uint32_t y = copy_h; y < h; ++y)
+            memset(frame->data + (size_t)y * w, 0, (size_t)w * sizeof(uint32_t));
+    }
+
     frame->width  = w;
     frame->height = h;
     ff_frame_mark(frame, 0, 0, (int32_t)w - 1, (int32_t)h - 1);
