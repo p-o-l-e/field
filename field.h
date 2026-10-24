@@ -37,7 +37,7 @@
 #include "geometry.h"
 
 /** @brief Enables the debug overlay layer (extra @ref FieldLayer::DO frame). */
-#define DEBUG_OVERLAY
+//#define DEBUG_OVERLAY
 #ifdef DEBUG_OVERLAY
     /** @brief Atomic flag set by the debug overlay to request a forced repaint. */
     atomic_bool force_repaint = false;
@@ -84,21 +84,21 @@ typedef struct SectorDescriptor SectorDescriptor;
  * @note ST_LIMIT must remain the last entry; it is the table size.
  */
 typedef enum {
-    ST_SLIDER,          ///< Linear slider (horizontal or vertical).
-    ST_ENCODER,         ///< Endless rotary encoder with wrap-around.
-    ST_ROTARY,          ///< Rotary knob with sprite frames.
-    ST_SPRITE_INF_SLIDER, ///< Infinite slider rendered via sprite frames.
-    ST_SOCKET,          ///< Patch-cable socket (input or output).
-    ST_CHECKBOX,        ///< Toggle checkbox.
-    ST_MOMENTARY,       ///< Momentary push button.
-    ST_SPRITE_CHECKBOX, ///< Checkbox rendered with sprite frames.
-    ST_SPRITE_BUTTON,   ///< Button rendered with sprite frames.
-    ST_CANVAS,          ///< Background canvas (grid drawing).
-    ST_TEXTBOX,         ///< Read-only text label.
-    ST_CRT,             ///< CRT / oscillograph display.
-    ST_NODE,            ///< Nested node (sub-patch container).
+    ST_SLIDER,                  ///< Linear slider (horizontal or vertical).
+    ST_ENCODER,                 ///< Endless rotary encoder with wrap-around.
+    ST_ROTARY,                  ///< Rotary knob with sprite frames.
+    ST_SPRITE_INF_SLIDER,       ///< Infinite slider rendered via sprite frames.
+    ST_SOCKET,                  ///< Patch-cable socket (input or output).
+    ST_CHECKBOX,                ///< Toggle checkbox.
+    ST_MOMENTARY,               ///< Momentary push button.
+    ST_SPRITE_CHECKBOX,         ///< Checkbox rendered with sprite frames.
+    ST_SPRITE_BUTTON,           ///< Button rendered with sprite frames.
+    ST_CANVAS,                  ///< Background canvas (grid drawing).
+    ST_TEXTBOX,                 ///< Read-only text label.
+    ST_CRT,                     ///< CRT / oscillograph display.
+    ST_NODE,                    ///< Nested node (sub-patch container).
 
-    ST_LIMIT            ///< Sentinel — number of sector types.
+    ST_LIMIT                    ///< Sentinel — number of sector types.
 
 } SectorType;
 
@@ -106,11 +106,11 @@ typedef enum {
  * @brief Visual subtype for sliders and encoders.
  */
 typedef enum {
-    SS_A,       ///< Slider style A — filled bar from start to value.
-    SS_B,       ///< Slider style B — filled bar from value to end.
-    SS_C,       ///< Slider style C — bipolar, filled from zero to value.
+    SS_A,                       ///< Slider style A — filled bar from start to value.
+    SS_B,                       ///< Slider style B — filled bar from value to end.
+    SS_C,                       ///< Slider style C — bipolar, filled from zero to value.
 
-    SS_LIMIT    ///< Sentinel — number of subtypes.
+    SS_LIMIT                    ///< Sentinel — number of subtypes.
 
 } SubType;
 
@@ -118,22 +118,22 @@ typedef enum {
  * @brief Core role of an entity in the data-flow graph.
  */
 typedef enum: uint8_t {
-    F_CT_STATIC,    ///< Purely visual; no data flow.
-    F_CT_CONTROL,   ///< User-adjustable control (slider, knob, …).
-    F_CT_INPUT,     ///< Data input (receives a value via a socket).
-    F_CT_OUTPUT     ///< Data output (provides a value via a socket).
+    F_CT_STATIC,                ///< Purely visual; no data flow.
+    F_CT_CONTROL,               ///< User-adjustable control (slider, knob, …).
+    F_CT_INPUT,                 ///< Data input (receives a value via a socket).
+    F_CT_OUTPUT                 ///< Data output (provides a value via a socket).
 } CoreType;
 
 /**
  * @brief Callback event types — indexes into Entity::callback and Entity::target.
  */
 typedef enum {
-    F_CE_PRESS,     ///< Fired on mouse-button press.
-    F_CE_RELEASE,   ///< Fired on mouse-button release.
-    F_CE_VALUE,     ///< Fired when the entity value changes.
-    F_CE_REPAINT,   ///< Fired after the entity is redrawn.
+    F_CE_PRESS,                 ///< Fired on mouse-button press.
+    F_CE_RELEASE,               ///< Fired on mouse-button release.
+    F_CE_VALUE,                 ///< Fired when the entity value changes.
+    F_CE_REPAINT,               ///< Fired after the entity is redrawn.
 
-    F_CE_LIMIT      ///< Sentinel — number of callback events.
+    F_CE_LIMIT                  ///< Sentinel — number of callback events.
 
 } CallbackEvent;
 
@@ -141,10 +141,10 @@ typedef enum {
  * @brief Index positions for hit-test results stored in Field::current / Field::prior.
  */
 typedef enum {
-    IP_NODE,        ///< Index into the node array.
-    IP_ENTITY,      ///< Index into the entity array of that node.
+    IP_NODE,                    ///< Index into the node array.
+    IP_ENTITY,                  ///< Index into the entity array of that node.
 
-    IP_LIMIT        ///< Sentinel — number of index positions.
+    IP_LIMIT                    ///< Sentinel — number of index positions.
 
 } IndexPosition;
 
@@ -153,13 +153,13 @@ typedef enum {
  * @note Combine with bitwise OR to test for multiple modifiers.
  */
 typedef enum: uint32_t {
-    LMB     = 1 << 0,   ///< Left mouse button.
-    MMB     = 1 << 1,   ///< Middle mouse button.
-    RMB     = 1 << 2,   ///< Right mouse button.
-    LCTRL   = 1 << 3,   ///< Left Ctrl key.
-    RCTRL   = 1 << 4,   ///< Right Ctrl key.
-    LSHIFT  = 1 << 5,   ///< Left Shift key.
-    RSHIFT  = 1 << 6,   ///< Right Shift key.
+    LMB     = 1 << 0,           ///< Left mouse button.
+    MMB     = 1 << 1,           ///< Middle mouse button.
+    RMB     = 1 << 2,           ///< Right mouse button.
+    LCTRL   = 1 << 3,           ///< Left Ctrl key.
+    RCTRL   = 1 << 4,           ///< Right Ctrl key.
+    LSHIFT  = 1 << 5,           ///< Left Shift key.
+    RSHIFT  = 1 << 6,           ///< Right Shift key.
 
 } ControlModifier;
 
@@ -168,10 +168,10 @@ typedef enum: uint32_t {
  * @note Entity::value and Slider::step / Encoder::step are indexed by this enum.
  */
 typedef enum {
-    CP_COARSE,      ///< Coarse (integer) component of the value.
-    CP_FINE,        ///< Fine (fractional) component of the value.
+    CP_COARSE,                  ///< Coarse (integer) component of the value.
+    CP_FINE,                    ///< Fine (fractional) component of the value.
 
-    CP_LIMIT        ///< Sentinel — number of precision modes.
+    CP_LIMIT                    ///< Sentinel — number of precision modes.
 
 } ControlPrecision;
 
@@ -179,11 +179,11 @@ typedef enum {
  * @brief Saved cursor positions in Field::memory — used during drag operations.
  */
 typedef enum {
-    SP_CURSOR_PRESS,    ///< Cursor position at mouse-button press.
-    SP_CURSOR_PRIOR,    ///< Cursor position at the previous frame (drag delta source).
-    SP_LT_PRESS,        ///< Entity bounds left/top at press time (for snap-back).
+    SP_CURSOR_PRESS,            ///< Cursor position at mouse-button press.
+    SP_CURSOR_PRIOR,            ///< Cursor position at the previous frame (drag delta source).
+    SP_LT_PRESS,                ///< Entity bounds left/top at press time (for snap-back).
 
-    SP_LIMIT            ///< Sentinel — number of saved positions.
+    SP_LIMIT                    ///< Sentinel — number of saved positions.
 
 } SavedPosition;
 
@@ -211,11 +211,11 @@ typedef enum: uint32_t {
  * @brief Per-entity behaviour flags — combine with bitwise OR.
  */
 typedef enum: uint32_t {
-    VERTICAL    = 1 << 0,   ///< Widget is oriented vertically.
-    MOVEABLE    = 1 << 1,   ///< Entity can be dragged to a new position.
-    INTERCON    = 1 << 2,   ///< Entity participates in socket connections.
-    TRANSPARENT = 1 << 3,   ///< Entity is transparent to hit-testing (no stencil fill).
-    RADIO       = 1 << 4,   ///< Entity is part of a radio group (checkbox).
+    VERTICAL    = 1 << 0,       ///< Widget is oriented vertically.
+    MOVEABLE    = 1 << 1,       ///< Entity can be dragged to a new position.
+    INTERCON    = 1 << 2,       ///< Entity participates in socket connections.
+    TRANSPARENT = 1 << 3,       ///< Entity is transparent to hit-testing (no stencil fill).
+    RADIO       = 1 << 4,       ///< Entity is part of a radio group (checkbox).
 
 } SectorFlags;
 
@@ -229,10 +229,10 @@ typedef enum: uint32_t {
  */
 typedef enum: uint32_t {
     NONE        = 0,
-    LEFT        = 1 << 0,   ///< Node's left edge follows the window's left border.
-    TOP         = 1 << 1,   ///< Node's top edge follows the window's top border.
-    RIGHT       = 1 << 2,   ///< Node's right edge follows the window's right border.
-    BOTTOM      = 1 << 3,   ///< Node's bottom edge follows the window's bottom border.
+    LEFT        = 1 << 0,       ///< Node's left edge follows the window's left border.
+    TOP         = 1 << 1,       ///< Node's top edge follows the window's top border.
+    RIGHT       = 1 << 2,       ///< Node's right edge follows the window's right border.
+    BOTTOM      = 1 << 3,       ///< Node's bottom edge follows the window's bottom border.
     ALL         = LEFT | TOP | RIGHT | BOTTOM   ///< Node fills the window.
 
 } ResizeFlags;
@@ -278,22 +278,22 @@ struct SectorDescriptor {
  *          dispatch tables (init_entity, set_entity, …).
  */
 struct Entity {
-    uint32_t    index;          ///< Position in parent node's entity array.
-    uint32_t    uid;            ///< Unique identifier.
-    ltrb32u     bounds;         ///< Screen-space bounding box.
-    uint32_t    width;          ///< Cached bounds width.
-    uint32_t    height;         ///< Cached bounds height.
-    CoreType    core_type;      ///< F_CT_STATIC / F_CT_CONTROL / F_CT_INPUT / F_CT_OUTPUT.
-    SectorType  type;           ///< Widget type (dispatch table index).
-    float       value[CP_LIMIT]; ///< Current value (coarse integer + fine fractional).
-    bool        visible;        ///< Render visibility.
-    bool        hovered;        ///< Cursor hover state.
-    bool        repaint;        ///< Dirty flag for redraw.
-    uint32_t    flags;          ///< VERTICAL, MOVEABLE, INTERCON, TRANSPARENT, RADIO.
-    void*       extension;      ///< Type-specific extension struct.
+    uint32_t    index;              ///< Position in parent node's entity array.
+    uint32_t    uid;                ///< Unique identifier.
+    ltrb32u     bounds;             ///< Screen-space bounding box.
+    uint32_t    width;              ///< Cached bounds width.
+    uint32_t    height;             ///< Cached bounds height.
+    CoreType    core_type;          ///< F_CT_STATIC / F_CT_CONTROL / F_CT_INPUT / F_CT_OUTPUT.
+    SectorType  type;               ///< Widget type (dispatch table index).
+    float       value[CP_LIMIT];    ///< Current value (coarse integer + fine fractional).
+    bool        visible;            ///< Render visibility.
+    bool        hovered;            ///< Cursor hover state.
+    bool        repaint;            ///< Dirty flag for redraw.
+    uint32_t    flags;              ///< VERTICAL, MOVEABLE, INTERCON, TRANSPARENT, RADIO.
+    void*       extension;          ///< Type-specific extension struct.
     void        (*callback[F_CE_LIMIT])(Entity*, Entity*); ///< Event callbacks.
     Entity*     target[F_CE_LIMIT]; ///< Callback target entities.
-    Node*       parent;         ///< Owning node.
+    Node*       parent;             ///< Owning node.
 };
 
 /** @name Extension structs
@@ -1205,7 +1205,7 @@ static inline void ff_draw_debug_overlay(Field* restrict field, const Entity* re
     uint32_t vstep = 12;
     uint32_t row = 0;
 
-    ffDrawTextLabel(field->layer[DO], gtFont,    "#", 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, 8,    "#", 10, voffset + vstep * row++, 100, 10, colour);
 
     if(!entity) return;
 
@@ -1220,47 +1220,47 @@ static inline void ff_draw_debug_overlay(Field* restrict field, const Entity* re
 
     char buffer[128];
     snprintf(buffer, 128, "CONTROL INDEX: %u", entity->index);
-    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "CORE TYPE    : %u", entity->core_type);
-    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "CONTROL UID  : %x", entity->uid);
-    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "NODE INDEX   : %u", entity->parent->index);
-    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "NODE UID     : %x", entity->parent->uid);
-    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     if(entity->type == ST_SOCKET) {
         auto ext = (Socket*)entity->extension;
         snprintf(buffer, 128, "IS CONNECTED : %d", ext->connected);
-        ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+        ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
         snprintf(buffer, 128, "CONNECTION   : %p", (void*)ext->connection);
-        ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+        ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
         snprintf(buffer, 128, "HAS DATA     : %d", ext->has_data);
-        ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+        ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
         if(ext->input) {
             snprintf(buffer, 128, "INPUT        : %f", *ext->input);
-            ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+            ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
         }
         if(ext->output) {
             snprintf(buffer, 128, "OUTPUT       : %f", *ext->output);
-            ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+            ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
         }
     }
     snprintf(buffer, 128, "VALUE COARSE : %f", entity->value[0]);
-    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "VALUE FINE   : %f", entity->value[1]);
-    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     snprintf(buffer, 128, "FLAGS        : %b", entity->flags);
-    ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+    ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
     if(entity->type == ST_CRT) {
         auto ext = (Oscillograph*)entity->extension;
         if(ext->x && *ext->x) {
             snprintf(buffer, 128, "X            : %f", **ext->x);
-            ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+            ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
         }
         if(ext->y && *ext->y) {
             snprintf(buffer, 128, "Y            : %f", **ext->y);
-            ffDrawTextLabel(field->layer[DO], gtFont, buffer, 10, voffset + vstep * row++, 100, 10, colour);
+            ffDrawTextLabel(field->layer[DO], gtFont, 8, buffer, 10, voffset + vstep * row++, 100, 10, colour);
         }
     }
     atomic_store_explicit(&force_repaint, true, memory_order_release);
@@ -2674,6 +2674,7 @@ static void ff_draw_textbox(Entity* restrict entity) {
     ffDrawTextLabel(
         field->layer[TL],
         gtFont,
+        8,
         text,
         entity->bounds.l,
         entity->bounds.t + offset_y,
