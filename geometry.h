@@ -349,6 +349,7 @@ static void ff_sprite_load_stripe(Sprite* restrict, const Frame* restrict);
  *  @param t      Top pixel position.
  *  @param colour 32-bit RGBA colour.
  */
+static void ff_draw_glyph_core(Frame* restrict, const uint8_t* restrict, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
 static void ff_draw_glyph(Frame* restrict, const uint8_t* restrict, uint32_t, uint32_t, uint32_t, uint32_t, const uint32_t);
 
 /** @brief Draw a text string using the embedded bitmap font.
@@ -691,25 +692,37 @@ static inline void ff_frame_flush(Frame* restrict frame) {
  *  @param b      Bottom edge (inclusive).
  */
 static inline void ff_frame_mark(Frame* restrict frame, int32_t l, int32_t t, int32_t r, int32_t b) {
-    if(r < l || b < t) return;
+    /* Clamp to frame bounds. The post-clamp degenerate check below also
+     * catches inputs that were degenerate before clamping (e.g. r < l),
+     * so no separate pre-clamp check is needed — saves two compares on
+     * every call. */
+    const int32_t fw = (int32_t)frame->width;
+    const int32_t fh = (int32_t)frame->height;
     if(l < 0) l = 0;
     if(t < 0) t = 0;
-    if(r >= (int32_t)frame->width)  r = (int32_t)frame->width - 1;
-    if(b >= (int32_t)frame->height) b = (int32_t)frame->height - 1;
+    if(r >= fw) r = fw - 1;
+    if(b >= fh) b = fh - 1;
     if(l > r || t > b) return;
 
+    /* After clamping all values are in [0, fw-1] / [0, fh-1] — convert
+     * once to uint32_t so the union path avoids repeated sign-extension. */
+    const uint32_t ul = (uint32_t)l;
+    const uint32_t ut = (uint32_t)t;
+    const uint32_t ur = (uint32_t)r;
+    const uint32_t ub = (uint32_t)b;
+
     if(!frame->is_dirty) {
-        frame->dirty.l   = (uint32_t)l;
-        frame->dirty.t   = (uint32_t)t;
-        frame->dirty.r   = (uint32_t)r;
-        frame->dirty.b   = (uint32_t)b;
+        frame->dirty.l = ul;
+        frame->dirty.t = ut;
+        frame->dirty.r = ur;
+        frame->dirty.b = ub;
         frame->is_dirty = true;
         return;
     }
-    if((uint32_t)l < frame->dirty.l) frame->dirty.l = (uint32_t)l;
-    if((uint32_t)t < frame->dirty.t) frame->dirty.t = (uint32_t)t;
-    if((uint32_t)r > frame->dirty.r) frame->dirty.r = (uint32_t)r;
-    if((uint32_t)b > frame->dirty.b) frame->dirty.b = (uint32_t)b;
+    if(ul < frame->dirty.l) frame->dirty.l = ul;
+    if(ut < frame->dirty.t) frame->dirty.t = ut;
+    if(ur > frame->dirty.r) frame->dirty.r = ur;
+    if(ub > frame->dirty.b) frame->dirty.b = ub;
 }
 
 /** @brief Reset a frame's dirty rectangle (call after the region was uploaded).
@@ -976,7 +989,12 @@ static inline void ff_draw_sdf_circle_stroke(Frame* restrict frame, float xc, fl
     }
 }
 
-/** @brief Draw a single glyph from a bitmap font.
+/** @brief Draw a single glyph from a bitmap font (no dirty-rect mark).
+ *  @details Pixel-writing core shared by @ref ff_draw_glyph and
+ *           @ref ffDrawTextLabel. Callers that batch multiple glyphs
+ *           (e.g. text labels) should mark the full label bounds once
+ *           and call this per glyph — avoids N redundant ff_frame_mark
+ *           calls for an N-character string.
  *  @param frame   Target frame.
  *  @param font    Font bitmap (size bytes per glyph, row-major: MSB = leftmost pixel).
  *  @param size    Glyph width/height in pixels (≤ 8, one byte per row).
@@ -989,8 +1007,7 @@ static inline void ff_draw_sdf_circle_stroke(Frame* restrict frame, float xc, fl
  *           checks or address multiplies. Empty rows are skipped entirely.
  *           Clipped glyphs fall back to bounds-checked @ref ff_frame_set.
  */
-static inline void ff_draw_glyph(Frame* restrict frame, const uint8_t* restrict font, uint32_t size, uint32_t id, uint32_t l, uint32_t t, const uint32_t colour) {
-    ff_frame_mark(frame, (int32_t)l, (int32_t)t, (int32_t)(l + size - 1), (int32_t)(t + size - 1));
+static inline void ff_draw_glyph_core(Frame* restrict frame, const uint8_t* restrict font, uint32_t size, uint32_t id, uint32_t l, uint32_t t, const uint32_t colour) {
     const uint8_t* glyph = font + id * size;
 
     /* Fast path: glyph fully on-screen — direct writes, no per-pixel bounds checks. */
@@ -1019,6 +1036,21 @@ static inline void ff_draw_glyph(Frame* restrict frame, const uint8_t* restrict 
     }
 }
 
+/** @brief Draw a single glyph from a bitmap font.
+ *  @param frame   Target frame.
+ *  @param font    Font bitmap (size bytes per glyph, row-major: MSB = leftmost pixel).
+ *  @param size    Glyph width/height in pixels (≤ 8, one byte per row).
+ *  @param id      Glyph index.
+ *  @param l       Left pixel position.
+ *  @param t       Top pixel position.
+ *  @param colour  32-bit RGBA colour.
+ *  @details Marks the glyph bounds then delegates to @ref ff_draw_glyph_core.
+ */
+static inline void ff_draw_glyph(Frame* restrict frame, const uint8_t* restrict font, uint32_t size, uint32_t id, uint32_t l, uint32_t t, const uint32_t colour) {
+    ff_frame_mark(frame, (int32_t)l, (int32_t)t, (int32_t)(l + size - 1), (int32_t)(t + size - 1));
+    ff_draw_glyph_core(frame, font, size, id, l, t, colour);
+}
+
 /** @brief Draw a text label using the embedded bitmap font.
  *  @param frame   Target frame.
  *  @param font    Font bitmap (size bytes per glyph).
@@ -1029,12 +1061,19 @@ static inline void ff_draw_glyph(Frame* restrict frame, const uint8_t* restrict 
  *  @param _w      Unused (reserved for future clipping).
  *  @param _h      Unused (reserved for future clipping).
  *  @param colour  32-bit RGBA colour.
+ *  @details Marks the full label bounds once, then draws each glyph via
+ *           @ref ff_draw_glyph_core — one ff_frame_mark call total instead
+ *           of N+1.
  */
 static inline void ffDrawTextLabel(Frame* restrict frame, const uint8_t* restrict font, uint32_t size, const char* restrict text, uint32_t l, uint32_t t, uint32_t, uint32_t, const uint32_t colour) {
     uint32_t n = strlen(text);
     ff_frame_mark(frame, (int32_t)l, (int32_t)t, (int32_t)(l + n * size - 1), (int32_t)(t + size - 1));
     for(uint32_t i = 0; i < n; i++) {
-        ff_draw_glyph(frame, font, size, text[i] - 32, l + i * size, t, colour);
+        /* Cast to uint8_t first: char may be signed, and glyphs 96+ (special
+         * symbols) are encoded as raw bytes 128-255 in the label string.
+         * Without the cast, byte 128 becomes -128 (signed char), and
+         * -128 - 32 = -160 wraps to a huge uint32_t glyph index (OOB read). */
+        ff_draw_glyph_core(frame, font, size, (uint8_t)text[i] - 32, l + i * size, t, colour);
     }
 }
 

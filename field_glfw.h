@@ -398,15 +398,23 @@ void* draw_field(void* arg)
         bool stream_active = osc && osc->x && *osc->x && osc->y && *osc->y;
 
         pthread_mutex_lock(&_screen_lock);
-        if (stream_active) {
-            uint32_t fps = osc->fps > 0 ? osc->fps : 60;
-            struct timespec ts;
-            clock_gettime(CLOCK_REALTIME, &ts);
-            ts.tv_nsec += 1000000000L / fps;
-            if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
-            pthread_cond_timedwait(&_repaint_condition, &_screen_lock, &ts);
-        } else {
-            pthread_cond_wait(&_repaint_condition, &_screen_lock);
+        /* Skip the wait when a repaint is already pending. ffCreateField and
+         * ffPlaceNode set repaint=true at startup, so the first frame renders
+         * immediately without needing an external wake-up (GLFW event, timer,
+         * etc.). After ff_draw_scene clears repaint, subsequent iterations
+         * block until signaled. Checked under _screen_lock so it's race-free
+         * with event callbacks that set repaint=true. */
+        if (!context->repaint) {
+            if (stream_active) {
+                uint32_t fps = osc->fps > 0 ? osc->fps : 60;
+                struct timespec ts;
+                clock_gettime(CLOCK_REALTIME, &ts);
+                ts.tv_nsec += 1000000000L / fps;
+                if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
+                pthread_cond_timedwait(&_repaint_condition, &_screen_lock, &ts);
+            } else {
+                pthread_cond_wait(&_repaint_condition, &_screen_lock);
+            }
         }
         pthread_mutex_unlock(&_screen_lock);
 
